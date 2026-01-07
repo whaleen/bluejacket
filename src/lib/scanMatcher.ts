@@ -1,5 +1,5 @@
 import supabase from './supabase';
-import type { InventoryItem, ScanResult } from '@/types/inventory';
+import type { ScanResult } from '@/types/inventory';
 
 /**
  * Search for inventory items matching the scanned barcode

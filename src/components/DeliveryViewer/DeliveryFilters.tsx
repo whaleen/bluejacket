@@ -2,7 +2,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Filter, X, SortAsc, SortDesc } from "lucide-react";
+import { Search, X, SortAsc, SortDesc } from "lucide-react";
 import { ViewToggle, type ViewMode } from "./ViewToggle";
 
 import type { Truck } from "@/types/deliveries";
@@ -44,7 +44,7 @@ export function DeliveryFilters({
   productTypeFilter,
   onProductTypeFilterChange,
   scannedFilter,
-  onScannedFilterChange,
+  onScannedFilterChange: _onScannedFilterChange,
   lifecycleFilter,
   onLifecycleFilterChange,
   sortBy,

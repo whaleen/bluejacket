@@ -29,17 +29,7 @@ export function BarcodeScanner({ onScan, onClose, inventoryType }: BarcodeScanne
           { facingMode: 'environment' },
           {
             fps: 10,
-            qrbox: { width: 250, height: 250 },
-            formatsToSupport: [
-              // @ts-expect-error - html5-qrcode types are incomplete
-              window.Html5QrcodeSupportedFormats?.CODE_128,
-              // @ts-expect-error - html5-qrcode types are incomplete
-              window.Html5QrcodeSupportedFormats?.CODE_39,
-              // @ts-expect-error - html5-qrcode types are incomplete
-              window.Html5QrcodeSupportedFormats?.EAN_13,
-              // @ts-expect-error - html5-qrcode types are incomplete
-              window.Html5QrcodeSupportedFormats?.UPC_A
-            ]
+            qrbox: { width: 250, height: 250 }
           },
           (decodedText) => {
             onScan(decodedText);

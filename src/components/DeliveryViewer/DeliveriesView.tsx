@@ -188,6 +188,11 @@ export function DeliveriesView() {
       let aValue = a[sortBy as keyof Delivery];
       let bValue = b[sortBy as keyof Delivery];
 
+      // Handle undefined values
+      if (aValue === undefined && bValue === undefined) return 0;
+      if (aValue === undefined) return 1;
+      if (bValue === undefined) return -1;
+
       // Handle different data types
       if (typeof aValue === 'string' && typeof bValue === 'string') {
         aValue = aValue.toLowerCase();

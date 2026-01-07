@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { BarcodeScanner } from '@/components/Scanner/BarcodeScanner';
@@ -13,7 +12,6 @@ import {
   getActiveSession,
   markItemScannedInSession,
   markItemsScannedInSession,
-  updateSession,
   clearActiveSession
 } from '@/lib/sessionManager';
 import { findMatchingItemsInSession } from '@/lib/sessionScanner';

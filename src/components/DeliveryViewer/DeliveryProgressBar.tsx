@@ -53,7 +53,6 @@ export function DeliveryProgressBar({ delivery, onStatusUpdate }: DeliveryProgre
       {/* Progress Bar */}
       <div className="flex items-center justify-between mb-2">
         {stages.map((stage, index) => {
-          const isActive = index < currentStage;
           const isCurrent = index === currentStage && !stage.completed;
           const Icon = stage.icon;
 

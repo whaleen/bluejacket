@@ -6,7 +6,7 @@ import { TruckEditDialog } from "./TruckEditDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Loader2, Plus, Search, Filter } from "lucide-react";
+import { RefreshCw, Loader2, Plus, Search } from "lucide-react";
 
 export function TruckProfileView() {
   const [trucks, setTrucks] = useState<Truck[]>([]);
