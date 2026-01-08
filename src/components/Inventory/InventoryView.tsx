@@ -27,8 +27,6 @@ import {
   Loader2,
   Upload,
   Search,
-  CheckCircle2,
-  Circle,
   Play,
   ExternalLink,
 } from 'lucide-react';
@@ -44,9 +42,6 @@ export function InventoryView() {
     'all' | InventoryType
   >('all');
   const [subInventoryFilter, setSubInventoryFilter] = useState('all');
-  const [scannedFilter, setScannedFilter] = useState<
-    'all' | 'scanned' | 'pending'
-  >('all');
 
   // Dialog state
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -119,12 +114,41 @@ export function InventoryView() {
     setProductDetailOpen(true);
   };
 
+  // Get unique sub-inventories for the currently selected inventory type
   const uniqueSubInventories = useMemo(() => {
-    const subs = [...new Set(items.map(item => item.sub_inventory))].filter(
-      Boolean,
-    );
+    const filteredByType =
+      inventoryTypeFilter === 'all'
+        ? items
+        : items.filter(item => item.inventory_type === inventoryTypeFilter);
+
+    const subs = [
+      ...new Set(filteredByType.map(item => item.sub_inventory)),
+    ].filter(Boolean);
     return subs.sort();
-  }, [items]);
+  }, [items, inventoryTypeFilter]);
+
+  // Determine if sub-inventory filter should be shown
+  const showSubInventoryFilter = useMemo(() => {
+    return (
+      inventoryTypeFilter === 'Staged' ||
+      inventoryTypeFilter === 'ASIS' ||
+      inventoryTypeFilter === 'Salvage' ||
+      (inventoryTypeFilter === 'all' && uniqueSubInventories.length > 0)
+    );
+  }, [inventoryTypeFilter, uniqueSubInventories]);
+
+  // Get label for sub-inventory filter based on type
+  const subInventoryLabel = useMemo(() => {
+    if (inventoryTypeFilter === 'Staged') return 'Route';
+    if (inventoryTypeFilter === 'ASIS') return 'Sub-Inventory';
+    if (inventoryTypeFilter === 'Salvage') return 'Sub-Inventory';
+    return 'Sub-Inventory';
+  }, [inventoryTypeFilter]);
+
+  // Reset sub-inventory filter when inventory type changes
+  useEffect(() => {
+    setSubInventoryFilter('all');
+  }, [inventoryTypeFilter]);
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -143,25 +167,9 @@ export function InventoryView() {
         subInventoryFilter === 'all' ||
         item.sub_inventory === subInventoryFilter;
 
-      const matchesScanned =
-        scannedFilter === 'all' ||
-        (scannedFilter === 'scanned' && item.is_scanned) ||
-        (scannedFilter === 'pending' && !item.is_scanned);
-
-      return (
-        matchesSearch &&
-        matchesInventoryType &&
-        matchesSubInventory &&
-        matchesScanned
-      );
+      return matchesSearch && matchesInventoryType && matchesSubInventory;
     });
-  }, [
-    items,
-    searchTerm,
-    inventoryTypeFilter,
-    subInventoryFilter,
-    scannedFilter,
-  ]);
+  }, [items, searchTerm, inventoryTypeFilter, subInventoryFilter]);
 
   if (activeSessionView) {
     return <ScanningSessionView onExit={handleSessionExit} />;
@@ -224,53 +232,37 @@ export function InventoryView() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <Select
-              value={inventoryTypeFilter}
-              onValueChange={(value: any) =>
-                setInventoryTypeFilter(value)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="ASIS">ASIS</SelectItem>
-                <SelectItem value="BackHaul">Back Haul</SelectItem>
-                <SelectItem value="Salvage">Salvage</SelectItem>
-                <SelectItem value="Staged">Staged</SelectItem>
-                <SelectItem value="Inbound">Inbound</SelectItem>
-                <SelectItem value="FG">FG (Finished Goods)</SelectItem>
-                <SelectItem value="LocalStock">Local Stock</SelectItem>
-              </SelectContent>
-            </Select>
+          <Select
+            value={inventoryTypeFilter}
+            onValueChange={(value: any) => setInventoryTypeFilter(value)}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="ASIS">ASIS</SelectItem>
+              <SelectItem value="BackHaul">Back Haul</SelectItem>
+              <SelectItem value="Salvage">Salvage</SelectItem>
+              <SelectItem value="Staged">Staged</SelectItem>
+              <SelectItem value="Inbound">Inbound</SelectItem>
+              <SelectItem value="FG">FG (Finished Goods)</SelectItem>
+              <SelectItem value="LocalStock">Local Stock</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <Select
-              value={scannedFilter}
-              onValueChange={(value: any) => setScannedFilter(value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="scanned">Scanned</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {uniqueSubInventories.length > 0 && (
+          {showSubInventoryFilter && uniqueSubInventories.length > 0 && (
             <Select
               value={subInventoryFilter}
               onValueChange={setSubInventoryFilter}
             >
               <SelectTrigger>
-                <SelectValue placeholder="All Routes" />
+                <SelectValue
+                  placeholder={`All ${subInventoryLabel}s`}
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Routes</SelectItem>
+                <SelectItem value="all">All {subInventoryLabel}s</SelectItem>
                 {uniqueSubInventories.map(sub => (
                   <SelectItem key={sub} value={sub!}>
                     {sub}
@@ -293,28 +285,25 @@ export function InventoryView() {
         ) : (
           <div className="space-y-2">
             {filteredItems.map(item => (
-              <Card
-                key={item.id}
-                className={`p-4 ${item.is_scanned ? 'bg-muted' : ''}`}
-              >
+              <Card key={item.id} className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 space-y-1">
                     <div className="flex items-center gap-2">
-                      {item.is_scanned ? (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Circle className="h-5 w-5 text-muted-foreground/50" />
-                      )}
                       <span className="font-semibold text-foreground">
                         {item.product_type}
                       </span>
-                      <Badge variant="secondary" className="ml-auto">
+                      <Badge variant="secondary">
                         {item.inventory_type}
                       </Badge>
+                      {item.sub_inventory && (
+                        <Badge variant="outline" className="text-xs">
+                          {item.sub_inventory}
+                        </Badge>
+                      )}
                     </div>
 
                     {item.products && (
-                      <div className="ml-7 mb-2">
+                      <div className="mb-2">
                         {item.products.brand && (
                           <Badge
                             variant="outline"
@@ -331,7 +320,7 @@ export function InventoryView() {
                       </div>
                     )}
 
-                    <div className="ml-7 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                       <div>
                         <span className="text-muted-foreground">
                           CSO:

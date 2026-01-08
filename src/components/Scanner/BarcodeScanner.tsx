@@ -3,6 +3,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { Button } from '@/components/ui/button';
 import { X, Keyboard } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface BarcodeScannerProps {
   onScan: (barcode: string) => void;
@@ -10,26 +11,40 @@ interface BarcodeScannerProps {
   inventoryType?: string;
 }
 
+type ScanSize = 'small' | 'medium' | 'large' | 'xl';
+
+const SCAN_SIZES: Record<ScanSize, { width: number; height: number; label: string }> = {
+  small: { width: 150, height: 150, label: 'Small' },
+  medium: { width: 250, height: 250, label: 'Medium' },
+  large: { width: 350, height: 350, label: 'Large' },
+  xl: { width: 450, height: 250, label: 'XL' }
+};
+
 export function BarcodeScanner({ onScan, onClose, inventoryType }: BarcodeScannerProps) {
   const [scanner, setScanner] = useState<Html5Qrcode | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [manualEntry, setManualEntry] = useState(false);
   const [manualValue, setManualValue] = useState('');
+  const [scanSize, setScanSize] = useState<ScanSize>('medium');
   const scannerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (manualEntry) return; // Don't start scanner in manual entry mode
+
     const initScanner = async () => {
       if (!scannerRef.current) return;
 
       const html5QrCode = new Html5Qrcode('barcode-scanner-region');
       setScanner(html5QrCode);
 
+      const scanBox = SCAN_SIZES[scanSize];
+
       try {
         await html5QrCode.start(
           { facingMode: 'environment' },
           {
             fps: 10,
-            qrbox: { width: 250, height: 250 }
+            qrbox: { width: scanBox.width, height: scanBox.height }
           },
           (decodedText) => {
             onScan(decodedText);
@@ -57,7 +72,29 @@ export function BarcodeScanner({ onScan, onClose, inventoryType }: BarcodeScanne
           .catch(console.error);
       }
     };
-  }, []);
+  }, [scanSize, manualEntry]);
+
+  // Handle scan size change
+  const handleScanSizeChange = async (newSize: ScanSize) => {
+    if (!scanner || !isScanning) {
+      setScanSize(newSize);
+      return;
+    }
+
+    try {
+      // Stop current scanner
+      await scanner.stop();
+      scanner.clear();
+      setIsScanning(false);
+
+      // Update size
+      setScanSize(newSize);
+
+      // Scanner will restart via useEffect
+    } catch (err) {
+      console.error('Error changing scan size:', err);
+    }
+  };
 
   const handleManualSubmit = () => {
     if (manualValue.trim()) {
@@ -90,6 +127,25 @@ export function BarcodeScanner({ onScan, onClose, inventoryType }: BarcodeScanne
           </Button>
         </div>
       </div>
+
+      {/* Size Selection Tabs */}
+      {!manualEntry && (
+        <div className="absolute top-20 left-0 right-0 z-10 flex justify-center px-4">
+          <Tabs value={scanSize} onValueChange={(value) => handleScanSizeChange(value as ScanSize)}>
+            <TabsList className="bg-black/60 backdrop-blur-sm">
+              {(Object.keys(SCAN_SIZES) as ScanSize[]).map((size) => (
+                <TabsTrigger
+                  key={size}
+                  value={size}
+                  className="text-white data-[state=active]:bg-white/20 data-[state=active]:text-white"
+                >
+                  {SCAN_SIZES[size].label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+      )}
 
       {/* Scanner Region */}
       {!manualEntry && (
