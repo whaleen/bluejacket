@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Search, Plus } from 'lucide-react';
 import supabase from '@/lib/supabase';
@@ -21,45 +22,65 @@ interface ProductData {
 }
 
 export function ProductEnrichment() {
-  const [modelNumber, setModelNumber] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<ProductData[]>([]);
   const [loading, setLoading] = useState(false);
   const [productData, setProductData] = useState<ProductData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState(false);
 
-  // Lookup model in database
-  const handleLookup = async () => {
-    if (!modelNumber.trim()) return;
+  // Live search effect with debouncing
+  useEffect(() => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
-    try {
-      const { data, error: lookupError } = await supabase
-        .from('products')
-        .select('*')
-        .eq('model', modelNumber.trim())
-        .single();
+    const timeoutId = setTimeout(async () => {
+      try {
+        const { data, error: searchError } = await supabase
+          .from('products')
+          .select('*')
+          .ilike('model', `%${searchTerm.trim()}%`)
+          .limit(20)
+          .order('model');
 
-      if (lookupError) {
-        if (lookupError.code === 'PGRST116') {
-          // Not found - show form to add
-          setProductData({
-            model: modelNumber.trim(),
-            product_type: '',
-            brand: 'GE'
-          });
-          setError('Model not found in database. Fill in details below to add it.');
+        if (searchError) {
+          setError(`Search error: ${searchError.message}`);
+          setSearchResults([]);
         } else {
-          setError(`Database error: ${lookupError.message}`);
+          setSearchResults(data || []);
         }
-      } else {
-        setProductData(data);
+      } catch (err) {
+        setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setSearchResults([]);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
+
+  const handleSelectProduct = (product: ProductData) => {
+    setProductData(product);
+    setEditMode(true);
+    setSearchResults([]);
+    setSearchTerm('');
+  };
+
+  const handleCreateNew = () => {
+    setProductData({
+      model: searchTerm.trim(),
+      product_type: '',
+      brand: 'GE'
+    });
+    setEditMode(true);
+    setSearchResults([]);
   };
 
   // Save product to database
@@ -91,8 +112,9 @@ export function ProductEnrichment() {
       } else {
         setError(null);
         alert('Product saved successfully!');
-        setModelNumber('');
+        setSearchTerm('');
         setProductData(null);
+        setEditMode(false);
       }
     } catch (err) {
       setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -104,49 +126,112 @@ export function ProductEnrichment() {
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Product Database</h2>
-        <p className="text-gray-600">Look up or add appliance model information</p>
+        <h2 className="text-2xl font-bold text-foreground mb-2">Product Database</h2>
+        <p className="text-muted-foreground">Look up or add appliance model information</p>
       </div>
 
-      {/* Lookup Form */}
-      <Card className="p-6 space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="model-number">Model Number</Label>
-          <div className="flex gap-2">
-            <Input
-              id="model-number"
-              type="text"
-              placeholder="e.g., GTD58EBSVWS"
-              value={modelNumber}
-              onChange={(e) => setModelNumber(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleLookup();
-                }
-              }}
-              disabled={loading}
-            />
-            <Button onClick={handleLookup} disabled={loading || !modelNumber.trim()}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-            </Button>
+      {/* Search Form */}
+      {!editMode && (
+        <Card className="p-6 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="model-search">Search Model Number</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="model-search"
+                type="text"
+                placeholder="Start typing model number..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+                autoComplete="off"
+              />
+            </div>
           </div>
-        </div>
 
-        {error && (
-          <Alert variant={error.includes('not found') ? 'default' : 'destructive'}>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </Card>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Loading State */}
+          {loading && searchTerm.trim() && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {/* Search Results */}
+          {!loading && searchTerm.trim() && searchResults.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm text-muted-foreground">
+                  {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} found
+                </Label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCreateNew}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create New
+                </Button>
+              </div>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {searchResults.map((product) => (
+                  <Card
+                    key={product.model}
+                    className="p-4 cursor-pointer hover:bg-accent transition-colors"
+                    onClick={() => handleSelectProduct(product)}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-semibold">{product.model}</span>
+                        <Badge variant="secondary">{product.product_type}</Badge>
+                      </div>
+                      {product.brand && (
+                        <Badge variant="outline" className="text-xs">
+                          {product.brand}
+                        </Badge>
+                      )}
+                      {product.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {product.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        {product.weight && <span>Weight: {product.weight} lbs</span>}
+                        {product.dimensions?.width && product.dimensions?.height && product.dimensions?.depth && (
+                          <span>
+                            {product.dimensions.width}" × {product.dimensions.height}" × {product.dimensions.depth}"
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No Results */}
+          {!loading && searchTerm.trim() && searchResults.length === 0 && (
+            <div className="py-8 text-center space-y-4">
+              <p className="text-muted-foreground">No products found matching "{searchTerm}"</p>
+              <Button onClick={handleCreateNew}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Product
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Product Details Form */}
       {productData && (
         <Card className="p-6 space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-foreground">
             {productData.brand ? `${productData.brand} ` : ''}
             {productData.model}
           </h3>
@@ -272,7 +357,8 @@ export function ProductEnrichment() {
               variant="outline"
               onClick={() => {
                 setProductData(null);
-                setModelNumber('');
+                setEditMode(false);
+                setSearchTerm('');
                 setError(null);
               }}
             >
@@ -297,7 +383,7 @@ export function ProductEnrichment() {
 
       {/* Quick Add Common Models */}
       <Card className="p-6">
-        <h3 className="font-semibold text-gray-900 mb-3">Common Product Types</h3>
+        <h3 className="font-semibold text-foreground mb-3">Common Product Types</h3>
         <div className="flex flex-wrap gap-2">
           {[
             'WASHER',

@@ -1,17 +1,17 @@
 import { Button } from "@/components/ui/button";
-import { Truck, Package, ScanBarcode, Database, LayoutDashboard } from "lucide-react";
+import { Truck, ScanBarcode, Database, LayoutDashboard } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 
 interface BottomNavProps {
-  currentView: 'dashboard' | 'deliveries' | 'trucks' | 'inventory' | 'products';
-  onViewChange: (view: 'dashboard' | 'deliveries' | 'trucks' | 'inventory' | 'products') => void;
+  currentView: 'dashboard' | 'trucks' | 'inventory' | 'products';
+  onViewChange: (view: 'dashboard' | 'trucks' | 'inventory' | 'products') => void;
 }
 
 export function BottomNav({ currentView, onViewChange }: BottomNavProps) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 py-2 safe-area-pb">
       <div className="flex items-center gap-1">
-        <div className="flex-1 grid grid-cols-5 gap-1">
+        <div className="flex-1 grid grid-cols-4 gap-1">
         <Button
           variant={currentView === 'dashboard' ? 'default' : 'ghost'}
           onClick={() => onViewChange('dashboard')}
@@ -20,16 +20,6 @@ export function BottomNav({ currentView, onViewChange }: BottomNavProps) {
         >
           <LayoutDashboard className="h-5 w-5" />
           <span className="text-xs mt-1">Dashboard</span>
-        </Button>
-
-        <Button
-          variant={currentView === 'deliveries' ? 'default' : 'ghost'}
-          onClick={() => onViewChange('deliveries')}
-          size="sm"
-          className="flex-col h-auto py-2 px-1"
-        >
-          <Package className="h-5 w-5" />
-          <span className="text-xs mt-1">Deliveries</span>
         </Button>
 
         <Button
