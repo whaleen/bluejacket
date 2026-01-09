@@ -5,13 +5,11 @@ import { DeliveryCard } from "./DeliveryCard";
 import { DeliveryCardCompact } from "./DeliveryCardCompact";
 import { DeliveryFilters } from "./DeliveryFilters";
 import type { ViewMode } from "./ViewToggle";
-import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export function DeliveriesView() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState("");
@@ -68,19 +66,12 @@ export function DeliveriesView() {
       console.error('Error fetching deliveries:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchDeliveries();
   }, []);
-
-  // Handle refresh
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchDeliveries();
-  };
 
   // Handle scanned status change
   const handleScannedChange = async (id: string, scanned: boolean) => {
@@ -236,15 +227,6 @@ export function DeliveriesView() {
       <div className="bg-background border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Deliveries</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </div>
       </div>
 

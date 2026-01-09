@@ -45,7 +45,8 @@ export type InventoryType =
   | 'Staged'
   | 'Inbound'
   | 'FG'
-  | 'LocalStock';
+  | 'LocalStock'
+  | 'Parts';
 
 export type ProductType =
   | 'WASHER'
