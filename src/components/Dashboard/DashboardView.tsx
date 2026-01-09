@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { RefreshCw, Package, Layers, Grid3x3, Box, Loader2 } from 'lucide-react';
+import { Package, Layers, Grid3x3, Box, Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
+import { AppHeader } from '@/components/Navigation/AppHeader';
 
 const INVENTORY_TYPE_COLORS: Record<string, string> = {
   ASIS: '#EF4444',
@@ -13,17 +13,21 @@ const INVENTORY_TYPE_COLORS: Record<string, string> = {
   Staged: '#3B82F6',
   Inbound: '#10B981',
   FG: '#8B5CF6',
-  LocalStock: '#EC4899'
+  LocalStock: '#EC4899',
+  Parts: '#14B8A6'
 };
 
 const PRODUCT_TYPE_COLORS = [
   '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6B7280', '#14B8A6'
 ];
 
-export function DashboardView() {
+interface DashboardViewProps {
+  onSettingsClick: () => void;
+}
+
+export function DashboardView({ onSettingsClick }: DashboardViewProps) {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -44,13 +48,7 @@ export function DashboardView() {
       console.error('Error:', err);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchData();
   };
 
   // Calculate statistics
@@ -102,21 +100,7 @@ export function DashboardView() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-card border-b border-border px-4 py-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <AppHeader title="Dashboard" onSettingsClick={onSettingsClick} />
 
       <div className="p-4 space-y-4">
         {/* Stats Cards */}

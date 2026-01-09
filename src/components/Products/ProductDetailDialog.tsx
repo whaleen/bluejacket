@@ -5,11 +5,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Loader2, Package, Ruler, Weight } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import supabase from '@/lib/supabase';
-import type { Product } from '@/types/inventory';
+import { decodeHTMLEntities } from '@/lib/htmlUtils';
+
+interface Product {
+  id: string;
+  model: string;
+  product_type: string;
+  brand?: string;
+  description?: string;
+  dimensions?: Record<string, any>;
+  image_url?: string;
+  product_url?: string;
+  price?: number;
+  msrp?: number;
+  color?: string;
+  availability?: string;
+  commercial_category?: string;
+}
 
 interface ProductDetailDialogProps {
   open: boolean;
@@ -23,7 +40,7 @@ export function ProductDetailDialog({
   modelNumber,
 }: ProductDetailDialogProps) {
   const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (open && modelNumber) {
@@ -36,162 +53,175 @@ export function ProductDetailDialog({
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('*')
+        .select(`
+          id,
+          model,
+          product_type,
+          brand,
+          description,
+          dimensions,
+          image_url,
+          product_url,
+          price,
+          msrp,
+          color,
+          availability,
+          commercial_category
+        `)
         .eq('model', modelNumber)
         .single();
 
-      if (error) {
-        console.error('Error fetching product:', error);
-        setProduct(null);
-      } else {
-        setProduct(data);
-      }
+      if (error) throw error;
+      setProduct(data);
     } catch (err) {
-      console.error('Error:', err);
+      console.error(err);
       setProduct(null);
     } finally {
       setLoading(false);
     }
   };
 
+  const formatMoney = (value?: number) =>
+    typeof value === 'number'
+      ? `$${value.toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`
+      : '—';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Product Details</DialogTitle>
         </DialogHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : !product ? (
-          <div className="py-12 text-center text-muted-foreground">
-            Product not found in catalog
-          </div>
-        ) : (
-          <div className="space-y-4 py-4">
+        ) : product ? (
+          <div className="space-y-4">
             {/* Header */}
-            <div>
-              <div className="mb-2 flex items-center gap-2">
-                {product.brand && (
-                  <Badge variant="secondary" className="font-semibold">
-                    {product.brand}
-                  </Badge>
-                )}
-                <Badge>{product.product_type}</Badge>
-              </div>
-              <h3 className="mb-1 text-2xl font-bold text-foreground">
-                {product.model}
-              </h3>
-              {product.description && (
-                <p className="text-muted-foreground">
-                  {product.description}
-                </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="secondary" className="text-base">
+                {product.product_type}
+              </Badge>
+              {product.brand && <Badge variant="outline">{product.brand}</Badge>}
+              {product.color && (
+                <Badge variant="outline">Color: {product.color}</Badge>
               )}
             </div>
 
-            {/* Specs Grid */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Dimensions */}
-              {product.dimensions &&
-                Object.keys(product.dimensions).length > 0 && (
-                  <Card className="p-4">
-                    <div className="mb-3 flex items-center gap-2">
-                      <Ruler className="h-5 w-5 text-primary" />
-                      <h4 className="font-semibold text-foreground">
-                        Dimensions
-                      </h4>
-                    </div>
-                    <div className="space-y-1 text-sm">
-                      {product.dimensions.width && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Width:
-                          </span>
-                          <span className="font-mono font-medium">
-                            {product.dimensions.width}"
-                          </span>
-                        </div>
-                      )}
-                      {product.dimensions.height && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Height:
-                          </span>
-                          <span className="font-mono font-medium">
-                            {product.dimensions.height}"
-                          </span>
-                        </div>
-                      )}
-                      {product.dimensions.depth && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Depth:
-                          </span>
-                          <span className="font-mono font-medium">
-                            {product.dimensions.depth}"
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                )}
-
-              {/* Weight */}
-              {product.weight && (
-                <Card className="p-4">
-                  <div className="mb-3 flex items-center gap-2">
-                    <Weight className="h-5 w-5 text-primary" />
-                    <h4 className="font-semibold text-foreground">
-                      Weight
-                    </h4>
-                  </div>
-                  <div className="text-2xl font-bold text-foreground">
-                    {product.weight}
-                    <span className="ml-1 text-sm font-normal text-muted-foreground">
-                      lbs
-                    </span>
-                  </div>
+            {/* Main content */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Image */}
+              {product.image_url && (
+                <Card className="p-3 md:col-span-1">
+                  <img
+                    src={product.image_url}
+                    alt={product.model}
+                    className="w-full rounded-md object-contain"
+                  />
                 </Card>
               )}
-            </div>
 
-            {/* Additional Info */}
-            <Card className="bg-muted p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Package className="h-5 w-5 text-muted-foreground" />
-                <h4 className="font-semibold text-foreground">
-                  Product Information
-                </h4>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              {/* Details */}
+              <Card className="p-4 space-y-3 md:col-span-2">
                 <div>
-                  <span className="text-muted-foreground">
-                    Model Number:
-                  </span>
-                  <div className="font-mono font-semibold text-foreground">
+                  <span className="text-muted-foreground">Model:</span>{' '}
+                  <span className="font-mono font-medium">
                     {product.model}
-                  </div>
+                  </span>
                 </div>
-                {product.brand && (
+
+                {product.description && (
                   <div>
                     <span className="text-muted-foreground">
-                      Brand:
+                      Description:
+                    </span>{' '}
+                    <span className="font-medium">
+                      {decodeHTMLEntities(product.description)}
                     </span>
-                    <div className="font-semibold text-foreground">
-                      {product.brand}
-                    </div>
                   </div>
                 )}
-                <div>
-                  <span className="text-muted-foreground">Type:</span>
-                  <div className="font-semibold text-foreground">
-                    {product.product_type}
+
+                {product.dimensions && (
+                  <div>
+                    <span className="text-muted-foreground">
+                      Dimensions:
+                    </span>{' '}
+                    <span className="font-medium">
+                      {Object.entries(product.dimensions)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(', ')}
+                    </span>
                   </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 text-sm pt-2">
+                  <div>
+                    <span className="text-muted-foreground">Price:</span>{' '}
+                    <span className="font-medium">
+                      {formatMoney(product.price)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">MSRP:</span>{' '}
+                    <span className="font-medium">
+                      {formatMoney(product.msrp)}
+                    </span>
+                  </div>
+
+                  {product.availability && (
+                    <div>
+                      <span className="text-muted-foreground">
+                        Availability:
+                      </span>{' '}
+                      <span className="font-medium">
+                        {product.availability}
+                      </span>
+                    </div>
+                  )}
+
+                  {product.commercial_category && (
+                    <div>
+                      <span className="text-muted-foreground">
+                        Category:
+                      </span>{' '}
+                      <span className="font-medium">
+                        {product.commercial_category}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </Card>
+
+                {/* External link */}
+                {product.product_url && (
+                  <div className="pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      asChild
+                    >
+                      <a
+                        href={product.product_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2"
+                      >
+                        View Product Page
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  </div>
+                )}
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <div className="py-8 text-center text-muted-foreground">
+            Product not found
           </div>
         )}
       </DialogContent>

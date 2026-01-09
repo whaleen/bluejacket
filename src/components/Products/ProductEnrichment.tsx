@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Search, Plus } from 'lucide-react';
 import supabase from '@/lib/supabase';
+import { AppHeader } from '@/components/Navigation/AppHeader';
+import { decodeHTMLEntities } from '@/lib/htmlUtils';
 
 interface ProductData {
   model: string;
@@ -21,7 +23,11 @@ interface ProductData {
   };
 }
 
-export function ProductEnrichment() {
+interface ProductEnrichmentProps {
+  onSettingsClick: () => void;
+}
+
+export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ProductData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -124,11 +130,10 @@ export function ProductEnrichment() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground mb-2">Product Database</h2>
+    <div className="min-h-screen bg-background">
+      <AppHeader title="Product Database" onSettingsClick={onSettingsClick} />
+      <div className="max-w-2xl mx-auto p-6 space-y-6">
         <p className="text-muted-foreground">Look up or add appliance model information</p>
-      </div>
 
       {/* Search Form */}
       {!editMode && (
@@ -197,7 +202,7 @@ export function ProductEnrichment() {
                       )}
                       {product.description && (
                         <p className="text-sm text-muted-foreground">
-                          {product.description}
+                          {decodeHTMLEntities(product.description)}
                         </p>
                       )}
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -410,6 +415,7 @@ export function ProductEnrichment() {
           ))}
         </div>
       </Card>
+      </div>
     </div>
   );
 }

@@ -138,6 +138,7 @@ export function CSVUpload({ open, onOpenChange, onUploadComplete }: CSVUploadPro
                 <SelectItem value="Inbound">Inbound</SelectItem>
                 <SelectItem value="FG">FG (Finished Goods)</SelectItem>
                 <SelectItem value="LocalStock">Local Stock</SelectItem>
+                <SelectItem value="Parts">Parts</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-sm text-gray-500">
