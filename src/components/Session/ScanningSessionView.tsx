@@ -15,12 +15,15 @@ import {
   clearActiveSession
 } from '@/lib/sessionManager';
 import { findMatchingItemsInSession } from '@/lib/sessionScanner';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 
 interface ScanningSessionViewProps {
   onExit: () => void;
 }
 
 export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
+  const { toast } = useToast();
   const [session, setSession] = useState<ScanningSession | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectionDialogOpen, setSelectionDialogOpen] = useState(false);
@@ -28,6 +31,8 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
   const [matchedField, setMatchedField] = useState<'serial' | 'cso' | 'model'>('serial');
   const [scannedValue, setScannedValue] = useState('');
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
 
   // Load session from localStorage
   useEffect(() => {
@@ -105,9 +110,24 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
 
   // Handle session exit
   const handleExit = () => {
-    if (window.confirm('Exit this scanning session? Progress will be saved.')) {
-      onExit();
-    }
+    setExitDialogOpen(true);
+  };
+
+  const confirmExit = () => {
+    onExit();
+    toast({
+      message: 'Session saved. Returning to inventory.',
+      variant: 'success',
+    });
+  };
+
+  const confirmDiscard = () => {
+    clearActiveSession();
+    onExit();
+    toast({
+      message: 'Session discarded.',
+      variant: 'error',
+    });
   };
 
   // Calculate progress
@@ -152,12 +172,7 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              if (window.confirm('End session and discard progress?')) {
-                clearActiveSession();
-                onExit();
-              }
-            }}
+            onClick={() => setDiscardDialogOpen(true)}
           >
             <X className="h-5 w-5" />
           </Button>
@@ -302,6 +317,27 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
         matchedField={matchedField}
         matchedValue={scannedValue}
         onConfirm={handleMultiSelectConfirm}
+      />
+
+      <ConfirmDialog
+        open={exitDialogOpen}
+        onOpenChange={setExitDialogOpen}
+        title="Exit scanning session?"
+        description="Progress will be saved and you can resume later."
+        confirmText="Exit Session"
+        cancelText="Keep Scanning"
+        onConfirm={confirmExit}
+      />
+
+      <ConfirmDialog
+        open={discardDialogOpen}
+        onOpenChange={setDiscardDialogOpen}
+        title="Discard this session?"
+        description="This will end the session and clear progress."
+        confirmText="Discard Session"
+        cancelText="Continue Scanning"
+        destructive
+        onConfirm={confirmDiscard}
       />
     </div>
   );

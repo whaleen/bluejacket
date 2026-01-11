@@ -9,6 +9,7 @@ import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
+import { useToast } from '@/components/ui/toast';
 
 interface ProductData {
   id?: string;
@@ -38,6 +39,7 @@ interface ProductEnrichmentProps {
 }
 
 export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ProductData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -126,7 +128,10 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
         setError(`Failed to save: ${saveError.message}`);
       } else {
         setError(null);
-        alert('Product saved successfully!');
+        toast({
+          message: 'Product saved successfully.',
+          variant: 'success',
+        });
         setSearchTerm('');
         setProductData(null);
         setEditMode(false);
@@ -141,7 +146,7 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader title="Product Database" onSettingsClick={onSettingsClick} />
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <div className="max-w-2xl mx-auto p-6 pb-24 space-y-6">
         <p className="text-muted-foreground">Look up or add appliance model information</p>
 
       {/* Search Form */}

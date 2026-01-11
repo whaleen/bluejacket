@@ -69,7 +69,7 @@ export function CreateLoadView({ onSettingsClick, onViewChange }: CreateLoadView
           </Button>
         }
       />
-      <div className="p-4">
+      <div className="p-4 pb-24">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="inventory-type">Inventory Type</Label>

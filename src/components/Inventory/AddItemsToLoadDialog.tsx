@@ -156,9 +156,9 @@ export function AddItemsToLoadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Move Items to {currentLoadName}</DialogTitle>
+          <DialogTitle>Assign Items to {currentLoadName}</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">
-            Items will be moved from their current load to this load. Each item can only belong to one load at a time.
+            Items will be reassigned from their current load to this load. Each item can only belong to one load at a time.
           </p>
         </DialogHeader>
 
@@ -273,7 +273,7 @@ export function AddItemsToLoadDialog({
             </Button>
             <Button type="submit" disabled={submitting || selectedItems.size === 0}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Move {selectedItems.size} Items to Load
+              Assign {selectedItems.size} Items
             </Button>
           </div>
         </form>

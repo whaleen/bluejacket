@@ -266,7 +266,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
         }
       />
 
-      <div className="p-4">
+      <div className="p-4 pb-24">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'existing' | 'upload')} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="existing">From Existing</TabsTrigger>

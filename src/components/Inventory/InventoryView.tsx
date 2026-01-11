@@ -17,7 +17,7 @@ import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { getActiveSession } from '@/lib/sessionManager';
-import { Loader2, Search, ExternalLink, PackageOpen, ScanBarcode } from 'lucide-react';
+import { Loader2, Search, ExternalLink, PackageOpen, ScanBarcode, ChevronRight, X } from 'lucide-react';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -234,6 +234,42 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
     });
   }, [items, searchTerm, inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter]);
 
+  const activeFilters = [
+    searchTerm && {
+      key: 'search',
+      label: `Search: ${searchTerm}`,
+      clear: () => setSearchTerm(''),
+    },
+    inventoryTypeFilter !== 'all' && {
+      key: 'type',
+      label: `Type: ${inventoryTypeFilter}`,
+      clear: () => setInventoryTypeFilter('all'),
+    },
+    subInventoryFilter !== 'all' && {
+      key: 'sub',
+      label: `Load: ${subInventoryFilter}`,
+      clear: () => setSubInventoryFilter('all'),
+    },
+    productCategoryFilter !== 'all' && {
+      key: 'category',
+      label: `Category: ${productCategoryFilter}`,
+      clear: () => setProductCategoryFilter('all'),
+    },
+    brandFilter !== 'all' && {
+      key: 'brand',
+      label: `Brand: ${brandFilter}`,
+      clear: () => setBrandFilter('all'),
+    },
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
+
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setInventoryTypeFilter('all');
+    setSubInventoryFilter('all');
+    setProductCategoryFilter('all');
+    setBrandFilter('all');
+  };
+
   if (activeSessionView) {
     return <ScanningSessionView onExit={handleSessionExit} />;
   }
@@ -351,6 +387,29 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
             </SelectContent>
           </Select>
         )}
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {filteredItems.length} of {items.length} items
+          </span>
+          {activeFilters.map((filter) => (
+            <Button
+              key={filter.key}
+              size="sm"
+              variant="outline"
+              className="h-7 px-2"
+              onClick={filter.clear}
+            >
+              <span className="truncate">{filter.label}</span>
+              <X className="ml-1 h-3 w-3" />
+            </Button>
+          ))}
+          {activeFilters.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={clearAllFilters}>
+              Clear all
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Inventory List */}
@@ -358,63 +417,73 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
         {filteredItems.map(item => (
           <Card
             key={item.id as string}
-            className="p-4 cursor-pointer hover:bg-accent transition"
-            onClick={() => handleViewItem(item.id as string)}
+            className="p-4 transition"
           >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">
-                  {item.products?.product_type ?? item.product_type}
-                </span>
-                <Badge variant="secondary">{item.inventory_type}</Badge>
-                {item.is_scanned && <Badge variant="outline">Scanned</Badge>}
-              </div>
-
-              {item.products && (
-                <>
-                  {item.products.brand && (
-                    <Badge variant="outline">{item.products.brand}</Badge>
-                  )}
-                  {item.products.description && (
-                    <p className="text-sm text-muted-foreground">
-                      {item.products.description}
-                    </p>
-                  )}
-                </>
-              )}
-
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">CSO:</span>{' '}
-                  <span className="font-mono">{item.cso}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Serial:</span>{' '}
-                  <span className="font-mono">{item.serial ?? '-'}</span>
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">
+                    {item.products?.product_type ?? item.product_type}
+                  </span>
+                  <Badge variant="secondary">{item.inventory_type}</Badge>
+                  {item.is_scanned && <Badge variant="outline">Scanned</Badge>}
                 </div>
 
-                <div className="col-span-2">
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (item.products) {
-                        handleViewProduct(item.products.model);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                  >
-                    {item.products?.model ?? item.model}
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
-                </div>
-
-                {item.route_id && (
-                  <div>
-                    <span className="text-muted-foreground">Route:</span>{' '}
-                    <span className="font-mono">{item.route_id}</span>
-                  </div>
+                {item.products && (
+                  <>
+                    {item.products.brand && (
+                      <Badge variant="outline">{item.products.brand}</Badge>
+                    )}
+                    {item.products.description && (
+                      <p className="text-sm text-muted-foreground">
+                        {item.products.description}
+                      </p>
+                    )}
+                  </>
                 )}
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">CSO:</span>{' '}
+                    <span className="font-mono">{item.cso}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Serial:</span>{' '}
+                    <span className="font-mono">{item.serial ?? '-'}</span>
+                  </div>
+
+                  <div className="col-span-2">
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (item.products) {
+                          handleViewProduct(item.products.model);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                    >
+                      {item.products?.model ?? item.model}
+                      <ExternalLink className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  {item.route_id && (
+                    <div>
+                      <span className="text-muted-foreground">Route:</span>{' '}
+                      <span className="font-mono">{item.route_id}</span>
+                    </div>
+                  )}
+                </div>
               </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => handleViewItem(item.id as string)}
+              >
+                Details
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
             </div>
           </Card>
         ))}

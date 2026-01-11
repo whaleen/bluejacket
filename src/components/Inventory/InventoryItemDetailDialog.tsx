@@ -8,10 +8,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, ExternalLink } from 'lucide-react';
+import { Loader2, ExternalLink, ArrowRightLeft } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
+import { ChangeItemAssignmentDialog } from './ChangeItemAssignmentDialog';
 
 // interface InventoryItemWithProduct extends InventoryItem {
 //   products: {
@@ -48,6 +49,7 @@ export function InventoryItemDetailDialog({
   useState<InventoryItem | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [changeDialogOpen, setChangeDialogOpen] = useState(false);
 
   useEffect(() => {
     if (open && itemId) {
@@ -98,8 +100,9 @@ export function InventoryItemDetailDialog({
       : '—';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Inventory Item Details</DialogTitle>
         </DialogHeader>
@@ -133,6 +136,17 @@ export function InventoryItemDetailDialog({
                   Color: {item.products.color}
                 </Badge>
               )}
+            </div>
+
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setChangeDialogOpen(true)}
+              >
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                Change Type/Load
+              </Button>
             </div>
 
 {/* Inventory Details */}
@@ -331,7 +345,19 @@ export function InventoryItemDetailDialog({
             Item not found
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      {item && (
+        <ChangeItemAssignmentDialog
+          open={changeDialogOpen}
+          onOpenChange={setChangeDialogOpen}
+          itemIds={item.id ? [item.id] : []}
+          currentInventoryType={item.inventory_type}
+          currentSubInventory={item.sub_inventory}
+          onSuccess={fetchItemDetails}
+        />
+      )}
+    </>
   );
 }

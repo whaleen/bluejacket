@@ -3,8 +3,12 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
+import { qrcode } from "vite-plugin-qrcode"
 
 export default defineConfig({
+  server: {
+    host: true, // <- key: exposes to LAN + prints Network URL
+  },
   build: {
     rollupOptions: {
       output: {
@@ -28,6 +32,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    qrcode(), // <- prints QR code in terminal
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],

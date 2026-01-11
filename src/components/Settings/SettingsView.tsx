@@ -30,7 +30,7 @@ export function SettingsView({ onSettingsClick }: SettingsViewProps) {
     <div className="min-h-screen bg-background">
       <AppHeader title="Settings" onSettingsClick={onSettingsClick} />
 
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <div className="max-w-2xl mx-auto p-6 pb-24 space-y-6">
         <Card className="p-6 space-y-6">
           <div className="flex items-center gap-3 pb-4 border-b border-border">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">

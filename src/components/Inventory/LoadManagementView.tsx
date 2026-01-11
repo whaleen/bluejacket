@@ -4,13 +4,15 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Plus, Edit, Merge, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Edit, Merge, Trash2, ChevronRight } from 'lucide-react';
 import { getAllLoads, getLoadItemCount, updateLoadStatus, deleteLoad } from '@/lib/loadManager';
 import type { LoadMetadata, InventoryType, LoadStatus } from '@/types/inventory';
 import { RenameLoadDialog } from './RenameLoadDialog';
 import { MergeLoadsDialog } from './MergeLoadsDialog';
 import { LoadDetailDialog } from './LoadDetailDialog';
 import { AppHeader } from '@/components/Navigation/AppHeader';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
 
 interface LoadWithCount extends LoadMetadata {
   item_count: number;
@@ -22,6 +24,7 @@ interface LoadManagementViewProps {
 }
 
 export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManagementViewProps) {
+  const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState<InventoryType>('ASIS');
   const [loads, setLoads] = useState<LoadWithCount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +39,8 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [selectedLoadForRename, setSelectedLoadForRename] = useState<LoadMetadata | null>(null);
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [loadPendingDelete, setLoadPendingDelete] = useState<LoadMetadata | null>(null);
 
   const fetchLoads = async () => {
     setLoading(true);
@@ -112,38 +117,42 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
     setDetailDialogOpen(true);
   };
 
-  const handleRenameClick = (load: LoadMetadata, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRenameClick = (load: LoadMetadata) => {
     setSelectedLoadForRename(load);
     setRenameDialogOpen(true);
   };
 
-  const handleDeleteClick = async (load: LoadMetadata, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteClick = (load: LoadMetadata) => {
+    setLoadPendingDelete(load);
+    setDeleteDialogOpen(true);
+  };
 
-    const confirmed = confirm(
-      `Delete load "${load.sub_inventory_name}"?\n\n` +
-      `This will remove the load metadata but keep all ${load.inventory_type} items. ` +
-      `Items will no longer be assigned to this load.`
-    );
-
-    if (!confirmed) return;
+  const confirmDelete = async () => {
+    if (!loadPendingDelete) return;
 
     const { success, error } = await deleteLoad(
-      load.inventory_type,
-      load.sub_inventory_name,
+      loadPendingDelete.inventory_type,
+      loadPendingDelete.sub_inventory_name,
       true // clearItems - set sub_inventory to null
     );
 
     if (success) {
+      toast({
+        message: `Deleted load "${loadPendingDelete.sub_inventory_name}".`,
+        variant: 'success',
+      });
       fetchLoads();
     } else {
-      alert(`Failed to delete load: ${error?.message || 'Unknown error'}`);
+      toast({
+        message: `Failed to delete load: ${error?.message || 'Unknown error'}`,
+        variant: 'error',
+      });
     }
+
+    setLoadPendingDelete(null);
   };
 
-  const toggleLoadSelection = (loadId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleLoadSelection = (loadId: string) => {
     const newSelection = new Set(selectedLoads);
     if (newSelection.has(loadId)) {
       newSelection.delete(loadId);
@@ -287,16 +296,14 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
                   {filteredLoads.map((load) => (
                     <Card
                       key={load.id}
-                      className="p-4 cursor-pointer hover:bg-accent transition"
-                      onClick={() => handleLoadClick(load)}
+                      className="p-4 hover:bg-accent/30 transition"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3 flex-1">
                           <input
                             type="checkbox"
                             checked={selectedLoads.has(load.id!)}
-                            onChange={(e) => toggleLoadSelection(load.id!, e as any)}
-                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleLoadSelection(load.id!)}
                             className="mt-1"
                           />
                           <div className="flex-1">
@@ -320,7 +327,15 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleLoadClick(load)}
+                          >
+                            View
+                            <ChevronRight className="ml-1 h-4 w-4" />
+                          </Button>
                           <Select
                             value={load.status}
                             onValueChange={(v) => handleStatusChange(load, v as LoadStatus)}
@@ -339,7 +354,7 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={(e) => handleRenameClick(load, e)}
+                            onClick={() => handleRenameClick(load)}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -347,7 +362,7 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={(e) => handleDeleteClick(load, e)}
+                            onClick={() => handleDeleteClick(load)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -395,6 +410,28 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setLoadPendingDelete(null);
+        }}
+        title={
+          loadPendingDelete
+            ? `Delete load "${loadPendingDelete.sub_inventory_name}"?`
+            : "Delete load?"
+        }
+        description={
+          loadPendingDelete
+            ? `This removes the load metadata but keeps all ${loadPendingDelete.inventory_type} items. Items will no longer be assigned to this load.`
+            : undefined
+        }
+        confirmText="Delete Load"
+        cancelText="Keep Load"
+        destructive
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }
