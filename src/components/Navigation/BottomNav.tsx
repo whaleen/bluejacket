@@ -1,15 +1,15 @@
 import { Button } from "@/components/ui/button";
-import { ScanBarcode, Database, LayoutDashboard } from "lucide-react";
+import { ScanBarcode, Database, LayoutDashboard, TruckIcon } from "lucide-react";
 
 interface BottomNavProps {
-  currentView: 'dashboard' | 'inventory' | 'products' | 'settings';
-  onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings') => void;
+  currentView: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads';
+  onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads') => void;
 }
 
 export function BottomNav({ currentView, onViewChange }: BottomNavProps) {
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 py-2 safe-area-pb">
-      <div className="grid grid-cols-3 gap-1">
+      <div className="grid grid-cols-4 gap-1">
         <Button
           variant={currentView === 'dashboard' ? 'default' : 'ghost'}
           onClick={() => onViewChange('dashboard')}
@@ -28,6 +28,16 @@ export function BottomNav({ currentView, onViewChange }: BottomNavProps) {
         >
           <ScanBarcode className="h-5 w-5" />
           <span className="text-xs mt-1">Inventory</span>
+        </Button>
+
+        <Button
+          variant={currentView === 'loads' ? 'default' : 'ghost'}
+          onClick={() => onViewChange('loads')}
+          size="sm"
+          className="flex-col h-auto py-2 px-1"
+        >
+          <TruckIcon className="h-5 w-5" />
+          <span className="text-xs mt-1">Loads</span>
         </Button>
 
         <Button

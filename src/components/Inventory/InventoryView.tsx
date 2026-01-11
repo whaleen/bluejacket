@@ -16,7 +16,6 @@ import { CreateSessionDialog } from '@/components/Session/CreateSessionDialog';
 import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
-import { LoadManagementDialog } from './LoadManagementDialog';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import {
   saveSession,
@@ -42,16 +41,27 @@ type InventoryItemWithProduct = InventoryItem & {
 
 interface InventoryViewProps {
   onSettingsClick: () => void;
+  onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads') => void;
 }
 
-export function InventoryView({ onSettingsClick }: InventoryViewProps) {
+export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewProps) {
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Read filter from URL on mount
+  const getInitialFilter = (): 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts' => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type');
+    if (type === 'ASIS' || type === 'FG' || type === 'LocalStock' || type === 'Parts') {
+      return type;
+    }
+    return 'all';
+  };
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryTypeFilter, setInventoryTypeFilter] =
-    useState<'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts'>('all');
+    useState<'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts'>(getInitialFilter);
   const [subInventoryFilter, setSubInventoryFilter] = useState('all');
   const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'part' | 'accessory'>('all');
   const [brandFilter, setBrandFilter] = useState('all');
@@ -63,7 +73,6 @@ export function InventoryView({ onSettingsClick }: InventoryViewProps) {
   const [selectedModel, setSelectedModel] = useState('');
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
-  const [loadManagementOpen, setLoadManagementOpen] = useState(false);
 
   useEffect(() => {
     if (getActiveSession()) {
@@ -71,31 +80,61 @@ export function InventoryView({ onSettingsClick }: InventoryViewProps) {
     }
   }, []);
 
+  // Update URL when filter changes
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (inventoryTypeFilter !== 'all') {
+      params.set('type', inventoryTypeFilter);
+    } else {
+      params.delete('type');
+    }
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    window.history.replaceState({}, '', newUrl);
+  }, [inventoryTypeFilter]);
+
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('inventory_items')
-        .select(
-          `
-          *,
-          products:product_fk (
-            id,
-            model,
-            product_type,
-            brand,
-            description,
-            dimensions,
-            image_url,
-            product_url,
-            product_category
-          )
-        `,
-        )
-        .order('created_at', { ascending: false });
+      // Fetch ALL items in batches
+      let allItems: any[] = [];
+      let from = 0;
+      const batchSize = 1000;
+      let hasMore = true;
 
-      if (error) throw error;
-      setItems(data ?? []);
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('inventory_items')
+          .select(
+            `
+            *,
+            products:product_fk (
+              id,
+              model,
+              product_type,
+              brand,
+              description,
+              dimensions,
+              image_url,
+              product_url,
+              product_category
+            )
+          `,
+          )
+          .range(from, from + batchSize - 1)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allItems = [...allItems, ...data];
+          from += batchSize;
+          hasMore = data.length === batchSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setItems(allItems);
     } catch (err) {
       console.error(err);
     } finally {
@@ -228,7 +267,7 @@ export function InventoryView({ onSettingsClick }: InventoryViewProps) {
         onSettingsClick={onSettingsClick}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setLoadManagementOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => onViewChange('loads')}>
               <PackageOpen className="mr-2 h-4 w-4" />
               Manage Loads
             </Button>
@@ -412,10 +451,7 @@ export function InventoryView({ onSettingsClick }: InventoryViewProps) {
         itemId={selectedItemId}
       />
 
-      <LoadManagementDialog
-        open={loadManagementOpen}
-        onOpenChange={setLoadManagementOpen}
-      />
+      
     </div>
   );
 }
