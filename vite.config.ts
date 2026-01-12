@@ -14,14 +14,10 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            // Group heavy/frequently-updated deps separately
+            // Keep supabase isolated; everything else in a single vendor chunk to avoid React cycles.
             if (id.includes('supabase') || id.includes('@supabase')) {
               return 'vendor-supabase';
             }
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-              return 'vendor-react';
-            }
-            // Everything else vendor → one big but stable chunk
             return 'vendor';
           }
           // Your src code stays in main chunks (or split later)
@@ -34,7 +30,7 @@ export default defineConfig({
     tailwindcss(),
     qrcode(), // <- prints QR code in terminal
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
         name: 'Warehouse Inventory Scanner',

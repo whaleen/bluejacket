@@ -11,6 +11,7 @@ import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/Navigation/AppSidebar";
 import { getPathForView, parseRoute, type AppView } from "@/lib/routes";
+import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 
 function App() {
   const { user, loading } = useAuth();
@@ -151,6 +152,7 @@ function App() {
           </div>
         </div>
       </div>
+      <PwaUpdatePrompt />
     </ThemeProvider>
   );
 }

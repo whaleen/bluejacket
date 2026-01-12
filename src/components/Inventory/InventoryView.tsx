@@ -10,7 +10,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-// import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
@@ -22,7 +21,7 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X } from 'lucide-react';
+import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X, FileText, PackageSearch } from 'lucide-react';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 
 type InventoryItemWithProduct = InventoryItem & {
@@ -520,10 +519,40 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
               key={item.id as string}
               item={item}
               onClick={() => handleViewItem(item.id as string)}
-              onModelClick={
-                item.products
-                  ? () => handleViewProduct(item.products?.model ?? item.model)
-                  : undefined
+              actions={
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleViewItem(item.id as string);
+                    }}
+                  >
+                    <FileText className="mr-1 h-3 w-3" />
+                    <span>Item</span>
+                    <span className="hidden sm:inline">&nbsp;details</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (item.products?.model || item.model) {
+                        handleViewProduct(item.products?.model ?? item.model);
+                      }
+                    }}
+                    disabled={!item.products?.model && !item.model}
+                  >
+                    <PackageSearch className="mr-1 h-3 w-3" />
+                    <span>Product</span>
+                    <span className="hidden sm:inline">&nbsp;details</span>
+                  </Button>
+                </>
               }
               showImage={isImageView}
               showInventoryTypeBadge
