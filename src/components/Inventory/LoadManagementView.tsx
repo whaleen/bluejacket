@@ -13,6 +13,7 @@ import { LoadDetailDialog } from './LoadDetailDialog';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface LoadWithCount extends LoadMetadata {
   item_count: number;
@@ -21,9 +22,10 @@ interface LoadWithCount extends LoadMetadata {
 interface LoadManagementViewProps {
   onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load') => void;
+  onMenuClick?: () => void;
 }
 
-export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManagementViewProps) {
+export function LoadManagementView({ onSettingsClick, onViewChange, onMenuClick }: LoadManagementViewProps) {
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState<InventoryType>('ASIS');
   const [loads, setLoads] = useState<LoadWithCount[]>([]);
@@ -198,8 +200,9 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
         <AppHeader
           title="Load Management"
           onSettingsClick={onSettingsClick}
+          onMenuClick={onMenuClick}
           actions={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {selectedLoads.size >= 2 && (
                 <Button
                   size="sm"
@@ -218,18 +221,18 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
           }
         />
 
-        <div className="p-4 space-y-4 pb-24">
+        <PageContainer className="py-4 space-y-4 pb-24">
           <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as InventoryType)} className="flex-1 overflow-hidden flex flex-col">
-            <TabsList className="grid grid-cols-3 w-full">
+            <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3">
               <TabsTrigger value="ASIS">ASIS</TabsTrigger>
               <TabsTrigger value="FG">FG</TabsTrigger>
               <TabsTrigger value="LocalStock">Local Stock</TabsTrigger>
             </TabsList>
 
-            <div className="px-1 py-3 border-b flex gap-3">
+            <div className="px-1 py-3 border-b flex flex-wrap gap-3">
               {getSubTypeOptions().length > 0 && (
                 <Select value={subTypeFilter} onValueChange={(v) => setSubTypeFilter(v as 'all' | InventoryType)}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -245,7 +248,7 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
 
               {getCategoryOptions().length > 0 && (
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -260,7 +263,7 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
               )}
 
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | LoadStatus)}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -374,7 +377,7 @@ export function LoadManagementView({ onSettingsClick, onViewChange }: LoadManage
               )}
             </TabsContent>
           </Tabs>
-        </div>
+        </PageContainer>
       </div>
 
       

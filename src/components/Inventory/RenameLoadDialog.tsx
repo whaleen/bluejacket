@@ -17,14 +17,14 @@ interface RenameLoadDialogProps {
 
 export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: RenameLoadDialogProps) {
   const [newName, setNewName] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState('none');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setNewName(load.sub_inventory_name);
-      setCategory(load.category || '');
+      setCategory(load.category || 'none');
       setError(null);
     }
   }, [open, load]);
@@ -37,8 +37,9 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
       return;
     }
 
+    const normalizedCategory = category === 'none' ? '' : category;
     const nameChanged = newName.trim() !== load.sub_inventory_name;
-    const categoryChanged = category.trim() !== (load.category || '');
+    const categoryChanged = normalizedCategory.trim() !== (load.category || '');
 
     if (!nameChanged && !categoryChanged) {
       setError('No changes to save');
@@ -68,7 +69,7 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
       const { success, error: updateError } = await updateLoadMetadata(
         load.inventory_type,
         nameChanged ? newName.trim() : load.sub_inventory_name,
-        { category: category.trim() || undefined }
+        { category: normalizedCategory.trim() || undefined }
       );
 
       if (!success) {
@@ -118,12 +119,12 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
               <Label htmlFor="category">Category (Optional)</Label>
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger id="category">
-                  <SelectValue placeholder="Select category..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {load.inventory_type === 'ASIS' && (
-                    <>
+                <SelectValue placeholder="Select category..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {load.inventory_type === 'ASIS' && (
+                  <>
                       <SelectItem value="Regular">Regular</SelectItem>
                       <SelectItem value="Salvage">Salvage</SelectItem>
                     </>

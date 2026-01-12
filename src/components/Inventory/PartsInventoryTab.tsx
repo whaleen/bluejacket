@@ -1,0 +1,420 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Loader2, AlertTriangle, Check, Package, ShoppingCart, Camera } from 'lucide-react';
+import {
+  getTrackedParts,
+  updatePartCount,
+  markAsReordered,
+  snapshotTrackedParts
+} from '@/lib/partsManager';
+import type { TrackedPartWithDetails } from '@/types/inventory';
+import { usePartsListView } from '@/hooks/usePartsListView';
+import { PartsListViewToggle } from './PartsListViewToggle';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+
+interface PartsInventoryTabProps {
+  searchTerm: string;
+  statusFilter?: 'all' | 'reorder';
+  onRefresh?: () => void;
+}
+
+export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh }: PartsInventoryTabProps) {
+  const [parts, setParts] = useState<TrackedPartWithDetails[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [snapshotting, setSnapshotting] = useState(false);
+  const [reasonDialogOpen, setReasonDialogOpen] = useState(false);
+  const [pendingPart, setPendingPart] = useState<TrackedPartWithDetails | null>(null);
+  const [pendingQty, setPendingQty] = useState<number | null>(null);
+  const [selectedReason, setSelectedReason] = useState<'usage' | 'return' | 'restock' | ''>('');
+  const { view, setView, isImageView } = usePartsListView();
+
+  const fetchParts = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await getTrackedParts();
+    if (error) {
+      console.error('Failed to fetch tracked parts:', error);
+    }
+    setParts(data ?? []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchParts();
+  }, [fetchParts]);
+
+  const handleStartEdit = (part: TrackedPartWithDetails) => {
+    setEditingId(part.id);
+    setEditValue(part.current_qty.toString());
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditValue('');
+  };
+
+  const handleSaveCount = async (part: TrackedPartWithDetails) => {
+    const newQty = parseInt(editValue, 10);
+    if (isNaN(newQty) || newQty < 0) {
+      handleCancelEdit();
+      return;
+    }
+
+    if (newQty === part.current_qty) {
+      handleCancelEdit();
+      return;
+    }
+
+    setPendingPart(part);
+    setPendingQty(newQty);
+    setSelectedReason('');
+    setReasonDialogOpen(true);
+    handleCancelEdit();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, part: TrackedPartWithDetails) => {
+    if (e.key === 'Enter') {
+      handleSaveCount(part);
+    } else if (e.key === 'Escape') {
+      handleCancelEdit();
+    }
+  };
+
+  const handleMarkReordered = async (part: TrackedPartWithDetails) => {
+    setMarkingId(part.id);
+    const { success, error } = await markAsReordered(part.id);
+
+    if (success) {
+      setParts(prev =>
+        prev.map(p =>
+          p.id === part.id ? { ...p, reordered_at: new Date().toISOString() } : p
+        )
+      );
+      onRefresh?.();
+    } else {
+      console.error('Failed to mark as reordered:', error);
+    }
+    setMarkingId(null);
+  };
+
+  const handleSnapshotAll = async () => {
+    if (parts.length === 0 || snapshotting) return;
+
+    setSnapshotting(true);
+    const { success, error } = await snapshotTrackedParts(parts);
+    if (!success) {
+      console.error('Failed to snapshot counts:', error);
+    }
+    setSnapshotting(false);
+  };
+
+  const handleConfirmReason = async () => {
+    if (!pendingPart || pendingQty === null || !selectedReason) return;
+
+    setUpdating(pendingPart.id);
+    const { success, error } = await updatePartCount(
+      pendingPart.product_id,
+      pendingQty,
+      undefined,
+      undefined,
+      selectedReason
+    );
+
+    if (success) {
+      setParts(prev =>
+        prev.map(p => {
+          if (p.id !== pendingPart.id) return p;
+          const shouldClearReordered =
+            p.reordered_at && pendingQty > p.reorder_threshold;
+          return {
+            ...p,
+            current_qty: pendingQty,
+            reordered_at: shouldClearReordered ? null : p.reordered_at
+          };
+        })
+      );
+      onRefresh?.();
+    } else {
+      console.error('Failed to update count:', error);
+    }
+
+    setUpdating(null);
+    setReasonDialogOpen(false);
+    setPendingPart(null);
+    setPendingQty(null);
+    setSelectedReason('');
+  };
+
+  const handleCancelReason = () => {
+    setReasonDialogOpen(false);
+    setPendingPart(null);
+    setPendingQty(null);
+    setSelectedReason('');
+  };
+
+  const getStatusBadge = (part: TrackedPartWithDetails) => {
+    const { current_qty, reorder_threshold, reordered_at } = part;
+
+    // If reordered, show reordered badge
+    if (reordered_at && current_qty <= reorder_threshold) {
+      return (
+        <Badge variant="outline" className="text-green-600 border-green-600">
+          Reordered
+        </Badge>
+      );
+    }
+
+    if (current_qty === 0) {
+      return <Badge variant="destructive">OUT</Badge>;
+    }
+    if (current_qty <= reorder_threshold) {
+      return (
+        <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          LOW
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="secondary">
+        <Check className="h-3 w-3 mr-1" />
+        OK
+      </Badge>
+    );
+  };
+
+  const needsReorder = (part: TrackedPartWithDetails) => {
+    return part.current_qty <= part.reorder_threshold && !part.reordered_at;
+  };
+
+  const filteredParts = parts.filter(part => {
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      part.products?.model?.toLowerCase().includes(q) ||
+      part.products?.description?.toLowerCase().includes(q) ||
+      part.products?.brand?.toLowerCase().includes(q)
+    );
+  });
+  const statusFilteredParts =
+    statusFilter === 'reorder'
+      ? filteredParts.filter(part => needsReorder(part))
+      : filteredParts;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 gap-2">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        <span>Loading tracked parts...</span>
+      </div>
+    );
+  }
+
+  if (parts.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Package className="h-12 w-12 text-muted-foreground mb-4" />
+        <h3 className="text-lg font-medium mb-2">No Parts Being Tracked</h3>
+        <p className="text-muted-foreground text-sm max-w-sm">
+          Go to the "Tracked Parts" tab to add parts you want to monitor for inventory counts.
+        </p>
+      </div>
+    );
+  }
+
+  if (statusFilteredParts.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <p className="text-muted-foreground">
+          {statusFilter === 'reorder'
+            ? searchTerm
+              ? 'No parts needing reorder match your search.'
+              : 'No parts need reordering right now.'
+            : 'No parts match your search.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <PartsListViewToggle view={view} onChange={setView} />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSnapshotAll}
+          disabled={snapshotting || parts.length === 0}
+        >
+          {snapshotting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Snapshotting...
+            </>
+          ) : (
+            <>
+              <Camera className="h-4 w-4 mr-2" />
+              Snapshot All
+            </>
+          )}
+        </Button>
+      </div>
+      {statusFilteredParts.map(part => (
+        <Card key={part.id} className="p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              {isImageView && (
+                <div className="h-10 w-10 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                  {part.products?.image_url ? (
+                    <img
+                      src={part.products.image_url}
+                      alt={part.products?.model ?? 'Part image'}
+                      className="h-full w-full object-contain"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono font-medium truncate">
+                    {part.products?.model ?? 'Unknown'}
+                  </span>
+                  {part.products?.brand && (
+                    <Badge variant="outline" className="shrink-0">
+                      {part.products.brand}
+                    </Badge>
+                  )}
+                </div>
+                {part.products?.description && (
+                  <p className="text-sm text-muted-foreground truncate">
+                    {part.products.description}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Reorder at: {part.reorder_threshold}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              {editingId === part.id ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onKeyDown={e => handleKeyDown(e, part)}
+                    onBlur={() => handleSaveCount(part)}
+                    autoFocus
+                    className="w-20 text-center"
+                    disabled={updating === part.id}
+                  />
+                  {updating === part.id && (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  )}
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleStartEdit(part)}
+                  className="w-20 font-mono text-lg"
+                >
+                  {part.current_qty}
+                </Button>
+              )}
+
+              {getStatusBadge(part)}
+
+              {needsReorder(part) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleMarkReordered(part)}
+                  disabled={markingId === part.id}
+                  title="Mark as reordered"
+                >
+                  {markingId === part.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ShoppingCart className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      <Dialog open={reasonDialogOpen} onOpenChange={(open) => {
+        if (!open) handleCancelReason();
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Why did this count change?</DialogTitle>
+            <DialogDescription>
+              Pick a reason so we can estimate usage rates later.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <RadioGroup
+              value={selectedReason}
+              onValueChange={(value) =>
+                setSelectedReason(value as 'usage' | 'return' | 'restock')
+              }
+              className="gap-3"
+            >
+              <div className="flex items-center gap-3">
+                <RadioGroupItem id="reason-usage" value="usage" />
+                <Label htmlFor="reason-usage">Usage</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <RadioGroupItem id="reason-return" value="return" />
+                <Label htmlFor="reason-return">Return</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <RadioGroupItem id="reason-restock" value="restock" />
+                <Label htmlFor="reason-restock">Restock</Label>
+              </div>
+            </RadioGroup>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={handleCancelReason}>
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmReason} disabled={!selectedReason || updating !== null}>
+                {updating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save'
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -8,11 +8,14 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import supabase from '@/lib/supabase';
 import { getAllLoads } from '@/lib/loadManager';
 import { AppHeader } from '@/components/Navigation/AppHeader';
+import { ReorderAlertsCard } from './ReorderAlertsCard';
 import { useAuth } from '@/context/AuthContext';
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface DashboardViewProps {
   onSettingsClick: () => void;
   onViewChange?: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads') => void;
+  onMenuClick?: () => void;
 }
 
 interface DetailedStats {
@@ -51,7 +54,7 @@ interface DetailedStats {
   };
 }
 
-export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewProps) {
+export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: DashboardViewProps) {
   const { user } = useAuth();
   const [stats, setStats] = useState<DetailedStats>({
     totalItems: 0,
@@ -66,13 +69,30 @@ export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewPr
   const [loadDetails, setLoadDetails] = useState<Record<string, { loadName: string; count: number; category?: string }[]>>({});
 
   // Helper to navigate to inventory with filter
-  const navigateToInventory = (filterType?: 'LocalStock' | 'FG' | 'ASIS') => {
+  const navigateToInventory = (filterType?: 'LocalStock' | 'FG' | 'ASIS' | 'Parts') => {
     if (filterType) {
       const params = new URLSearchParams(window.location.search);
       params.set('view', 'inventory');
       params.set('type', filterType);
       window.history.replaceState({}, '', `?${params.toString()}`);
+      window.dispatchEvent(new Event('app:locationchange'));
     }
+    onViewChange?.('inventory');
+  };
+
+  // Helper to navigate to Parts inventory
+  const navigateToPartsInventory = (status?: 'reorder') => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'inventory');
+    params.set('type', 'Parts');
+    params.set('partsTab', 'inventory');
+    if (status === 'reorder') {
+      params.set('partsStatus', 'reorder');
+    } else {
+      params.delete('partsStatus');
+    }
+    window.history.replaceState({}, '', `?${params.toString()}`);
+    window.dispatchEvent(new Event('app:locationchange'));
     onViewChange?.('inventory');
   };
 
@@ -311,13 +331,13 @@ export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewPr
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Dashboard" onSettingsClick={onSettingsClick} />
+      <AppHeader title="Dashboard" onSettingsClick={onSettingsClick} onMenuClick={onMenuClick} />
 
-      <div className="p-4 space-y-6 pb-24">
+      <PageContainer className="py-4 space-y-6 pb-24">
         {/* Welcome Header with Quick Stats */}
         <Card className="p-6 bg-gradient-to-r from-primary/10 to-primary/5">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
                   {user?.image ? (
@@ -337,14 +357,14 @@ export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewPr
                   </p>
                 </div>
               </div>
-              <Badge variant="outline" className="text-sm">
+              <Badge variant="outline" className="text-sm w-fit">
                 <Activity className="mr-2 h-3 w-3" />
                 {stats.totalItems} Items
               </Badge>
             </div>
 
             {/* Quick Action Buttons */}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => navigateToInventory()}>
                 <ScanBarcode className="mr-2 h-4 w-4" />
                 Start Scanning
@@ -361,6 +381,9 @@ export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewPr
             </div>
           </div>
         </Card>
+
+        {/* Reorder Alerts */}
+        <ReorderAlertsCard onViewParts={() => navigateToPartsInventory('reorder')} />
 
         {/* Interactive Donut Chart */}
         <Card className="p-6">
@@ -639,7 +662,7 @@ export function DashboardView({ onSettingsClick, onViewChange }: DashboardViewPr
             </Card>
           </div>
         </div>
-      </div>
+      </PageContainer>
     </div>
   );
 }

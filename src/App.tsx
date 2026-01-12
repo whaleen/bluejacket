@@ -1,7 +1,6 @@
 import { LoadManagementView } from "@/components/Inventory/LoadManagementView";
 import { CreateLoadView } from "@/components/Inventory/CreateLoadView";
 import { CreateSessionView } from "@/components/Session/CreateSessionView";
-import { BottomNav } from "@/components/Navigation/BottomNav";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
 import { LoginCard } from "@/components/Auth/LoginCard";
@@ -10,6 +9,7 @@ import { ProductEnrichment } from "./components/Products/ProductEnrichment";
 import { InventoryView } from "./components/Inventory/InventoryView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
+import { AppSidebar } from "./components/Navigation/AppSidebar";
 
 function App() {
   const { user, loading } = useAuth();
@@ -27,6 +27,12 @@ function App() {
   const [currentView, setCurrentView] = useState<
     "dashboard" | "inventory" | "products" | "settings" | "loads" | "create-load" | "create-session"
   >(getInitialView);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleViewChange = (view: typeof currentView) => {
+    setCurrentView(view);
+    setSidebarOpen(false);
+  };
 
   // Update URL when view changes
   useEffect(() => {
@@ -35,11 +41,14 @@ function App() {
       params.delete('view');
       // Clear filters when going to dashboard
       params.delete('type');
+      params.delete('partsTab');
+      params.delete('partsStatus');
     } else {
       params.set('view', currentView);
     }
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
+    window.dispatchEvent(new Event('app:locationchange'));
   }, [currentView]);
 
   const handleSettingsClick = () => {
@@ -51,48 +60,61 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="min-h-screen bg-background pb-16">
+      <div className="min-h-screen bg-muted/40">
+        <div className="grid min-h-screen w-full lg:grid-cols-[16rem_1fr]">
+          <AppSidebar
+            currentView={currentView}
+            onViewChange={handleViewChange}
+            open={sidebarOpen}
+            onOpenChange={setSidebarOpen}
+          />
+          <div className="flex min-h-screen flex-col">
         {currentView === "dashboard" && (
           <DashboardView
             onSettingsClick={handleSettingsClick}
-            onViewChange={setCurrentView}
+            onViewChange={handleViewChange}
+            onMenuClick={() => setSidebarOpen(true)}
           />
         )}
         {currentView === "inventory" && (
           <InventoryView
             onSettingsClick={handleSettingsClick}
-            onViewChange={setCurrentView}
+            onViewChange={handleViewChange}
+            onMenuClick={() => setSidebarOpen(true)}
           />
         )}
         {currentView === "products" && (
-          <ProductEnrichment onSettingsClick={handleSettingsClick} />
+          <ProductEnrichment
+            onSettingsClick={handleSettingsClick}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
         )}
         {currentView === "loads" && (
           <LoadManagementView
             onSettingsClick={handleSettingsClick}
-            onViewChange={setCurrentView}
+            onViewChange={handleViewChange}
+            onMenuClick={() => setSidebarOpen(true)}
           />
         )}
         {currentView === "create-load" && (
           <CreateLoadView
             onSettingsClick={handleSettingsClick}
-            onViewChange={setCurrentView}
+            onViewChange={handleViewChange}
+            onMenuClick={() => setSidebarOpen(true)}
           />
         )}
         {currentView === "create-session" && (
           <CreateSessionView
             onSettingsClick={handleSettingsClick}
-            onViewChange={setCurrentView}
+            onViewChange={handleViewChange}
+            onMenuClick={() => setSidebarOpen(true)}
           />
         )}
         {currentView === "settings" && (
-          <SettingsView onSettingsClick={handleSettingsClick} />
+          <SettingsView onSettingsClick={handleSettingsClick} onMenuClick={() => setSidebarOpen(true)} />
         )}
-        <BottomNav
-          // @ts-expect-error: "create-load" is not defined in BottomNav type but used in currentView 
-          currentView={currentView}
-          onViewChange={setCurrentView}
-        />
+          </div>
+        </div>
       </div>
     </ThemeProvider>
   );

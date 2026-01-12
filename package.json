@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "seed": "tsx src/scripts/seed.ts",
+    "seed:parts-history": "tsx src/scripts/seedPartsHistory.ts",
     "scrape:ge": "tsx src/scripts/scrapeGEProducts.ts"
   },
   "dependencies": {

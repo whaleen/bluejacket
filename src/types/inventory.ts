@@ -123,3 +123,53 @@ export interface InventoryConversion {
   notes?: string;
   created_at?: string;
 }
+
+// Parts Inventory Tracking Types
+export interface TrackedPart {
+  id: string;
+  product_id: string;
+  reorder_threshold: number;
+  is_active: boolean;
+  reordered_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+}
+
+export interface TrackedPartWithDetails extends TrackedPart {
+  products: Product;
+  current_qty: number;
+  inventory_item_id?: string;
+}
+
+export interface InventoryCount {
+  id: string;
+  product_id: string;
+  tracked_part_id?: string;
+  qty: number;
+  previous_qty?: number;
+  delta?: number;
+  count_reason?: 'usage' | 'return' | 'restock' | null;
+  counted_by?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface InventoryCountWithProduct extends InventoryCount {
+  products?: {
+    model?: string;
+    price?: number | string | null;
+    msrp?: number | string | null;
+  } | null;
+}
+
+export interface ReorderAlert {
+  tracked_part_id: string;
+  product_id: string;
+  model: string;
+  description?: string;
+  current_qty: number;
+  reorder_threshold: number;
+  is_critical: boolean; // qty === 0
+  reordered_at?: string | null;
+}

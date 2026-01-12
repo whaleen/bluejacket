@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
+import { PageContainer } from '@/components/Layout/PageContainer';
 import { BarcodeScanner } from '@/components/Scanner/BarcodeScanner';
 import { ItemSelectionDialog } from '@/components/Scanner/ItemSelectionDialog';
 import { ScanBarcode, ArrowLeft, CheckCircle2, Circle, X } from 'lucide-react';
@@ -160,47 +161,54 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-background border-b border-gray-200 px-4 py-3 sticky top-0 z-10">
-        <div className="flex items-center gap-3 mb-3">
-          <Button variant="ghost" size="icon" onClick={handleExit}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-lg font-semibold text-gray-900">{session.name}</h1>
-            <p className="text-sm text-gray-600">{session.inventoryType}</p>
+      <div className="bg-background border-b border-gray-200 sticky top-0 z-10">
+        <PageContainer className="py-3">
+          <div className="flex items-center gap-3 mb-3">
+            <Button variant="ghost" size="icon" onClick={handleExit}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="flex-1">
+              <h1 className="text-lg font-semibold text-gray-900">{session.name}</h1>
+              <p className="text-sm text-gray-600">{session.inventoryType}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (window.confirm('End session and discard progress?')) {
+                  clearActiveSession();
+                  onExit();
+                }
+              }}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setDiscardDialogOpen(true)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
 
-        {/* Progress Bar */}
-        <div>
-          <div className="flex items-center justify-between text-sm mb-1">
-            <span className="text-gray-600">Progress</span>
-            <span className="font-semibold text-gray-900">
-              {progress.scanned} / {progress.total} scanned
-            </span>
+          {/* Progress Bar */}
+          <div>
+            <div className="flex items-center justify-between text-sm mb-1">
+              <span className="text-gray-600">Progress</span>
+              <span className="font-semibold text-gray-900">
+                {progress.scanned} / {progress.total} scanned
+              </span>
+            </div>
+            <Progress value={progress.percentage} className="h-2" />
           </div>
-          <Progress value={progress.percentage} className="h-2" />
-        </div>
+        </PageContainer>
       </div>
 
       {/* Alert */}
       {alert && (
-        <div className="px-4 pt-3">
+        <PageContainer className="pt-3">
           <Alert variant={alert.type === 'error' ? 'destructive' : 'default'}>
             <AlertDescription>{alert.message}</AlertDescription>
           </Alert>
-        </div>
+        </PageContainer>
       )}
 
       {/* Item List */}
-      <div className="p-4 pb-24">
+      <PageContainer className="py-4 pb-24">
         {/* Unscanned Items */}
         {unscannedItems.length > 0 && (
           <div className="mb-6">
@@ -284,7 +292,7 @@ export function ScanningSessionView({ onExit }: ScanningSessionViewProps) {
             <Button onClick={handleExit}>Exit Session</Button>
           </div>
         )}
-      </div>
+      </PageContainer>
 
       {/* Floating Scan Button */}
       {unscannedItems.length > 0 && (
