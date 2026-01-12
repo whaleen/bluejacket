@@ -5,10 +5,19 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface ProductData {
   id?: string;
@@ -35,9 +44,10 @@ interface ProductData {
 
 interface ProductEnrichmentProps {
   onSettingsClick: () => void;
+  onMenuClick?: () => void;
 }
 
-export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
+export function ProductEnrichment({ onSettingsClick, onMenuClick }: ProductEnrichmentProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ProductData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -93,7 +103,9 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
     setProductData({
       model: searchTerm.trim(),
       product_type: '',
-      brand: 'GE'
+      brand: 'GE',
+      product_category: undefined,
+      is_part: false
     });
     setEditMode(true);
     setSearchResults([]);
@@ -117,7 +129,9 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
           product_type: productData.product_type,
           brand: productData.brand || 'GE',
           description: productData.description || null,
-          dimensions: productData.dimensions || null
+          dimensions: productData.dimensions || null,
+          product_category: productData.product_category || null,
+          is_part: productData.is_part ?? false
         }, {
           onConflict: 'model'
         });
@@ -140,9 +154,10 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Product Database" onSettingsClick={onSettingsClick} />
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <p className="text-muted-foreground">Look up or add appliance model information</p>
+      <AppHeader title="Product Database" onSettingsClick={onSettingsClick} onMenuClick={onMenuClick} />
+      <PageContainer className="pt-6 pb-24">
+        <div className="max-w-2xl mx-auto space-y-6">
+          <p className="text-muted-foreground">Look up or add appliance model information</p>
 
       {/* Search Form */}
       {!editMode && (
@@ -337,6 +352,46 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="product-category">Product Category</Label>
+                <Select
+                  value={productData.product_category ?? 'unset'}
+                  onValueChange={(value) =>
+                    setProductData({
+                      ...productData,
+                      product_category: value === 'unset' ? undefined : value
+                    })
+                  }
+                >
+                  <SelectTrigger id="product-category" className="w-full">
+                    <SelectValue placeholder="Select category..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unset">Unspecified</SelectItem>
+                    <SelectItem value="appliance">appliance</SelectItem>
+                    <SelectItem value="part">part</SelectItem>
+                    <SelectItem value="accessory">accessory</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="is-part">Is Part</Label>
+                <div className="flex items-center gap-2 h-9">
+                  <Checkbox
+                    id="is-part"
+                    checked={productData.is_part ?? false}
+                    onCheckedChange={(checked) =>
+                      setProductData({ ...productData, is_part: checked === true })
+                    }
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    Show in parts tracking
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input
@@ -350,7 +405,7 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="width">Width (in)</Label>
                 <Input
@@ -437,7 +492,8 @@ export function ProductEnrichment({ onSettingsClick }: ProductEnrichmentProps) {
         </Card>
       )}
 
-      </div>
+        </div>
+      </PageContainer>
     </div>
   );
 }

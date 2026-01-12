@@ -12,12 +12,20 @@ import {
 } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
+import { PartsInventoryTab } from './PartsInventoryTab';
+import { PartsTrackingTab } from './PartsTrackingTab';
+import { PartsHistoryChart } from './PartsHistoryChart';
+import { PartsReportsTab } from './PartsReportsTab';
 import { AppHeader } from '@/components/Navigation/AppHeader';
+import { PageContainer } from '@/components/Layout/PageContainer';
+import { usePartsListView } from '@/hooks/usePartsListView';
+import { PartsListViewToggle } from './PartsListViewToggle';
 import { getActiveSession } from '@/lib/sessionManager';
-import { Loader2, Search, ExternalLink, PackageOpen, ScanBarcode } from 'lucide-react';
+import { Loader2, Search, ExternalLink, PackageOpen, ScanBarcode, ClipboardList, Package } from 'lucide-react';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -36,9 +44,10 @@ type InventoryItemWithProduct = InventoryItem & {
 interface InventoryViewProps {
   onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-session') => void;
+  onMenuClick?: () => void;
 }
 
-export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewProps) {
+export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: InventoryViewProps) {
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,6 +59,19 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
       return type;
     }
     return 'all';
+  };
+  const getInitialPartsTab = (): 'inventory' | 'tracked' | 'history' | 'reports' => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('partsTab');
+    if (tab === 'tracked' || tab === 'history' || tab === 'reports' || tab === 'inventory') {
+      return tab;
+    }
+    return 'inventory';
+  };
+  const getInitialPartsStatus = (): 'all' | 'reorder' => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('partsStatus');
+    return status === 'reorder' ? 'reorder' : 'all';
   };
 
   // Filters
@@ -66,6 +88,9 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
   const [selectedModel, setSelectedModel] = useState('');
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
+  const [partsTab, setPartsTab] = useState<'inventory' | 'tracked' | 'history' | 'reports'>(getInitialPartsTab);
+  const [partsStatus, setPartsStatus] = useState<'all' | 'reorder'>(getInitialPartsStatus);
+  const { view, setView, isImageView } = usePartsListView();
 
   useEffect(() => {
     if (getActiveSession()) {
@@ -73,7 +98,45 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
     }
   }, []);
 
-  // Update URL when filter changes
+  // Keep tabs in sync with URL changes (e.g., sidebar navigation)
+  useEffect(() => {
+    const syncFromParams = () => {
+      const params = new URLSearchParams(window.location.search);
+      const type = params.get('type');
+      const nextType =
+        type === 'ASIS' || type === 'FG' || type === 'LocalStock' || type === 'Parts'
+          ? type
+          : 'all';
+      const tab = params.get('partsTab');
+      const nextTab =
+        tab === 'tracked' || tab === 'history' || tab === 'reports' || tab === 'inventory'
+          ? tab
+          : 'inventory';
+      const status = params.get('partsStatus');
+      const nextStatus = status === 'reorder' ? 'reorder' : 'all';
+
+      setInventoryTypeFilter(prev => (prev === nextType ? prev : nextType));
+      setPartsTab(prev => (prev === nextTab ? prev : nextTab));
+      setPartsStatus(prev => (prev === nextStatus ? prev : nextStatus));
+    };
+
+    syncFromParams();
+    const handleChange = () => syncFromParams();
+    window.addEventListener('app:locationchange', handleChange);
+    window.addEventListener('popstate', handleChange);
+    return () => {
+      window.removeEventListener('app:locationchange', handleChange);
+      window.removeEventListener('popstate', handleChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (partsTab !== 'inventory' && partsStatus !== 'all') {
+      setPartsStatus('all');
+    }
+  }, [partsTab, partsStatus]);
+
+  // Update URL when filters change
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (inventoryTypeFilter !== 'all') {
@@ -81,9 +144,23 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
     } else {
       params.delete('type');
     }
+
+    if (inventoryTypeFilter === 'Parts') {
+      params.set('partsTab', partsTab);
+      if (partsStatus !== 'all') {
+        params.set('partsStatus', partsStatus);
+      } else {
+        params.delete('partsStatus');
+      }
+    } else {
+      params.delete('partsTab');
+      params.delete('partsStatus');
+    }
+
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
-  }, [inventoryTypeFilter]);
+    window.dispatchEvent(new Event('app:locationchange'));
+  }, [inventoryTypeFilter, partsTab, partsStatus]);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -252,8 +329,9 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
       <AppHeader
         title="Inventory"
         onSettingsClick={onSettingsClick}
+        onMenuClick={onMenuClick}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => onViewChange('loads')}>
               <PackageOpen className="mr-2 h-4 w-4" />
               Manage Loads
@@ -268,157 +346,214 @@ export function InventoryView({ onSettingsClick, onViewChange }: InventoryViewPr
       />
 
       {/* Filters */}
-      <div className="border-b px-4 py-3 space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search CSO, Serial, Model, Brand…"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+      <div className="border-b">
+        <PageContainer className="py-3 space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search CSO, Serial, Model, Brand…"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Select
-            value={inventoryTypeFilter}
-            onValueChange={v =>
-              setInventoryTypeFilter(v as 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts')
-            }
-          >
-            <SelectTrigger>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Select
+              value={inventoryTypeFilter}
+              onValueChange={v =>
+                setInventoryTypeFilter(v as 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts')
+              }
+            >
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="ASIS">ASIS</SelectItem>
-              <SelectItem value="FG">FG</SelectItem>
-              <SelectItem value="LocalStock">Local Stock</SelectItem>
-              <SelectItem value="Parts">Parts</SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="ASIS">ASIS</SelectItem>
+                <SelectItem value="FG">FG</SelectItem>
+                <SelectItem value="LocalStock">Local Stock</SelectItem>
+                <SelectItem value="Parts">Parts</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select
-            value={productCategoryFilter}
-            onValueChange={v =>
-              setProductCategoryFilter(v as 'all' | 'appliance' | 'part' | 'accessory')
-            }
-          >
-            <SelectTrigger>
+            <Select
+              value={productCategoryFilter}
+              onValueChange={v =>
+                setProductCategoryFilter(v as 'all' | 'appliance' | 'part' | 'accessory')
+              }
+            >
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              <SelectItem value="appliance">Appliances</SelectItem>
-              <SelectItem value="part">Parts</SelectItem>
-              <SelectItem value="accessory">Accessories</SelectItem>
-            </SelectContent>
-          </Select>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="appliance">Appliances</SelectItem>
+                <SelectItem value="part">Parts</SelectItem>
+                <SelectItem value="accessory">Accessories</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select
-            value={brandFilter}
-            onValueChange={setBrandFilter}
-          >
-            <SelectTrigger>
+            <Select
+              value={brandFilter}
+              onValueChange={setBrandFilter}
+            >
+            <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Brands</SelectItem>
-              {uniqueBrands.map(brand => (
-                <SelectItem key={brand} value={brand}>
-                  {brand}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              <SelectContent>
+                <SelectItem value="all">All Brands</SelectItem>
+                {uniqueBrands.map(brand => (
+                  <SelectItem key={brand} value={brand}>
+                    {brand}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        {uniqueSubInventories.length > 0 && (
-          <Select
-            value={subInventoryFilter}
-            onValueChange={setSubInventoryFilter}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All Sub-Inventories" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sub-Inventories</SelectItem>
-              {uniqueSubInventories.map(sub => (
-                <SelectItem key={sub} value={sub!}>
-                  {sub}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+          {uniqueSubInventories.length > 0 && (
+            <Select
+              value={subInventoryFilter}
+              onValueChange={setSubInventoryFilter}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Sub-Inventories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sub-Inventories</SelectItem>
+                {uniqueSubInventories.map(sub => (
+                  <SelectItem key={sub} value={sub!}>
+                    {sub}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {inventoryTypeFilter !== 'Parts' && (
+            <div className="flex justify-end">
+              <PartsListViewToggle view={view} onChange={setView} />
+            </div>
+          )}
+        </PageContainer>
       </div>
 
-      {/* Inventory List */}
-      <div className="p-4 pb-24 space-y-2">
-        {filteredItems.map(item => (
-          <Card
-            key={item.id as string}
-            className="p-4 cursor-pointer hover:bg-accent transition"
-            onClick={() => handleViewItem(item.id as string)}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">
-                  {item.products?.product_type ?? item.product_type}
-                </span>
-                <Badge variant="secondary">{item.inventory_type}</Badge>
-                {item.is_scanned && <Badge variant="outline">Scanned</Badge>}
-              </div>
+      {/* Parts Inventory with Tabs */}
+      {inventoryTypeFilter === 'Parts' ? (
+        <PageContainer className="py-4 pb-24">
+          <Tabs value={partsTab} onValueChange={(v) => setPartsTab(v as typeof partsTab)}>
+            <TabsList className="w-full grid grid-cols-2 sm:grid-cols-4 mb-4">
+              <TabsTrigger value="inventory">
+                <ClipboardList className="h-4 w-4 mr-2" />
+                Inventory
+              </TabsTrigger>
+              <TabsTrigger value="tracked">Tracked Parts</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="reports">Reports</TabsTrigger>
+            </TabsList>
 
-              {item.products && (
-                <>
-                  {item.products.brand && (
-                    <Badge variant="outline">{item.products.brand}</Badge>
-                  )}
-                  {item.products.description && (
-                    <p className="text-sm text-muted-foreground">
-                      {item.products.description}
-                    </p>
-                  )}
-                </>
-              )}
+            <TabsContent value="inventory">
+              <PartsInventoryTab searchTerm={searchTerm} statusFilter={partsStatus} />
+            </TabsContent>
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">CSO:</span>{' '}
-                  <span className="font-mono">{item.cso}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Serial:</span>{' '}
-                  <span className="font-mono">{item.serial ?? '-'}</span>
-                </div>
+            <TabsContent value="tracked">
+              <PartsTrackingTab />
+            </TabsContent>
 
-                <div className="col-span-2">
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      if (item.products) {
-                        handleViewProduct(item.products.model);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                  >
-                    {item.products?.model ?? item.model}
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
-                </div>
+            <TabsContent value="history">
+              <PartsHistoryChart />
+            </TabsContent>
 
-                {item.route_id && (
-                  <div>
-                    <span className="text-muted-foreground">Route:</span>{' '}
-                    <span className="font-mono">{item.route_id}</span>
+            <TabsContent value="reports">
+              <PartsReportsTab />
+            </TabsContent>
+          </Tabs>
+        </PageContainer>
+      ) : (
+        /* Regular Inventory List */
+        <PageContainer className="py-4 pb-24 space-y-2">
+          {filteredItems.map(item => (
+            <Card
+              key={item.id as string}
+              className="p-4 cursor-pointer hover:bg-accent transition"
+              onClick={() => handleViewItem(item.id as string)}
+            >
+              <div className="flex items-start gap-3">
+                {isImageView && (
+                  <div className="h-12 w-12 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                    {item.products?.image_url ? (
+                      <img
+                        src={item.products.image_url}
+                        alt={item.products?.model ?? item.model}
+                        className="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                    )}
                   </div>
                 )}
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">
+                      {item.products?.product_type ?? item.product_type}
+                    </span>
+                    <Badge variant="secondary">{item.inventory_type}</Badge>
+                    {item.is_scanned && <Badge variant="outline">Scanned</Badge>}
+                  </div>
+
+                  {item.products && (
+                    <>
+                      {item.products.brand && (
+                        <Badge variant="outline">{item.products.brand}</Badge>
+                      )}
+                      {item.products.description && (
+                        <p className="text-sm text-muted-foreground">
+                          {item.products.description}
+                        </p>
+                      )}
+                    </>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">CSO:</span>{' '}
+                      <span className="font-mono">{item.cso}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Serial:</span>{' '}
+                      <span className="font-mono">{item.serial ?? '-'}</span>
+                    </div>
+
+                    <div className="col-span-2">
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (item.products) {
+                            handleViewProduct(item.products.model);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                      >
+                        {item.products?.model ?? item.model}
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    {item.route_id && (
+                      <div>
+                        <span className="text-muted-foreground">Route:</span>{' '}
+                        <span className="font-mono">{item.route_id}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </Card>
-        ))}
-      </div>
+            </Card>
+          ))}
+        </PageContainer>
+      )}
 
       <ProductDetailDialog
         open={productDetailOpen}

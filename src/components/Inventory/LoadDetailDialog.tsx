@@ -122,7 +122,7 @@ export function LoadDetailDialog({ open, onOpenChange, load, onUpdate }: LoadDet
           </DialogHeader>
 
           {/* Summary */}
-          <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg">
+          <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-3">
             <div>
               <div className="text-sm text-muted-foreground">Total Items</div>
               <div className="text-2xl font-bold">{items.length}</div>

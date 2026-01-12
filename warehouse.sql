@@ -48,6 +48,21 @@ CREATE TABLE public.inventory_conversions (
   CONSTRAINT inventory_conversions_pkey PRIMARY KEY (id),
   CONSTRAINT fk_conversion_item FOREIGN KEY (inventory_item_id) REFERENCES public.inventory_items(id)
 );
+CREATE TABLE public.inventory_counts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL,
+  tracked_part_id uuid,
+  qty integer NOT NULL,
+  previous_qty integer,
+  count_reason text,
+  delta integer DEFAULT (qty - COALESCE(previous_qty, 0)),
+  counted_by text,
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT inventory_counts_pkey PRIMARY KEY (id),
+  CONSTRAINT inventory_counts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
+  CONSTRAINT inventory_counts_tracked_part_id_fkey FOREIGN KEY (tracked_part_id) REFERENCES public.tracked_parts(id)
+);
 CREATE TABLE public.inventory_items (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   date date,
@@ -105,6 +120,18 @@ CREATE TABLE public.products (
   product_category text CHECK (product_category = ANY (ARRAY['appliance'::text, 'part'::text, 'accessory'::text])),
   is_part boolean DEFAULT false,
   CONSTRAINT products_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.tracked_parts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  product_id uuid NOT NULL UNIQUE,
+  reorder_threshold integer NOT NULL DEFAULT 5,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  created_by text,
+  reordered_at timestamp with time zone,
+  CONSTRAINT tracked_parts_pkey PRIMARY KEY (id),
+  CONSTRAINT tracked_parts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id)
 );
 CREATE TABLE public.trucks (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),

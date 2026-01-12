@@ -8,17 +8,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { User, Settings, LogOut, Sun, Moon } from 'lucide-react';
+import { User, Settings, LogOut, Sun, Moon, Menu } from 'lucide-react';
 import { useAuth } from "@/context/AuthContext"
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 
 interface AppHeaderProps {
   title: string;
   actions?: React.ReactNode;
   onSettingsClick?: () => void;
+  onMenuClick?: () => void;
 }
 
-export function AppHeader({ title, actions, onSettingsClick }: AppHeaderProps) {
+export function AppHeader({ title, actions, onSettingsClick, onMenuClick }: AppHeaderProps) {
 
   const { user, logout } = useAuth()
 
@@ -30,9 +32,20 @@ export function AppHeader({ title, actions, onSettingsClick }: AppHeaderProps) {
   };
 
   return (
-    <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-3">
-      <div className="flex items-center justify-between">
+    <div className="sticky top-0 z-10 border-b border-border bg-background">
+      <PageContainer className="py-3">
+        <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
+          {onMenuClick && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={onMenuClick}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
           <h1 className="text-xl font-semibold text-foreground">{title}</h1>
         </div>
         <div className="flex items-center gap-2">
@@ -85,7 +98,8 @@ export function AppHeader({ title, actions, onSettingsClick }: AppHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </div>
+        </div>
+      </PageContainer>
     </div>
   );
 }

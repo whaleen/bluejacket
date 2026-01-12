@@ -8,13 +8,15 @@ import { Loader2, ArrowLeft } from 'lucide-react';
 import { createLoad } from '@/lib/loadManager';
 import type { InventoryType } from '@/types/inventory';
 import { AppHeader } from '@/components/Navigation/AppHeader';
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface CreateLoadViewProps {
   onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load') => void;
+  onMenuClick?: () => void;
 }
 
-export function CreateLoadView({ onSettingsClick, onViewChange }: CreateLoadViewProps) {
+export function CreateLoadView({ onSettingsClick, onViewChange, onMenuClick }: CreateLoadViewProps) {
   const [inventoryType, setInventoryType] = useState<InventoryType>('ASIS');
   const [loadName, setLoadName] = useState('');
   const [category, setCategory] = useState('');
@@ -63,21 +65,23 @@ export function CreateLoadView({ onSettingsClick, onViewChange }: CreateLoadView
       <AppHeader
         title="Create New Load"
         onSettingsClick={onSettingsClick}
+        onMenuClick={onMenuClick}
         actions={
           <Button variant="ghost" size="icon" onClick={() => onViewChange('loads')}>
             <ArrowLeft />
           </Button>
         }
       />
-      <div className="p-4">
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <PageContainer className="py-4 pb-24">
+        <div className="max-w-2xl">
+          <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="inventory-type">Inventory Type</Label>
             <Select
               value={inventoryType}
               onValueChange={(v) => setInventoryType(v as InventoryType)}
             >
-              <SelectTrigger id="inventory-type">
+              <SelectTrigger id="inventory-type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -95,7 +99,7 @@ export function CreateLoadView({ onSettingsClick, onViewChange }: CreateLoadView
             <div className="space-y-2">
               <Label htmlFor="category">Category (Optional)</Label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger id="category">
+                <SelectTrigger id="category" className="w-full">
                   <SelectValue placeholder="Select category..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -171,8 +175,9 @@ export function CreateLoadView({ onSettingsClick, onViewChange }: CreateLoadView
               Create Load
             </Button>
           </div>
-        </form>
-      </div>
+          </form>
+        </div>
+      </PageContainer>
     </div>
   );
 }

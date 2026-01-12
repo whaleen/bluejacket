@@ -12,10 +12,12 @@ import type { ScanningSession } from '@/types/session';
 import supabase from '@/lib/supabase';
 import { generateSessionId, saveSession, setActiveSession } from '@/lib/sessionManager';
 import { AppHeader } from '@/components/Navigation/AppHeader';
+import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface CreateSessionViewProps {
   onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load' | 'create-session') => void;
+  onMenuClick?: () => void;
 }
 
 interface CSVRow {
@@ -53,7 +55,7 @@ function generateSessionName(inventoryType: InventoryType, subInventory?: string
   return `${typeNames[inventoryType]} - ${date} ${time}`;
 }
 
-export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessionViewProps) {
+export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick }: CreateSessionViewProps) {
   const [activeTab, setActiveTab] = useState<'existing' | 'upload'>('existing');
   const [sessionName, setSessionName] = useState('');
   const [inventoryType, setInventoryType] = useState<InventoryType>('FG');
@@ -259,6 +261,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
       <AppHeader
         title="Start Scanning Session"
         onSettingsClick={onSettingsClick}
+        onMenuClick={onMenuClick}
         actions={
           <Button variant="ghost" size="icon" onClick={() => onViewChange('inventory')}>
             <ArrowLeft />
@@ -266,9 +269,10 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
         }
       />
 
-      <div className="p-4">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'existing' | 'upload')} className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+      <PageContainer className="py-4 pb-24">
+        <div className="max-w-3xl">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'existing' | 'upload')} className="w-full">
+          <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2">
             <TabsTrigger value="existing">From Existing</TabsTrigger>
             <TabsTrigger value="upload">Upload New</TabsTrigger>
           </TabsList>
@@ -290,7 +294,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
             <div className="space-y-2">
               <Label htmlFor="inventory-type">Inventory Type</Label>
               <Select value={inventoryType} onValueChange={(value) => setInventoryType(value as InventoryType)}>
-                <SelectTrigger id="inventory-type">
+                <SelectTrigger id="inventory-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -309,7 +313,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
               <div className="space-y-2">
                 <Label htmlFor="sub-inventory">Filter by Route/Location (Optional)</Label>
                 <Select value={subInventory} onValueChange={setSubInventory}>
-                  <SelectTrigger id="sub-inventory">
+                  <SelectTrigger id="sub-inventory" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -356,7 +360,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
             <div className="space-y-2">
               <Label htmlFor="upload-inventory-type">Inventory Type</Label>
               <Select value={inventoryType} onValueChange={(value) => setInventoryType(value as InventoryType)}>
-                <SelectTrigger id="upload-inventory-type">
+                <SelectTrigger id="upload-inventory-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -444,8 +448,9 @@ export function CreateSessionView({ onSettingsClick, onViewChange }: CreateSessi
               </Button>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+          </Tabs>
+        </div>
+      </PageContainer>
     </div>
   );
 }
