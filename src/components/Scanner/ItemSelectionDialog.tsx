@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
+import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import type { InventoryItem } from '@/types/inventory';
 
 interface ItemSelectionDialogProps {
@@ -83,56 +82,23 @@ export function ItemSelectionDialog({
           {/* Item List */}
           <div className="space-y-2">
             {items.map((item) => (
-              <Card
+              <InventoryItemCard
                 key={item.id}
-                className={`p-4 cursor-pointer transition-colors ${
-                  selectedIds.has(item.id!)
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'hover:bg-gray-50'
-                }`}
-                onClick={() => toggleSelection(item.id!)}
-              >
-                <div className="flex items-start gap-3">
+                item={item}
+                leading={(
                   <Checkbox
                     checked={selectedIds.has(item.id!)}
                     onCheckedChange={() => toggleSelection(item.id!)}
-                    className="mt-1"
+                    onClick={(event) => event.stopPropagation()}
                   />
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-gray-900">
-                        {item.product_type}
-                      </div>
-                      <Badge variant="secondary">{item.inventory_type}</Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <span className="text-gray-500">CSO:</span>{' '}
-                        <span className="font-mono">{item.cso}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Serial:</span>{' '}
-                        <span className="font-mono">{item.serial || '-'}</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Model:</span>{' '}
-                        <span className="font-mono text-xs">{item.model}</span>
-                      </div>
-                      {item.sub_inventory && (
-                        <div>
-                          <span className="text-gray-500">Route:</span>{' '}
-                          <span className="font-mono">{item.sub_inventory}</span>
-                        </div>
-                      )}
-                    </div>
-                    {item.consumer_customer_name && (
-                      <div className="text-xs text-gray-600">
-                        {item.consumer_customer_name}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
+                )}
+                onClick={() => toggleSelection(item.id!)}
+                selected={selectedIds.has(item.id!)}
+                showInventoryTypeBadge
+                showProductMeta={false}
+                showCustomer
+                routeValue={item.sub_inventory ?? item.route_id}
+              />
             ))}
           </div>
         </div>

@@ -16,19 +16,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-
-type AppView =
-  | 'dashboard'
-  | 'inventory'
-  | 'products'
-  | 'settings'
-  | 'loads'
-  | 'create-load'
-  | 'create-session';
+import type { AppView } from '@/lib/routes';
 
 interface AppSidebarProps {
   currentView: AppView;
-  onViewChange: (view: AppView) => void;
+  onViewChange: (view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -202,7 +194,7 @@ function SidebarContent({
   params
 }: {
   currentView: AppView;
-  onViewChange: (view: AppView) => void;
+  onViewChange: (view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => void;
   onClose?: () => void;
   showClose?: boolean;
   params: URLSearchParams;
@@ -210,15 +202,7 @@ function SidebarContent({
   const handleNavigate = (item: NavItem) => {
     const nextParams = new URLSearchParams(window.location.search);
     item.applyParams?.(nextParams);
-    if (item.view === 'dashboard') {
-      nextParams.delete('view');
-    } else {
-      nextParams.set('view', item.view);
-    }
-    const newUrl = nextParams.toString() ? `?${nextParams.toString()}` : window.location.pathname;
-    window.history.replaceState({}, '', newUrl);
-    window.dispatchEvent(new Event('app:locationchange'));
-    onViewChange(item.view);
+    onViewChange(item.view, { params: nextParams });
     onClose?.();
   };
 

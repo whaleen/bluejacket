@@ -1,177 +1,225 @@
-import type { ScanningSession, SessionSummary } from '@/types/session';
+import supabase from '@/lib/supabase';
+import type { InventoryItem } from '@/types/inventory';
+import type { ScanningSession, SessionStatus, SessionSummary } from '@/types/session';
 
-const SESSION_STORAGE_KEY = 'warehouse_scanning_sessions';
-const ACTIVE_SESSION_KEY = 'warehouse_active_session';
+const SESSION_TABLE = 'scanning_sessions';
 
-/**
- * Get all saved sessions from localStorage
- */
-export function getAllSessions(): ScanningSession[] {
-  const stored = localStorage.getItem(SESSION_STORAGE_KEY);
-  if (!stored) return [];
+type SessionRecord = {
+  id: string;
+  name: string;
+  inventory_type: ScanningSession['inventoryType'];
+  sub_inventory: string | null;
+  status: SessionStatus;
+  created_at: string;
+  updated_at?: string | null;
+  closed_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+  closed_by?: string | null;
+  items: InventoryItem[];
+  scanned_item_ids: string[];
+};
 
-  try {
-    return JSON.parse(stored);
-  } catch (err) {
-    console.error('Failed to parse sessions:', err);
-    return [];
-  }
+function toSession(record: SessionRecord): ScanningSession {
+  return {
+    id: record.id,
+    name: record.name,
+    inventoryType: record.inventory_type,
+    subInventory: record.sub_inventory ?? undefined,
+    status: record.status,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at ?? undefined,
+    closedAt: record.closed_at ?? undefined,
+    createdBy: record.created_by ?? undefined,
+    updatedBy: record.updated_by ?? undefined,
+    closedBy: record.closed_by ?? undefined,
+    items: Array.isArray(record.items) ? record.items : [],
+    scannedItemIds: Array.isArray(record.scanned_item_ids) ? record.scanned_item_ids : []
+  };
 }
 
-/**
- * Get session summaries (lighter weight for listing)
- */
-export function getSessionSummaries(): SessionSummary[] {
-  const sessions = getAllSessions();
-  return sessions.map(session => ({
-    id: session.id,
-    name: session.name,
-    inventoryType: session.inventoryType,
-    totalItems: session.items.length,
-    scannedCount: session.scannedItemIds.length,
-    createdAt: session.createdAt
-  }));
+function toSummary(record: SessionRecord): SessionSummary {
+  const items = Array.isArray(record.items) ? record.items : [];
+  const scanned = Array.isArray(record.scanned_item_ids) ? record.scanned_item_ids : [];
+
+  return {
+    id: record.id,
+    name: record.name,
+    inventoryType: record.inventory_type,
+    subInventory: record.sub_inventory ?? undefined,
+    status: record.status,
+    totalItems: items.length,
+    scannedCount: scanned.length,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at ?? undefined,
+    closedAt: record.closed_at ?? undefined,
+    createdBy: record.created_by ?? undefined
+  };
 }
 
-/**
- * Save a new session
- */
-export function saveSession(session: ScanningSession): void {
-  const sessions = getAllSessions();
-  sessions.push(session);
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
-}
+export async function getAllSessions(): Promise<{ data: ScanningSession[] | null; error: any }> {
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .select('*')
+    .order('created_at', { ascending: false });
 
-/**
- * Update an existing session
- */
-export function updateSession(session: ScanningSession): void {
-  const sessions = getAllSessions();
-  const index = sessions.findIndex(s => s.id === session.id);
-
-  if (index !== -1) {
-    sessions[index] = session;
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
-  }
-}
-
-/**
- * Delete a session
- */
-export function deleteSession(sessionId: string): void {
-  const sessions = getAllSessions();
-  const filtered = sessions.filter(s => s.id !== sessionId);
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(filtered));
-
-  // Clear active session if it's the one being deleted
-  const activeId = getActiveSessionId();
-  if (activeId === sessionId) {
-    clearActiveSession();
-  }
-}
-
-/**
- * Get a specific session by ID
- */
-export function getSession(sessionId: string): ScanningSession | null {
-  const sessions = getAllSessions();
-  return sessions.find(s => s.id === sessionId) || null;
-}
-
-/**
- * Set the active session ID
- */
-export function setActiveSession(sessionId: string): void {
-  localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-}
-
-/**
- * Get the active session ID
- */
-export function getActiveSessionId(): string | null {
-  return localStorage.getItem(ACTIVE_SESSION_KEY);
-}
-
-/**
- * Get the active session
- */
-export function getActiveSession(): ScanningSession | null {
-  const activeId = getActiveSessionId();
-  if (!activeId) return null;
-  return getSession(activeId);
-}
-
-/**
- * Clear the active session
- */
-export function clearActiveSession(): void {
-  localStorage.removeItem(ACTIVE_SESSION_KEY);
-}
-
-/**
- * Mark an item as scanned in a session
- */
-export function markItemScannedInSession(sessionId: string, itemId: string): boolean {
-  const session = getSession(sessionId);
-  if (!session) return false;
-
-  if (!session.scannedItemIds.includes(itemId)) {
-    session.scannedItemIds.push(itemId);
-    updateSession(session);
+  if (error) {
+    return { data: null, error };
   }
 
-  return true;
+  return {
+    data: (data as SessionRecord[]).map(toSession),
+    error: null
+  };
 }
 
-/**
- * Mark multiple items as scanned in a session
- */
-export function markItemsScannedInSession(sessionId: string, itemIds: string[]): boolean {
-  const session = getSession(sessionId);
-  if (!session) return false;
+export async function getSessionSummaries(): Promise<{ data: SessionSummary[] | null; error: any }> {
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .select('id, name, inventory_type, sub_inventory, status, created_at, updated_at, closed_at, created_by, items, scanned_item_ids')
+    .order('created_at', { ascending: false });
 
-  itemIds.forEach(itemId => {
-    if (!session.scannedItemIds.includes(itemId)) {
-      session.scannedItemIds.push(itemId);
+  if (error) {
+    return { data: null, error };
+  }
+
+  return {
+    data: (data as SessionRecord[]).map(toSummary),
+    error: null
+  };
+}
+
+export async function getSession(sessionId: string): Promise<{ data: ScanningSession | null; error: any }> {
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .select('*')
+    .eq('id', sessionId)
+    .single();
+
+  if (error || !data) {
+    return { data: null, error };
+  }
+
+  return { data: toSession(data as SessionRecord), error: null };
+}
+
+export async function createSession(input: {
+  name: string;
+  inventoryType: ScanningSession['inventoryType'];
+  subInventory?: string;
+  items: InventoryItem[];
+  status?: SessionStatus;
+  createdBy?: string;
+}): Promise<{ data: ScanningSession | null; error: any }> {
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .insert({
+      name: input.name,
+      inventory_type: input.inventoryType,
+      sub_inventory: input.subInventory ?? null,
+      status: input.status ?? 'active',
+      items: input.items,
+      scanned_item_ids: [],
+      created_by: input.createdBy ?? null,
+      updated_by: input.createdBy ?? null,
+      updated_at: new Date().toISOString()
+    })
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    return { data: null, error };
+  }
+
+  return { data: toSession(data as SessionRecord), error: null };
+}
+
+export async function updateSessionScannedItems(input: {
+  sessionId: string;
+  scannedItemIds: string[];
+  updatedBy?: string;
+}): Promise<{ data: ScanningSession | null; error: any }> {
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .update({
+      scanned_item_ids: input.scannedItemIds,
+      updated_by: input.updatedBy ?? null,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', input.sessionId)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    return { data: null, error };
+  }
+
+  return { data: toSession(data as SessionRecord), error: null };
+}
+
+export async function updateSessionStatus(input: {
+  sessionId: string;
+  status: SessionStatus;
+  updatedBy?: string;
+}): Promise<{ data: ScanningSession | null; error: any }> {
+  const { data: current, error: currentError } = await supabase
+    .from(SESSION_TABLE)
+    .select('status, items, scanned_item_ids')
+    .eq('id', input.sessionId)
+    .single();
+
+  if (currentError) {
+    return { data: null, error: currentError };
+  }
+
+  const currentStatus = (current as { status?: SessionStatus } | null)?.status;
+  if (currentStatus === 'closed' && input.status !== 'closed') {
+    return { data: null, error: new Error('Session is closed and cannot be reopened') };
+  }
+
+  if (input.status === 'closed') {
+    const items = Array.isArray((current as { items?: unknown }).items)
+      ? ((current as { items?: InventoryItem[] }).items as InventoryItem[])
+      : [];
+    const scanned = Array.isArray((current as { scanned_item_ids?: unknown }).scanned_item_ids)
+      ? ((current as { scanned_item_ids?: string[] }).scanned_item_ids as string[])
+      : [];
+
+    if (items.length === 0 || scanned.length !== items.length) {
+      return { data: null, error: new Error('Session is not complete and cannot be closed') };
     }
-  });
+  }
 
-  updateSession(session);
-  return true;
+  const updates: Record<string, any> = {
+    status: input.status,
+    updated_by: input.updatedBy ?? null,
+    updated_at: new Date().toISOString()
+  };
+
+  if (input.status === 'closed') {
+    updates.closed_at = new Date().toISOString();
+    updates.closed_by = input.updatedBy ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from(SESSION_TABLE)
+    .update(updates)
+    .eq('id', input.sessionId)
+    .select('*')
+    .single();
+
+  if (error || !data) {
+    return { data: null, error };
+  }
+
+  return { data: toSession(data as SessionRecord), error: null };
 }
 
-/**
- * Check if an item is scanned in a session
- */
-export function isItemScannedInSession(sessionId: string, itemId: string): boolean {
-  const session = getSession(sessionId);
-  if (!session) return false;
-  return session.scannedItemIds.includes(itemId);
-}
+export async function deleteSession(sessionId: string): Promise<{ success: boolean; error?: any }> {
+  const { error } = await supabase
+    .from(SESSION_TABLE)
+    .delete()
+    .eq('id', sessionId);
 
-/**
- * Get unscanned items in a session
- */
-export function getUnscannedItems(sessionId: string) {
-  const session = getSession(sessionId);
-  if (!session) return [];
-
-  return session.items.filter(item => !session.scannedItemIds.includes(item.id!));
-}
-
-/**
- * Get scanned items in a session
- */
-export function getScannedItems(sessionId: string) {
-  const session = getSession(sessionId);
-  if (!session) return [];
-
-  return session.items.filter(item => session.scannedItemIds.includes(item.id!));
-}
-
-/**
- * Generate a unique session ID
- */
-export function generateSessionId(): string {
-  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return { success: !error, error };
 }

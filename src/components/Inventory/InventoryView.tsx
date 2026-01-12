@@ -10,10 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
 import { PartsInventoryTab } from './PartsInventoryTab';
@@ -24,8 +22,8 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { getActiveSession } from '@/lib/sessionManager';
-import { Loader2, Search, ExternalLink, PackageOpen, ScanBarcode, ClipboardList, Package, X } from 'lucide-react';
+import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X } from 'lucide-react';
+import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -83,7 +81,6 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   const [brandFilter, setBrandFilter] = useState('all');
 
   // State
-  const [activeSessionView, setActiveSessionView] = useState(false);
   const [productDetailOpen, setProductDetailOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState('');
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
@@ -91,12 +88,6 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   const [partsTab, setPartsTab] = useState<'inventory' | 'tracked' | 'history' | 'reports'>(getInitialPartsTab);
   const [partsStatus, setPartsStatus] = useState<'all' | 'reorder'>(getInitialPartsStatus);
   const { view, setView, isImageView } = usePartsListView();
-
-  useEffect(() => {
-    if (getActiveSession()) {
-      setActiveSessionView(true);
-    }
-  }, []);
 
   // Keep tabs in sync with URL changes (e.g., sidebar navigation)
   useEffect(() => {
@@ -215,11 +206,6 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   useEffect(() => {
     fetchItems();
   }, []);
-
-  const handleSessionExit = () => {
-    setActiveSessionView(false);
-    fetchItems();
-  };
 
   const handleViewProduct = (model: string) => {
     setSelectedModel(model);
@@ -346,10 +332,6 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     setProductCategoryFilter('all');
     setBrandFilter('all');
   };
-
-  if (activeSessionView) {
-    return <ScanningSessionView onExit={handleSessionExit} />;
-  }
 
   if (loading) {
     return (
@@ -534,83 +516,21 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
         /* Regular Inventory List */
         <PageContainer className="py-4 pb-24 space-y-2">
           {filteredItems.map(item => (
-            <Card
+            <InventoryItemCard
               key={item.id as string}
-              className="p-4 cursor-pointer hover:bg-accent transition"
+              item={item}
               onClick={() => handleViewItem(item.id as string)}
-            >
-              <div className="flex items-start gap-3">
-                {isImageView && (
-                  <div className="h-12 w-12 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
-                    {item.products?.image_url ? (
-                      <img
-                        src={item.products.image_url}
-                        alt={item.products?.model ?? item.model}
-                        className="h-full w-full object-contain"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <Package className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </div>
-                )}
-                <div className="space-y-2 flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">
-                      {item.products?.product_type ?? item.product_type}
-                    </span>
-                    <Badge variant="secondary">{item.inventory_type}</Badge>
-                    {item.is_scanned && <Badge variant="outline">Scanned</Badge>}
-                  </div>
-
-                  {item.products && (
-                    <>
-                      {item.products.brand && (
-                        <Badge variant="outline">{item.products.brand}</Badge>
-                      )}
-                      {item.products.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {item.products.description}
-                        </p>
-                      )}
-                    </>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">CSO:</span>{' '}
-                      <span className="font-mono">{item.cso}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Serial:</span>{' '}
-                      <span className="font-mono">{item.serial ?? '-'}</span>
-                    </div>
-
-                    <div className="col-span-2">
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (item.products) {
-                            handleViewProduct(item.products.model);
-                          }
-                        }}
-                        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-                      >
-                        {item.products?.model ?? item.model}
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
-                    </div>
-
-                    {item.route_id && (
-                      <div>
-                        <span className="text-muted-foreground">Route:</span>{' '}
-                        <span className="font-mono">{item.route_id}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
+              onModelClick={
+                item.products
+                  ? () => handleViewProduct(item.products?.model ?? item.model)
+                  : undefined
+              }
+              showImage={isImageView}
+              showInventoryTypeBadge
+              showScannedBadge
+              showProductMeta
+              showRouteBadge
+            />
           ))}
         </PageContainer>
       )}

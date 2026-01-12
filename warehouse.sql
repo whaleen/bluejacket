@@ -54,11 +54,11 @@ CREATE TABLE public.inventory_counts (
   tracked_part_id uuid,
   qty integer NOT NULL,
   previous_qty integer,
-  count_reason text,
   delta integer DEFAULT (qty - COALESCE(previous_qty, 0)),
   counted_by text,
   notes text,
   created_at timestamp with time zone DEFAULT now(),
+  count_reason text,
   CONSTRAINT inventory_counts_pkey PRIMARY KEY (id),
   CONSTRAINT inventory_counts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
   CONSTRAINT inventory_counts_tracked_part_id_fkey FOREIGN KEY (tracked_part_id) REFERENCES public.tracked_parts(id)
@@ -86,6 +86,22 @@ CREATE TABLE public.inventory_items (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT inventory_items_pkey PRIMARY KEY (id),
   CONSTRAINT fk_inventory_product FOREIGN KEY (product_fk) REFERENCES public.products(id)
+);
+CREATE TABLE public.scanning_sessions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  inventory_type text NOT NULL,
+  sub_inventory text,
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['draft'::text, 'active'::text, 'closed'::text])),
+  items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  scanned_item_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  closed_at timestamp with time zone,
+  created_by text,
+  updated_by text,
+  closed_by text,
+  CONSTRAINT scanning_sessions_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.load_metadata (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),

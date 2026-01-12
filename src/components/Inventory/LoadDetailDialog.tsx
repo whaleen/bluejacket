@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Loader2, Search, ArrowRightLeft, Plus } from 'lucide-react';
@@ -10,6 +9,8 @@ import type { LoadMetadata, InventoryItem } from '@/types/inventory';
 import { AddItemsToLoadDialog } from './AddItemsToLoadDialog';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
 import { ChangeItemAssignmentDialog } from './ChangeItemAssignmentDialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 
 interface LoadDetailDialogProps {
   open: boolean;
@@ -170,53 +171,39 @@ export function LoadDetailDialog({ open, onOpenChange, load, onUpdate }: LoadDet
                 No items found
               </div>
             ) : (
-              filteredItems.map((item) => (
-                <Card key={item.id} className="p-3">
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedItems.has(item.id!)}
-                      onChange={() => toggleItemSelection(item.id!)}
-                      className="mt-1"
-                    />
+              filteredItems.map((item) => {
+                const normalizedItem =
+                  item.products?.description
+                    ? {
+                        ...item,
+                        products: {
+                          ...item.products,
+                          description: decodeHTMLEntities(item.products.description)
+                        }
+                      }
+                    : item;
 
-                    {(item.products as any)?.image_url && (
-                      <img
-                        src={(item.products as any).image_url}
-                        alt={item.model}
-                        className="w-16 h-16 object-contain rounded"
+                return (
+                  <InventoryItemCard
+                    key={item.id}
+                    item={normalizedItem}
+                    leading={(
+                      <Checkbox
+                        checked={selectedItems.has(item.id!)}
+                        onCheckedChange={() => toggleItemSelection(item.id!)}
+                        onClick={(event) => event.stopPropagation()}
                       />
                     )}
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="font-mono text-sm font-semibold">{item.model}</div>
-                          {(item.products as any)?.description && (
-                            <div className="text-sm text-muted-foreground line-clamp-1">
-                              {decodeHTMLEntities((item.products as any).description)}
-                            </div>
-                          )}
-                        </div>
-                        <Badge variant="secondary">{item.product_type}</Badge>
-                      </div>
-
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        <span>CSO: {item.cso}</span>
-                        {item.serial && <span>Serial: {item.serial}</span>}
-                        {(item.products as any)?.brand && (
-                          <Badge variant="outline" className="text-xs">
-                            {(item.products as any).brand}
-                          </Badge>
-                        )}
-                        {item.status && (
-                          <Badge className={getStatusColor(item.status)}>{item.status}</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+                    onClick={() => toggleItemSelection(item.id!)}
+                    selected={selectedItems.has(item.id!)}
+                    showInventoryTypeBadge={false}
+                    showRouteBadge={false}
+                    showProductMeta
+                    showImage={Boolean((normalizedItem.products as any)?.image_url)}
+                    badges={item.status ? <Badge className={getStatusColor(item.status)}>{item.status}</Badge> : null}
+                  />
+                );
+              })
             )}
           </div>
         </DialogContent>

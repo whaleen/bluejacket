@@ -11,6 +11,7 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ReorderAlertsCard } from './ReorderAlertsCard';
 import { useAuth } from '@/context/AuthContext';
 import { PageContainer } from '@/components/Layout/PageContainer';
+import { getPathForView } from '@/lib/routes';
 
 interface DashboardViewProps {
   onSettingsClick: () => void;
@@ -72,9 +73,11 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
   const navigateToInventory = (filterType?: 'LocalStock' | 'FG' | 'ASIS' | 'Parts') => {
     if (filterType) {
       const params = new URLSearchParams(window.location.search);
-      params.set('view', 'inventory');
       params.set('type', filterType);
-      window.history.replaceState({}, '', `?${params.toString()}`);
+      params.delete('view');
+      const path = getPathForView('inventory');
+      const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
+      window.history.replaceState({}, '', newUrl);
       window.dispatchEvent(new Event('app:locationchange'));
     }
     onViewChange?.('inventory');
@@ -83,15 +86,17 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
   // Helper to navigate to Parts inventory
   const navigateToPartsInventory = (status?: 'reorder') => {
     const params = new URLSearchParams(window.location.search);
-    params.set('view', 'inventory');
     params.set('type', 'Parts');
     params.set('partsTab', 'inventory');
+    params.delete('view');
     if (status === 'reorder') {
       params.set('partsStatus', 'reorder');
     } else {
       params.delete('partsStatus');
     }
-    window.history.replaceState({}, '', `?${params.toString()}`);
+    const path = getPathForView('inventory');
+    const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
+    window.history.replaceState({}, '', newUrl);
     window.dispatchEvent(new Event('app:locationchange'));
     onViewChange?.('inventory');
   };

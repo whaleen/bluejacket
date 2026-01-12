@@ -4,55 +4,88 @@ import { CreateSessionView } from "@/components/Session/CreateSessionView";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
 import { LoginCard } from "@/components/Auth/LoginCard";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProductEnrichment } from "./components/Products/ProductEnrichment";
 import { InventoryView } from "./components/Inventory/InventoryView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/Navigation/AppSidebar";
+import { getPathForView, parseRoute, type AppView } from "@/lib/routes";
 
 function App() {
   const { user, loading } = useAuth();
 
-  // Read initial view from URL
-  const getInitialView = () => {
+  const getRouteFromLocation = useCallback(() => {
+    const route = parseRoute(window.location.pathname);
     const params = new URLSearchParams(window.location.search);
-    const view = params.get('view');
-    if (view === 'inventory' || view === 'products' || view === 'settings' || view === 'loads' || view === 'create-load' || view === 'create-session') {
-      return view;
+    const legacyView = params.get('view');
+    if (
+      route.view === 'dashboard' &&
+      legacyView &&
+      ['inventory', 'products', 'settings', 'loads', 'create-load', 'create-session'].includes(legacyView)
+    ) {
+      return { view: legacyView as AppView, sessionId: null };
     }
-    return 'dashboard';
-  };
+    return route;
+  }, []);
 
-  const [currentView, setCurrentView] = useState<
-    "dashboard" | "inventory" | "products" | "settings" | "loads" | "create-load" | "create-session"
-  >(getInitialView);
+  const initialRoute = getRouteFromLocation();
+
+  const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
+  const [sessionId, setSessionId] = useState<string | null>(initialRoute.sessionId ?? null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const handleViewChange = (view: typeof currentView) => {
-    setCurrentView(view);
-    setSidebarOpen(false);
-  };
-
-  // Update URL when view changes
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (currentView === 'dashboard') {
-      params.delete('view');
-      // Clear filters when going to dashboard
+  const navigate = useCallback((view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => {
+    const params = options?.params ?? new URLSearchParams(window.location.search);
+    const nextSessionId = options?.sessionId ?? null;
+    params.delete('view');
+    if (view === 'dashboard') {
       params.delete('type');
       params.delete('partsTab');
       params.delete('partsStatus');
-    } else {
-      params.set('view', currentView);
     }
-    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
-    window.history.replaceState({}, '', newUrl);
+    const path = getPathForView(view, nextSessionId ?? undefined);
+    const query = params.toString();
+    const nextUrl = query ? `${path}?${query}` : path;
+    if (options?.replace) {
+      window.history.replaceState({}, '', nextUrl);
+    } else {
+      window.history.pushState({}, '', nextUrl);
+    }
     window.dispatchEvent(new Event('app:locationchange'));
-  }, [currentView]);
+    setCurrentView(view);
+    setSessionId(nextSessionId);
+    setSidebarOpen(false);
+  }, []);
+
+  const handleViewChange = (view: AppView) => {
+    navigate(view);
+  };
+
+  const handleSessionChange = (nextSessionId: string | null) => {
+    navigate('create-session', { sessionId: nextSessionId });
+  };
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = getRouteFromLocation();
+      setCurrentView(route.view);
+      setSessionId(route.sessionId ?? null);
+    };
+    window.addEventListener('popstate', syncRoute);
+    return () => window.removeEventListener('popstate', syncRoute);
+  }, [getRouteFromLocation]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('view')) {
+      const route = getRouteFromLocation();
+      navigate(route.view, { params, sessionId: route.sessionId ?? null, replace: true });
+    }
+  }, [getRouteFromLocation, navigate]);
 
   const handleSettingsClick = () => {
-    setCurrentView("settings");
+    navigate('settings');
   };
 
   if (loading) return null;
@@ -64,7 +97,7 @@ function App() {
         <div className="grid min-h-screen w-full lg:grid-cols-[16rem_1fr]">
           <AppSidebar
             currentView={currentView}
-            onViewChange={handleViewChange}
+            onViewChange={navigate}
             open={sidebarOpen}
             onOpenChange={setSidebarOpen}
           />
@@ -108,6 +141,8 @@ function App() {
             onSettingsClick={handleSettingsClick}
             onViewChange={handleViewChange}
             onMenuClick={() => setSidebarOpen(true)}
+            sessionId={sessionId}
+            onSessionChange={handleSessionChange}
           />
         )}
         {currentView === "settings" && (

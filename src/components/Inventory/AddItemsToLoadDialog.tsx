@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Search } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import type { InventoryType, InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
+import { Checkbox } from '@/components/ui/checkbox';
+import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 
 interface AddItemsToLoadDialogProps {
   open: boolean;
@@ -199,64 +200,46 @@ export function AddItemsToLoadDialog({
                 </p>
               </div>
             ) : (
-              filteredItems.map((item) => (
-                <Card
-                  key={item.id}
-                  className={`p-3 cursor-pointer transition ${
-                    selectedItems.has(item.id!) ? 'bg-accent' : 'hover:bg-accent/50'
-                  }`}
-                  onClick={() => toggleItemSelection(item.id!)}
-                >
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedItems.has(item.id!)}
-                      onChange={() => toggleItemSelection(item.id!)}
-                      className="mt-1"
-                      onClick={(e) => e.stopPropagation()}
-                    />
+              filteredItems.map((item) => {
+                const normalizedItem =
+                  item.products?.description
+                    ? {
+                        ...item,
+                        products: {
+                          ...item.products,
+                          description: decodeHTMLEntities(item.products.description)
+                        }
+                      }
+                    : item;
 
-                    {item.products?.image_url && (
-                      <img
-                        src={item.products.image_url}
-                        alt={item.model}
-                        className="w-16 h-16 object-contain rounded"
+                return (
+                  <InventoryItemCard
+                    key={item.id}
+                    item={normalizedItem}
+                    leading={(
+                      <Checkbox
+                        checked={selectedItems.has(item.id!)}
+                        onCheckedChange={() => toggleItemSelection(item.id!)}
+                        onClick={(event) => event.stopPropagation()}
                       />
                     )}
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="font-mono text-sm font-semibold">{item.model}</div>
-                          {item.products?.description && (
-                            <div className="text-sm text-muted-foreground line-clamp-1">
-                              {decodeHTMLEntities(item.products.description)}
-                            </div>
-                          )}
-                        </div>
-                        <Badge variant="secondary">{item.product_type}</Badge>
-                      </div>
-
-                      <div className="flex items-center gap-3 mt-2 text-xs">
-                        <span className="text-muted-foreground">CSO: {item.cso}</span>
-                        {item.serial && (
-                          <span className="text-muted-foreground">Serial: {item.serial}</span>
-                        )}
-                        {item.products?.brand && (
-                          <Badge variant="outline" className="text-xs">
-                            {item.products.brand}
-                          </Badge>
-                        )}
-                        {item.sub_inventory && (
-                          <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-700 dark:text-orange-300">
-                            Current load: {item.sub_inventory}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+                    onClick={() => toggleItemSelection(item.id!)}
+                    selected={selectedItems.has(item.id!)}
+                    showInventoryTypeBadge={false}
+                    showRouteBadge={false}
+                    showProductMeta
+                    showImage={Boolean(normalizedItem.products?.image_url)}
+                    badges={item.sub_inventory ? (
+                      <Badge
+                        variant="outline"
+                        className="text-xs bg-orange-500/10 text-orange-700 dark:text-orange-300"
+                      >
+                        Current load: {item.sub_inventory}
+                      </Badge>
+                    ) : null}
+                  />
+                );
+              })
             )}
           </div>
 
