@@ -207,7 +207,7 @@ function SidebarContent({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col min-h-0">
       <div className="flex items-center justify-between border-b px-4 py-4">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
@@ -225,7 +225,7 @@ function SidebarContent({
         )}
       </div>
 
-      <div className="flex-1 p-3 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
         {navSections.map(section => (
           <div key={section.title} className="space-y-2">
             <div className="px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

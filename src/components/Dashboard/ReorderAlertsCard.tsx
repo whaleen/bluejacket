@@ -73,7 +73,7 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
   return (
     <Card className={`p-4 ${activeAlerts.length > 0 ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-green-500/50 bg-green-500/5'}`}>
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             {activeAlerts.length > 0 ? (
               <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -98,7 +98,7 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
         </div>
 
         {activeAlerts.length > 0 && (criticalCount > 0 || lowCount > 0) && (
-          <div className="flex gap-3 text-sm">
+          <div className="flex flex-wrap gap-3 text-sm">
             {criticalCount > 0 && (
               <span className="text-destructive font-medium">
                 {criticalCount} out of stock
@@ -118,21 +118,21 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
             {activeAlerts.slice(0, 5).map(alert => (
               <div
                 key={alert.tracked_part_id}
-                className="flex items-center justify-between py-2 border-b last:border-0"
+                className="flex flex-col gap-2 py-2 border-b last:border-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <div>
-                    <span className="font-mono text-sm">{alert.model}</span>
+                  <div className="min-w-0">
+                    <span className="block font-mono text-sm truncate">{alert.model}</span>
                     {alert.description && (
-                      <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                      <p className="text-xs text-muted-foreground truncate">
                         {alert.description}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
                   <span className="text-sm font-mono">
                     {alert.current_qty} / {alert.reorder_threshold}
                   </span>
@@ -175,11 +175,11 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
             {reorderedAlerts.slice(0, 3).map(alert => (
               <div
                 key={alert.tracked_part_id}
-                className="flex items-center justify-between py-1 opacity-60"
+                className="flex flex-wrap items-center justify-between gap-2 py-1 opacity-60"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <Package className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-sm">{alert.model}</span>
+                  <span className="font-mono text-sm truncate">{alert.model}</span>
                 </div>
                 <Badge variant="outline" className="text-green-600 border-green-600">
                   Reordered

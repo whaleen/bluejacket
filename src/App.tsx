@@ -11,7 +11,6 @@ import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/Navigation/AppSidebar";
 import { getPathForView, parseRoute, type AppView } from "@/lib/routes";
-import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 
 function App() {
   const { user, loading } = useAuth();
@@ -102,7 +101,7 @@ function App() {
             open={sidebarOpen}
             onOpenChange={setSidebarOpen}
           />
-          <div className="flex min-h-screen flex-col">
+          <div className="flex min-h-screen flex-col min-w-0">
         {currentView === "dashboard" && (
           <DashboardView
             onSettingsClick={handleSettingsClick}
@@ -152,7 +151,6 @@ function App() {
           </div>
         </div>
       </div>
-      <PwaUpdatePrompt />
     </ThemeProvider>
   );
 }

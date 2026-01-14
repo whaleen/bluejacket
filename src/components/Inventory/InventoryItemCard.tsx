@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -126,7 +126,7 @@ function CopyField({
   );
 }
 
-export function InventoryItemCard({
+export const InventoryItemCard = memo(function InventoryItemCard({
   item,
   onClick,
   onModelClick,
@@ -213,18 +213,18 @@ export function InventoryItemCard({
 
           {showCopyFields && (
             <div className="grid gap-2 text-xs sm:grid-cols-3">
-              <CopyField label="CSO" value={item.cso} copyValue={item.cso} />
-              <CopyField
-                label="Serial"
-                value={item.serial ?? '-'}
-                copyValue={item.serial ?? ''}
-              />
               <CopyField
                 label="Model"
                 value={item.model}
                 copyValue={item.model}
                 onValueClick={onModelClick}
               />
+              <CopyField
+                label="Serial"
+                value={item.serial ?? '-'}
+                copyValue={item.serial ?? ''}
+              />
+              <CopyField label="CSO" value={item.cso} copyValue={item.cso} />
             </div>
           )}
 
@@ -237,4 +237,4 @@ export function InventoryItemCard({
       </div>
     </Card>
   );
-}
+});

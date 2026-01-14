@@ -343,7 +343,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
         <Card className="p-6 bg-gradient-to-r from-primary/10 to-primary/5">
           <div className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 min-w-0">
                 <div className="h-12 w-12 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center">
                   {user?.image ? (
                     <img
@@ -355,9 +355,9 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
                     <User className="h-6 w-6 text-primary" />
                   )}
                 </div>
-                <div>
-                  <h1 className="text-2xl font-bold">Welcome back, {currentUser.name}</h1>
-                  <p className="text-sm text-muted-foreground">
+                <div className="min-w-0">
+                  <h1 className="text-2xl font-bold break-words">Welcome back, {currentUser.name}</h1>
+                  <p className="text-sm text-muted-foreground break-words">
                     {currentUser.role} • Last active {currentUser.lastActive}
                   </p>
                 </div>
@@ -369,7 +369,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
             </div>
 
             {/* Quick Action Buttons */}
-            <div className="flex flex-wrap gap-2">
+            {/* <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => navigateToInventory()}>
                 <ScanBarcode className="mr-2 h-4 w-4" />
                 Start Scanning
@@ -383,7 +383,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
                 View Inventory
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </div>
+            </div> */}
           </div>
         </Card>
 
@@ -393,8 +393,8 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
         {/* Interactive Donut Chart */}
         <Card className="p-6">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold min-w-0">
                 {selectedDrilldown ?
                   `Load Details: ${selectedDrilldown.replace(/-/g, ' ')}` :
                   selectedChartType === 'overview' ? 'Inventory Distribution' :
@@ -458,7 +458,14 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
                     ))}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend />
+                  <Legend
+                    wrapperStyle={{
+                      fontSize: 12,
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      justifyContent: 'center',
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -584,7 +591,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
         </div>
 
         {/* Load Summary */}
-        <div>
+        {/* <div>
           <h2 className="text-lg font-semibold mb-3">Load Summary</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="p-4">
@@ -612,14 +619,14 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
               </div>
             </Card>
           </div>
-        </div>
+        </div> */}
 
         {/* Recent Activity & Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
             <Card className="p-4">
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[50vh] sm:max-h-[360px] overflow-y-auto pr-1">
                 {recentActivity.map((activity) => (
                   <div key={activity.id} className="flex items-start gap-3 pb-3 last:pb-0 border-b last:border-0">
                     <div className="p-2 bg-muted rounded-lg mt-0.5">
@@ -647,19 +654,35 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
             <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
             <Card className="p-4">
               <div className="space-y-3">
-                <Button variant="outline" className="w-full justify-start" onClick={() => navigateToInventory()}>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => navigateToInventory()}
+                >
                   <ScanBarcode className="mr-2 h-4 w-4" />
                   Start New Scanning Session
                 </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => onViewChange?.('loads')}>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => onViewChange?.('loads')}
+                >
                   <PackageOpen className="mr-2 h-4 w-4" />
                   Manage Loads
                 </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => navigateToInventory()}>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => navigateToInventory()}
+                >
                   <TruckIcon className="mr-2 h-4 w-4" />
                   View All Inventory
                 </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => onViewChange?.('products')}>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => onViewChange?.('products')}
+                >
                   <Package className="mr-2 h-4 w-4" />
                   Product Catalog
                 </Button>

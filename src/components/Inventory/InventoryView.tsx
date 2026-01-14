@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
 import { Button } from '@/components/ui/button';
@@ -21,8 +21,11 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X, FileText, PackageSearch } from 'lucide-react';
+import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X, FileText, PackageSearch, Download } from 'lucide-react';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -38,6 +41,78 @@ type InventoryItemWithProduct = InventoryItem & {
   } | null;
 };
 
+const PAGE_SIZE = 60;
+const EXPORT_BATCH_SIZE = 1000;
+
+type InventoryFilters = {
+  inventoryType: 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts';
+  subInventory: string;
+  productCategory: 'all' | 'appliance' | 'part' | 'accessory';
+  brand: string;
+  search: string;
+};
+
+type InventorySort = 'model-asc' | 'model-desc' | 'created-desc' | 'created-asc';
+
+type ExportColumnKey =
+  | 'item_id'
+  | 'cso'
+  | 'serial'
+  | 'item_model'
+  | 'item_product_type'
+  | 'inventory_type'
+  | 'sub_inventory'
+  | 'route_id'
+  | 'is_scanned'
+  | 'customer'
+  | 'created_at'
+  | 'product_id'
+  | 'product_model'
+  | 'product_type'
+  | 'brand'
+  | 'product_category'
+  | 'description'
+  | 'image_url'
+  | 'product_url';
+
+type ExportColumn = {
+  key: ExportColumnKey;
+  label: string;
+  group: 'Item' | 'Product';
+  getValue: (item: InventoryItemWithProduct) => string | number | boolean | null | undefined;
+};
+
+const exportColumns: ExportColumn[] = [
+  { key: 'item_id', label: 'Item ID', group: 'Item', getValue: item => item.id },
+  { key: 'cso', label: 'CSO', group: 'Item', getValue: item => item.cso },
+  { key: 'serial', label: 'Serial', group: 'Item', getValue: item => item.serial },
+  { key: 'item_model', label: 'Item Model', group: 'Item', getValue: item => item.model },
+  { key: 'item_product_type', label: 'Item Product Type', group: 'Item', getValue: item => item.product_type },
+  { key: 'inventory_type', label: 'Inventory Type', group: 'Item', getValue: item => item.inventory_type },
+  { key: 'sub_inventory', label: 'Sub Inventory', group: 'Item', getValue: item => item.sub_inventory },
+  { key: 'route_id', label: 'Route', group: 'Item', getValue: item => item.route_id },
+  { key: 'is_scanned', label: 'Scanned', group: 'Item', getValue: item => item.is_scanned },
+  { key: 'customer', label: 'Customer', group: 'Item', getValue: item => item.consumer_customer_name },
+  { key: 'created_at', label: 'Created At', group: 'Item', getValue: item => item.created_at },
+  { key: 'product_id', label: 'Product ID', group: 'Product', getValue: item => item.products?.id },
+  { key: 'product_model', label: 'Product Model', group: 'Product', getValue: item => item.products?.model },
+  { key: 'product_type', label: 'Product Type', group: 'Product', getValue: item => item.products?.product_type },
+  { key: 'brand', label: 'Brand', group: 'Product', getValue: item => item.products?.brand },
+  { key: 'product_category', label: 'Product Category', group: 'Product', getValue: item => item.products?.product_category },
+  { key: 'description', label: 'Description', group: 'Product', getValue: item => item.products?.description },
+  { key: 'image_url', label: 'Image URL', group: 'Product', getValue: item => item.products?.image_url },
+  { key: 'product_url', label: 'Product URL', group: 'Product', getValue: item => item.products?.product_url },
+];
+
+const csvEscape = (value: unknown) => {
+  if (value === null || value === undefined) return '';
+  const stringValue = String(value);
+  if (/[",\n]/.test(stringValue)) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
+};
+
 interface InventoryViewProps {
   onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-session') => void;
@@ -46,7 +121,22 @@ interface InventoryViewProps {
 
 export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: InventoryViewProps) {
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [listError, setListError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportedRows, setExportedRows] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportColumnKeys, setExportColumnKeys] = useState<Set<ExportColumnKey>>(
+    () => new Set(exportColumns.map(column => column.key))
+  );
+  const [includeRowNumbers, setIncludeRowNumbers] = useState(false);
+  const requestIdRef = useRef(0);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Read filter from URL on mount
   const getInitialFilter = (): 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts' => {
@@ -70,14 +160,26 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     const status = params.get('partsStatus');
     return status === 'reorder' ? 'reorder' : 'all';
   };
+  const getInitialSort = (): InventorySort => {
+    const params = new URLSearchParams(window.location.search);
+    const sort = params.get('sort');
+    if (sort === 'model-desc' || sort === 'created-desc' || sort === 'created-asc' || sort === 'model-asc') {
+      return sort;
+    }
+    return 'model-asc';
+  };
 
   // Filters
+  const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryTypeFilter, setInventoryTypeFilter] =
     useState<'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts'>(getInitialFilter);
   const [subInventoryFilter, setSubInventoryFilter] = useState('all');
   const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'part' | 'accessory'>('all');
   const [brandFilter, setBrandFilter] = useState('all');
+  const [sortOption, setSortOption] = useState<InventorySort>(getInitialSort);
+  const [subInventoryOptions, setSubInventoryOptions] = useState<string[]>([]);
+  const [brandOptions, setBrandOptions] = useState<string[]>([]);
 
   // State
   const [productDetailOpen, setProductDetailOpen] = useState(false);
@@ -87,6 +189,74 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   const [partsTab, setPartsTab] = useState<'inventory' | 'tracked' | 'history' | 'reports'>(getInitialPartsTab);
   const [partsStatus, setPartsStatus] = useState<'all' | 'reorder'>(getInitialPartsStatus);
   const { view, setView, isImageView } = usePartsListView();
+
+  const resolveInventoryTypes = useCallback((type: 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts') => {
+    if (type === 'FG') {
+      return ['FG', 'BackHaul'];
+    }
+    if (type === 'LocalStock') {
+      return ['LocalStock', 'Staged', 'Inbound', 'WillCall'];
+    }
+    if (type === 'ASIS') {
+      return ['ASIS'];
+    }
+    if (type === 'Parts') {
+      return ['Parts'];
+    }
+    return [];
+  }, []);
+
+  const applyInventoryFilters = useCallback(
+    (query: any, filters: InventoryFilters) => {
+      let nextQuery = query;
+
+      if (filters.inventoryType !== 'all') {
+        const types = resolveInventoryTypes(filters.inventoryType);
+        if (types.length === 1) {
+          nextQuery = nextQuery.eq('inventory_type', types[0]);
+        } else if (types.length > 1) {
+          nextQuery = nextQuery.in('inventory_type', types);
+        }
+      }
+
+      if (filters.subInventory !== 'all') {
+        nextQuery = nextQuery.eq('sub_inventory', filters.subInventory);
+      }
+
+      if (filters.productCategory !== 'all') {
+        nextQuery = nextQuery.eq('products.product_category', filters.productCategory);
+      }
+
+      if (filters.brand !== 'all') {
+        nextQuery = nextQuery.eq('products.brand', filters.brand);
+      }
+
+      if (filters.search) {
+        const escaped = filters.search.replace(/[%_]/g, '\\$&').replace(/,/g, ' ');
+        const like = `%${escaped}%`;
+        nextQuery = nextQuery.or(
+          `cso.ilike.${like},serial.ilike.${like},model.ilike.${like},product_type.ilike.${like}`
+        );
+      }
+
+      return nextQuery;
+    },
+    [resolveInventoryTypes]
+  );
+
+  const applyInventorySort = useCallback((query: any, sort: InventorySort) => {
+    switch (sort) {
+      case 'model-desc':
+        return query.order('model', { ascending: false }).order('created_at', { ascending: false });
+      case 'created-asc':
+        return query.order('created_at', { ascending: true }).order('model', { ascending: true });
+      case 'created-desc':
+        return query.order('created_at', { ascending: false }).order('model', { ascending: true });
+      case 'model-asc':
+      default:
+        return query.order('model', { ascending: true }).order('created_at', { ascending: false });
+    }
+  }, []);
 
   // Keep tabs in sync with URL changes (e.g., sidebar navigation)
   useEffect(() => {
@@ -104,10 +274,16 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
           : 'inventory';
       const status = params.get('partsStatus');
       const nextStatus = status === 'reorder' ? 'reorder' : 'all';
+      const sort = params.get('sort');
+      const nextSort =
+        sort === 'model-desc' || sort === 'created-desc' || sort === 'created-asc' || sort === 'model-asc'
+          ? sort
+          : 'model-asc';
 
       setInventoryTypeFilter(prev => (prev === nextType ? prev : nextType));
       setPartsTab(prev => (prev === nextTab ? prev : nextTab));
       setPartsStatus(prev => (prev === nextStatus ? prev : nextStatus));
+      setSortOption(prev => (prev === nextSort ? prev : nextSort));
     };
 
     syncFromParams();
@@ -125,6 +301,14 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
       setPartsStatus('all');
     }
   }, [partsTab, partsStatus]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      const next = searchInput.trim();
+      setSearchTerm(prev => (prev === next ? prev : next));
+    }, 200);
+    return () => window.clearTimeout(timeout);
+  }, [searchInput]);
 
   // Update URL when filters change
   useEffect(() => {
@@ -147,64 +331,64 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
       params.delete('partsStatus');
     }
 
+    if (sortOption !== 'model-asc') {
+      params.set('sort', sortOption);
+    } else {
+      params.delete('sort');
+    }
+
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
     window.dispatchEvent(new Event('app:locationchange'));
-  }, [inventoryTypeFilter, partsTab, partsStatus]);
-
-  const fetchItems = async () => {
-    setLoading(true);
-    try {
-      // Fetch ALL items in batches
-      let allItems: any[] = [];
-      let from = 0;
-      const batchSize = 1000;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('inventory_items')
-          .select(
-            `
-            *,
-            products:product_fk (
-              id,
-              model,
-              product_type,
-              brand,
-              description,
-              dimensions,
-              image_url,
-              product_url,
-              product_category
-            )
-          `,
-          )
-          .range(from, from + batchSize - 1)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          allItems = [...allItems, ...data];
-          from += batchSize;
-          hasMore = data.length === batchSize;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      setItems(allItems);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [inventoryTypeFilter, partsTab, partsStatus, sortOption]);
 
   useEffect(() => {
-    fetchItems();
+    const fetchBrands = async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('brand')
+        .not('brand', 'is', null);
+
+      if (error) {
+        console.error('Failed to load brands:', error);
+        return;
+      }
+
+      const unique = Array.from(new Set((data ?? []).map(item => item.brand).filter(Boolean))).sort();
+      setBrandOptions(unique);
+    };
+
+    fetchBrands();
   }, []);
+
+  useEffect(() => {
+    const typesWithLoads = ['ASIS', 'FG', 'LocalStock'];
+    if (inventoryTypeFilter === 'all' || !typesWithLoads.includes(inventoryTypeFilter)) {
+      setSubInventoryOptions([]);
+      return;
+    }
+
+    const fetchSubInventories = async () => {
+      const types = resolveInventoryTypes(inventoryTypeFilter);
+      const { data, error } = await supabase
+        .from('load_metadata')
+        .select('sub_inventory_name')
+        .in('inventory_type', types);
+
+      if (error) {
+        console.error('Failed to load sub-inventories:', error);
+        setSubInventoryOptions([]);
+        return;
+      }
+
+      const unique = Array.from(
+        new Set((data ?? []).map(item => item.sub_inventory_name).filter(Boolean))
+      ).sort();
+      setSubInventoryOptions(unique);
+    };
+
+    fetchSubInventories();
+  }, [inventoryTypeFilter, resolveInventoryTypes]);
 
   const handleViewProduct = (model: string) => {
     setSelectedModel(model);
@@ -216,91 +400,280 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     setItemDetailOpen(true);
   };
 
-  const uniqueSubInventories = useMemo(() => {
-    // Only show sub-inventory filter for types that use loads
-    const typesWithLoads = ['ASIS', 'FG', 'LocalStock'];
-    if (inventoryTypeFilter === 'all' || !typesWithLoads.includes(inventoryTypeFilter)) {
-      return [];
-    }
+  const handleExport = useCallback(async () => {
+    if (exporting) return;
 
-    // Get items matching the filter type (including related types)
-    const scoped = items.filter(i => {
-      if (inventoryTypeFilter === 'FG') {
-        return i.inventory_type === 'FG' || i.inventory_type === 'BackHaul';
-      } else if (inventoryTypeFilter === 'LocalStock') {
-        return i.inventory_type === 'LocalStock' || i.inventory_type === 'Staged' || i.inventory_type === 'Inbound' || i.inventory_type === 'WillCall';
-      } else if (inventoryTypeFilter === 'ASIS') {
-        return i.inventory_type === 'ASIS';
-      } else {
-        return i.inventory_type === inventoryTypeFilter;
+    const exportSearch = searchInput.trim();
+    const exportFilters: InventoryFilters = {
+      inventoryType: inventoryTypeFilter,
+      subInventory: subInventoryFilter,
+      productCategory: productCategoryFilter,
+      brand: brandFilter,
+      search: exportSearch,
+    };
+
+    setExporting(true);
+    setExportedRows(0);
+    setExportError(null);
+
+    try {
+      const lines: string[] = [];
+      const selectedColumns = exportColumns.filter(column => exportColumnKeys.has(column.key));
+      if (selectedColumns.length === 0) {
+        throw new Error('Select at least one column to export.');
       }
-    });
 
-    return [...new Set(scoped.map(i => i.sub_inventory).filter(Boolean))].sort();
-  }, [items, inventoryTypeFilter]);
+      const header = [
+        ...(includeRowNumbers ? ['#'] : []),
+        ...selectedColumns.map(column => column.label),
+      ];
+      lines.push(header.map(csvEscape).join(','));
 
-  const uniqueBrands = useMemo(() => {
-    const brands = items
-      .map(i => i.products?.brand)
-      .filter(Boolean) as string[];
-    return [...new Set(brands)].sort();
-  }, [items]);
+      let from = 0;
+      let totalExported = 0;
+      let rowNumber = 1;
+
+      while (true) {
+        let query = supabase
+          .from('inventory_items')
+          .select(
+            `
+            id,
+            cso,
+            serial,
+            model,
+            product_type,
+            inventory_type,
+            sub_inventory,
+            route_id,
+            is_scanned,
+            consumer_customer_name,
+            created_at,
+            products:product_fk (
+              id,
+              model,
+              product_type,
+              brand,
+              description,
+              image_url,
+              product_url,
+              product_category
+            )
+          `
+          )
+          .range(from, from + EXPORT_BATCH_SIZE - 1);
+
+        query = applyInventoryFilters(query, exportFilters);
+        query = applyInventorySort(query, sortOption);
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const batch = (data ?? []) as InventoryItemWithProduct[];
+        if (batch.length === 0) break;
+
+        for (const item of batch) {
+          const rowValues = selectedColumns.map(column => {
+            const value = column.getValue(item);
+            if (column.key === 'is_scanned') {
+              return value ? 'true' : 'false';
+            }
+            return value ?? '';
+          });
+
+          const row = includeRowNumbers
+            ? [rowNumber, ...rowValues]
+            : rowValues;
+
+          lines.push(row.map(csvEscape).join(','));
+          rowNumber += 1;
+        }
+
+        totalExported += batch.length;
+        setExportedRows(totalExported);
+
+        if (batch.length < EXPORT_BATCH_SIZE) break;
+        from += EXPORT_BATCH_SIZE;
+      }
+
+      const filenameParts = ['inventory-export'];
+      if (exportFilters.inventoryType !== 'all') {
+        filenameParts.push(exportFilters.inventoryType.toLowerCase());
+      }
+      if (exportFilters.subInventory !== 'all') {
+        filenameParts.push(exportFilters.subInventory.replace(/\s+/g, '-').toLowerCase());
+      }
+      filenameParts.push(new Date().toISOString().slice(0, 10));
+      const filename = `${filenameParts.join('-')}.csv`;
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export inventory:', err);
+      setExportError(err instanceof Error ? err.message : 'Failed to export inventory');
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    applyInventoryFilters,
+    applyInventorySort,
+    exportColumnKeys,
+    exporting,
+    inventoryTypeFilter,
+    subInventoryFilter,
+    productCategoryFilter,
+    brandFilter,
+    includeRowNumbers,
+    searchInput,
+    sortOption,
+  ]);
+
+  const fetchInventoryPage = useCallback(async (pageIndex: number, options?: { append?: boolean }) => {
+    const append = options?.append ?? false;
+    const requestId = ++requestIdRef.current;
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+    setListError(null);
+
+    try {
+      const filters: InventoryFilters = {
+        inventoryType: inventoryTypeFilter,
+        subInventory: subInventoryFilter,
+        productCategory: productCategoryFilter,
+        brand: brandFilter,
+        search: searchTerm,
+      };
+
+      let query = supabase
+        .from('inventory_items')
+        .select(
+          `
+          id,
+          cso,
+          serial,
+          model,
+          product_type,
+          inventory_type,
+          sub_inventory,
+          route_id,
+          is_scanned,
+          consumer_customer_name,
+          products:product_fk (
+            id,
+            model,
+            product_type,
+            brand,
+            description,
+            image_url,
+            product_category
+          )
+        `,
+          { count: 'exact' }
+        )
+        .range(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE - 1);
+
+      query = applyInventoryFilters(query, filters);
+      query = applyInventorySort(query, sortOption);
+
+      const { data, error, count } = await query;
+
+      if (requestId !== requestIdRef.current) return;
+      if (error) throw error;
+
+      const nextItems = (data ?? []) as InventoryItemWithProduct[];
+      setItems(prev => (append ? [...prev, ...nextItems] : nextItems));
+      setPage(pageIndex);
+      if (typeof count === 'number') {
+        setTotalCount(count);
+      }
+      const moreAvailable = nextItems.length === PAGE_SIZE && (typeof count !== 'number' || (pageIndex + 1) * PAGE_SIZE < count);
+      setHasMore(moreAvailable);
+    } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      console.error('Failed to load inventory items:', err);
+      setListError(err instanceof Error ? err.message : 'Failed to load inventory items');
+      if (!append) {
+        setItems([]);
+        setTotalCount(0);
+        setHasMore(false);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort]);
+
+  const handleLoadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return;
+    fetchInventoryPage(page + 1, { append: true });
+  }, [fetchInventoryPage, hasMore, loading, loadingMore, page]);
 
   useEffect(() => {
     setSubInventoryFilter('all');
   }, [inventoryTypeFilter]);
 
-  const filteredItems = useMemo(() => {
-    const q = searchTerm.toLowerCase();
+  useEffect(() => {
+    if (inventoryTypeFilter === 'Parts') {
+      setItems([]);
+      setTotalCount(0);
+      setHasMore(false);
+      setListError(null);
+      setLoading(false);
+      setLoadingMore(false);
+      return;
+    }
 
-    return items.filter(item => {
-      const matchesSearch =
-        !q ||
-        item.cso?.toLowerCase().includes(q) ||
-        item.serial?.toLowerCase().includes(q) ||
-        item.model?.toLowerCase().includes(q) ||
-        item.products?.model?.toLowerCase().includes(q) ||
-        item.products?.brand?.toLowerCase().includes(q) ||
-        item.products?.description?.toLowerCase().includes(q);
+    const timeout = window.setTimeout(() => {
+      setItems([]);
+      setPage(0);
+      setHasMore(true);
+      setTotalCount(0);
+      setListError(null);
+      setLoadingMore(false);
+      fetchInventoryPage(0, { append: false });
+    }, 150);
 
-      // Handle inventory type filter with grouped types
-      const matchesType = (() => {
-        if (inventoryTypeFilter === 'all') return true;
+    return () => window.clearTimeout(timeout);
+  }, [searchTerm, inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, sortOption, fetchInventoryPage]);
 
-        if (inventoryTypeFilter === 'FG') {
-          return item.inventory_type === 'FG' || item.inventory_type === 'BackHaul';
-        } else if (inventoryTypeFilter === 'LocalStock') {
-          return item.inventory_type === 'LocalStock' || item.inventory_type === 'Staged' || item.inventory_type === 'Inbound';
-        } else if (inventoryTypeFilter === 'Parts') {
-          return item.inventory_type === 'Parts';
-        } else if (inventoryTypeFilter === 'ASIS') {
-          return item.inventory_type === 'ASIS';
+  useEffect(() => {
+    if (inventoryTypeFilter === 'Parts') return;
+    const node = loadMoreRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) {
+          handleLoadMore();
         }
+      },
+      { rootMargin: '200px' }
+    );
 
-        return item.inventory_type === inventoryTypeFilter;
-      })();
-
-      const matchesSub =
-        subInventoryFilter === 'all' ||
-        item.sub_inventory === subInventoryFilter;
-
-      const matchesCategory =
-        productCategoryFilter === 'all' ||
-        item.products?.product_category === productCategoryFilter;
-
-      const matchesBrand =
-        brandFilter === 'all' ||
-        item.products?.brand === brandFilter;
-
-      return matchesSearch && matchesType && matchesSub && matchesCategory && matchesBrand;
-    });
-  }, [items, searchTerm, inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter]);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [handleLoadMore, inventoryTypeFilter]);
 
   const activeFilters = [
     searchTerm && {
       key: 'search',
       label: `Search: ${searchTerm}`,
-      clear: () => setSearchTerm(''),
+      clear: () => {
+        setSearchInput('');
+        setSearchTerm('');
+      },
     },
     inventoryTypeFilter !== 'all' && {
       key: 'type',
@@ -325,21 +698,14 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
 
   const clearAllFilters = () => {
+    setSearchInput('');
     setSearchTerm('');
     setInventoryTypeFilter('all');
     setSubInventoryFilter('all');
     setProductCategoryFilter('all');
     setBrandFilter('all');
+    setSortOption('model-asc');
   };
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-2">
-        <Loader2 className="h-6 w-6 animate-spin" />
-        <span>Loading inventory…</span>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -352,6 +718,15 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
             <Button size="sm" variant="outline" onClick={() => onViewChange('loads')}>
               <PackageOpen className="mr-2 h-4 w-4" />
               Manage Loads
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExportDialogOpen(true)}
+              disabled={inventoryTypeFilter === 'Parts'}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
             </Button>
             <Button size="sm" onClick={() => onViewChange('create-session')}>
               <ScanBarcode className="mr-2 h-4 w-4" />
@@ -368,14 +743,14 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search CSO, Serial, Model, Brand…"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search CSO, Serial, Model…"
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               className="pl-10"
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Select
               value={inventoryTypeFilter}
               onValueChange={v =>
@@ -420,16 +795,28 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
             </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Brands</SelectItem>
-                {uniqueBrands.map(brand => (
+                {brandOptions.map(brand => (
                   <SelectItem key={brand} value={brand}>
                     {brand}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+
+            <Select value={sortOption} onValueChange={v => setSortOption(v as InventorySort)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="model-asc">Model A → Z</SelectItem>
+                <SelectItem value="model-desc">Model Z → A</SelectItem>
+                <SelectItem value="created-desc">Newest first</SelectItem>
+                <SelectItem value="created-asc">Oldest first</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {uniqueSubInventories.length > 0 && (
+          {subInventoryOptions.length > 0 && (
             <Select
               value={subInventoryFilter}
               onValueChange={setSubInventoryFilter}
@@ -439,8 +826,8 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Sub-Inventories</SelectItem>
-                {uniqueSubInventories.map(sub => (
-                  <SelectItem key={sub} value={sub!}>
+                {subInventoryOptions.map(sub => (
+                  <SelectItem key={sub} value={sub}>
                     {sub}
                   </SelectItem>
                 ))}
@@ -451,7 +838,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
           {/* Filter chips and count */}
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">
-              {filteredItems.length} of {items.length} items
+              {totalCount > 0 ? `${items.length} of ${totalCount} items` : `${items.length} items`}
             </span>
             {activeFilters.map((filter) => (
               <Button
@@ -471,6 +858,20 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
               </Button>
             )}
           </div>
+
+          {(exporting || exportError) && (
+            <div className="text-xs">
+              {exporting && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Exporting {exportedRows} rows…
+                </div>
+              )}
+              {exportError && (
+                <div className="text-destructive">{exportError}</div>
+              )}
+            </div>
+          )}
 
           {inventoryTypeFilter !== 'Parts' && (
             <div className="flex justify-end">
@@ -495,7 +896,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
             </TabsList>
 
             <TabsContent value="inventory">
-              <PartsInventoryTab searchTerm={searchTerm} statusFilter={partsStatus} />
+              <PartsInventoryTab searchTerm={searchInput} statusFilter={partsStatus} />
             </TabsContent>
 
             <TabsContent value="tracked">
@@ -514,7 +915,24 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
       ) : (
         /* Regular Inventory List */
         <PageContainer className="py-4 pb-24 space-y-2">
-          {filteredItems.map(item => (
+          {listError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {listError}
+            </div>
+          )}
+          {loading && items.length === 0 && (
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed py-8 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading inventory…
+            </div>
+          )}
+          {!loading && !listError && items.length === 0 && (
+            <div className="flex items-center justify-center rounded-lg border border-dashed py-8 text-sm text-muted-foreground">
+              No items match these filters.
+            </div>
+          )}
+
+          {items.map(item => (
             <InventoryItemCard
               key={item.id as string}
               item={item}
@@ -561,6 +979,19 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
               showRouteBadge
             />
           ))}
+
+          {loadingMore && (
+            <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading more…
+            </div>
+          )}
+          <div ref={loadMoreRef} className="h-px" />
+          {!loadingMore && !loading && !hasMore && items.length > 0 && (
+            <div className="text-center text-xs text-muted-foreground">
+              End of results
+            </div>
+          )}
         </PageContainer>
       )}
 
@@ -575,6 +1006,112 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
         onOpenChange={setItemDetailOpen}
         itemId={selectedItemId}
       />
+
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Export inventory</DialogTitle>
+            <DialogDescription>
+              Choose which columns to include in the CSV export.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="include-row-numbers"
+                  checked={includeRowNumbers}
+                  onCheckedChange={(checked) => setIncludeRowNumbers(checked === true)}
+                  disabled={exporting}
+                />
+                <Label htmlFor="include-row-numbers">Add row numbers column</Label>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{exportColumnKeys.size} columns selected</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => setExportColumnKeys(new Set(exportColumns.map(column => column.key)))}
+                  disabled={exporting}
+                >
+                  Select all
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  type="button"
+                  onClick={() => setExportColumnKeys(new Set())}
+                  disabled={exporting}
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(['Item', 'Product'] as const).map(group => (
+                <div key={group} className="space-y-2 rounded-lg border p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group} columns
+                  </div>
+                  <div className="grid gap-2">
+                    {exportColumns.filter(column => column.group === group).map(column => (
+                      <label key={column.key} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={exportColumnKeys.has(column.key)}
+                          onCheckedChange={(checked) => {
+                            setExportColumnKeys(prev => {
+                              const next = new Set(prev);
+                              if (checked === true) {
+                                next.add(column.key);
+                              } else {
+                                next.delete(column.key);
+                              }
+                              return next;
+                            });
+                          }}
+                          disabled={exporting}
+                        />
+                        <span>{column.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            {exportError && (
+              <div className="mr-auto text-xs text-destructive">
+                {exportError}
+              </div>
+            )}
+            <Button type="button" variant="outline" onClick={() => setExportDialogOpen(false)} disabled={exporting}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                await handleExport();
+                setExportDialogOpen(false);
+              }}
+              disabled={exporting || exportColumnKeys.size === 0}
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Exporting…
+                </>
+              ) : (
+                'Export CSV'
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       
     </div>
