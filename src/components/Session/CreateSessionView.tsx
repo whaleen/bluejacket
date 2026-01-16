@@ -22,7 +22,6 @@ import { useAuth } from '@/context/AuthContext';
 import { getActiveLocationContext } from '@/lib/tenant';
 
 interface CreateSessionViewProps {
-  onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load' | 'create-session') => void;
   onMenuClick?: () => void;
   sessionId?: string | null;
@@ -83,7 +82,7 @@ function getInitials(name?: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, sessionId, onSessionChange }: CreateSessionViewProps) {
+export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSessionChange }: CreateSessionViewProps) {
   const { user } = useAuth();
   const { locationId, companyId } = getActiveLocationContext();
   const [activeTab, setActiveTab] = useState<'existing' | 'upload'>('existing');
@@ -538,7 +537,6 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Scanning Sessions"
-        onSettingsClick={onSettingsClick}
         onMenuClick={onMenuClick}
         actions={
           <Button variant="ghost" size="icon" onClick={() => onViewChange('inventory')}>

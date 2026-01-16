@@ -11,12 +11,11 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface CreateLoadViewProps {
-  onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load') => void;
   onMenuClick?: () => void;
 }
 
-export function CreateLoadView({ onSettingsClick, onViewChange, onMenuClick }: CreateLoadViewProps) {
+export function CreateLoadView({ onViewChange, onMenuClick }: CreateLoadViewProps) {
   const [inventoryType, setInventoryType] = useState<InventoryType>('ASIS');
   const [loadName, setLoadName] = useState('');
   const [category, setCategory] = useState('');
@@ -64,7 +63,6 @@ export function CreateLoadView({ onSettingsClick, onViewChange, onMenuClick }: C
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Create New Load"
-        onSettingsClick={onSettingsClick}
         onMenuClick={onMenuClick}
         actions={
           <Button variant="ghost" size="icon" onClick={() => onViewChange('loads')}>

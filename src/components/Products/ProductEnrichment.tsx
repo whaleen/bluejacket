@@ -44,11 +44,10 @@ interface ProductData {
 }
 
 interface ProductEnrichmentProps {
-  onSettingsClick: () => void;
   onMenuClick?: () => void;
 }
 
-export function ProductEnrichment({ onSettingsClick, onMenuClick }: ProductEnrichmentProps) {
+export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ProductData[]>([]);
@@ -159,7 +158,7 @@ export function ProductEnrichment({ onSettingsClick, onMenuClick }: ProductEnric
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Product Database" onSettingsClick={onSettingsClick} onMenuClick={onMenuClick} />
+      <AppHeader title="Product Database" onMenuClick={onMenuClick} />
       <PageContainer className="pt-6 pb-24">
         <div className="max-w-2xl mx-auto space-y-6">
           <p className="text-muted-foreground">Look up or add appliance model information</p>

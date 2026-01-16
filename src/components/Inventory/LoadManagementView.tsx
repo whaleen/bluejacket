@@ -20,12 +20,11 @@ interface LoadWithCount extends LoadMetadata {
 }
 
 interface LoadManagementViewProps {
-  onSettingsClick: () => void;
   onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-load') => void;
   onMenuClick?: () => void;
 }
 
-export function LoadManagementView({ onSettingsClick, onViewChange, onMenuClick }: LoadManagementViewProps) {
+export function LoadManagementView({ onViewChange, onMenuClick }: LoadManagementViewProps) {
   const { toast } = useToast();
   const [selectedTab, setSelectedTab] = useState<InventoryType>('ASIS');
   const [loads, setLoads] = useState<LoadWithCount[]>([]);
@@ -199,7 +198,6 @@ export function LoadManagementView({ onSettingsClick, onViewChange, onMenuClick 
       <div className="min-h-screen bg-background">
         <AppHeader
           title="Load Management"
-          onSettingsClick={onSettingsClick}
           onMenuClick={onMenuClick}
           actions={
             <div className="flex flex-wrap gap-2">

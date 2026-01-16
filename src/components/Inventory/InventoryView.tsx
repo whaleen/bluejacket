@@ -22,11 +22,14 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { Loader2, Search, PackageOpen, ScanBarcode, ClipboardList, X, FileText, PackageSearch, Download } from 'lucide-react';
+import { Loader2, Search, ClipboardList, X, FileText, PackageSearch, Download, Trash2, Upload } from 'lucide-react';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useToast } from '@/components/ui/toast';
+import { fetchAsisCsvRows, fetchAsisXlsRows } from '@/lib/asisImport';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -42,8 +45,41 @@ type InventoryItemWithProduct = InventoryItem & {
   } | null;
 };
 
+type AsisProductRow = {
+  'Model #': string;
+  'Serial #': string;
+  'Inv Qty': string | number;
+  'Availability Status': string;
+  'Availability Message': string;
+};
+
+type AsisLoadRow = {
+  'Load Number': string;
+  Units: string | number;
+  Notes?: string;
+  'Scanned Date/Time'?: string;
+  Status?: string;
+};
+
+type AsisLoadItemRow = {
+  ORDC: string;
+  MODELS: string;
+  SERIALS: string;
+  QTY: string | number;
+  'LOAD NUMBER': string;
+};
+
+type NormalizedAsisLoad = {
+  loadNumber: string;
+  units: number;
+  notes: string;
+  scannedAt: string;
+  status: string;
+};
+
 const PAGE_SIZE = 60;
 const EXPORT_BATCH_SIZE = 1000;
+const IMPORT_BATCH_SIZE = 500;
 
 type InventoryFilters = {
   inventoryType: 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts';
@@ -120,14 +156,21 @@ const normalizeInventoryItem = (item: any): InventoryItemWithProduct => ({
   products: Array.isArray(item.products) ? item.products[0] ?? null : item.products ?? null,
 });
 
+const chunkArray = <T,>(items: T[], size: number) => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+};
+
 interface InventoryViewProps {
-  onSettingsClick: () => void;
-  onViewChange: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads' | 'create-session') => void;
   onMenuClick?: () => void;
 }
 
-export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: InventoryViewProps) {
-  const { locationId } = getActiveLocationContext();
+export function InventoryView({ onMenuClick }: InventoryViewProps) {
+  const { locationId, companyId } = getActiveLocationContext();
+  const { toast } = useToast();
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -139,6 +182,10 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   const [exportedRows, setExportedRows] = useState(0);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [nukeDialogOpen, setNukeDialogOpen] = useState(false);
+  const [nuking, setNuking] = useState(false);
+  const [importingProducts, setImportingProducts] = useState(false);
+  const [importingLoads, setImportingLoads] = useState(false);
   const [exportColumnKeys, setExportColumnKeys] = useState<Set<ExportColumnKey>>(
     () => new Set(exportColumns.map(column => column.key))
   );
@@ -629,6 +676,278 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     }
   }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort, locationId]);
 
+  const refreshInventoryList = useCallback(() => {
+    if (inventoryTypeFilter === 'Parts') return;
+    setItems([]);
+    setPage(0);
+    setHasMore(true);
+    setTotalCount(0);
+    setListError(null);
+    setLoadingMore(false);
+    fetchInventoryPage(0, { append: false });
+  }, [fetchInventoryPage, inventoryTypeFilter]);
+
+  const handleNukeProducts = useCallback(async () => {
+    if (nuking) return;
+    if (!locationId) {
+      toast({
+        variant: 'destructive',
+        title: 'No active location',
+        description: 'Select a location before clearing inventory.',
+      });
+      return;
+    }
+
+    setNuking(true);
+    try {
+      const { error, count } = await supabase
+        .from('inventory_items')
+        .delete({ count: 'exact' })
+        .eq('location_id', locationId)
+        .or('inventory_type.neq.Parts,inventory_type.is.null');
+
+      if (error) throw error;
+
+      toast({
+        title: 'Non-part inventory cleared',
+        description: typeof count === 'number' ? `${count} items removed.` : 'Non-part items removed.',
+      });
+
+      refreshInventoryList();
+    } catch (err) {
+      console.error('Failed to clear non-part inventory:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to clear inventory',
+        description: err instanceof Error ? err.message : 'Unable to delete non-part items.',
+      });
+    } finally {
+      setNuking(false);
+    }
+  }, [locationId, nuking, refreshInventoryList, toast]);
+
+  const buildProductLookup = useCallback(async (models: string[]) => {
+    const uniqueModels = Array.from(new Set(models.map(model => model.trim()).filter(Boolean)));
+    const lookup = new Map<string, { id?: string; product_type?: string }>();
+    for (const chunk of chunkArray(uniqueModels, 500)) {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, model, product_type')
+        .in('model', chunk);
+      if (error) throw error;
+      (data ?? []).forEach(product => {
+        lookup.set(product.model, { id: product.id, product_type: product.product_type });
+      });
+    }
+    return lookup;
+  }, []);
+
+  const handleImportProducts = useCallback(async () => {
+    if (importingProducts || importingLoads) return;
+    setImportingProducts(true);
+    try {
+      const rows = await fetchAsisXlsRows<AsisProductRow>('ASIS.xls');
+      if (!rows.length) {
+        toast({
+          title: 'No ASIS products found',
+          description: 'ASIS.xls did not return any rows.',
+        });
+        return;
+      }
+
+      const models = rows
+        .map(row => String(row['Model #'] ?? '').trim())
+        .filter(Boolean);
+      const productLookup = await buildProductLookup(models);
+
+      const inventoryItems = rows
+        .map(row => {
+          const model = String(row['Model #'] ?? '').trim();
+          if (!model) return null;
+          const serialValue = String(row['Serial #'] ?? '').trim();
+          const qtyValue = typeof row['Inv Qty'] === 'number' ? row['Inv Qty'] : parseInt(String(row['Inv Qty']).trim(), 10);
+          const product = productLookup.get(model);
+          return {
+            cso: 'ASIS',
+            model,
+            qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
+            serial: serialValue || undefined,
+            product_type: product?.product_type ?? 'UNKNOWN',
+            product_fk: product?.id,
+            status: String(row['Availability Status'] ?? '').trim() || undefined,
+            notes: String(row['Availability Message'] ?? '').trim() || undefined,
+            inventory_type: 'ASIS' as const,
+            is_scanned: false,
+          };
+        })
+        .filter(Boolean) as InventoryItem[];
+
+      const payload = inventoryItems.map(item => ({
+        ...item,
+        company_id: companyId,
+        location_id: locationId,
+      }));
+
+      for (const chunk of chunkArray(payload, IMPORT_BATCH_SIZE)) {
+        const { error } = await supabase
+          .from('inventory_items')
+          .upsert(chunk, { onConflict: 'serial' });
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'ASIS products imported',
+        description: `${inventoryItems.length} items processed.`,
+      });
+      refreshInventoryList();
+    } catch (err) {
+      console.error('Failed to import ASIS products:', err);
+      toast({
+        variant: 'destructive',
+        title: 'ASIS import failed',
+        description: err instanceof Error ? err.message : 'Unable to import ASIS.xls.',
+      });
+    } finally {
+      setImportingProducts(false);
+    }
+  }, [buildProductLookup, companyId, importingLoads, importingProducts, locationId, refreshInventoryList, toast]);
+
+  const handleImportLoads = useCallback(async () => {
+    if (importingProducts || importingLoads) return;
+    setImportingLoads(true);
+    try {
+      const loadRows = await fetchAsisXlsRows<AsisLoadRow>('ASISLoadData.xls');
+      const normalizedLoads: NormalizedAsisLoad[] = loadRows
+        .map(row => {
+          const loadNumber = String(row['Load Number'] ?? '').trim();
+          if (!loadNumber) return null;
+          const unitsValue = typeof row.Units === 'number' ? row.Units : parseInt(String(row.Units).trim(), 10);
+          return {
+            loadNumber,
+            units: Number.isFinite(unitsValue) ? unitsValue : 0,
+            notes: String(row.Notes ?? '').trim(),
+            scannedAt: String(row['Scanned Date/Time'] ?? '').trim(),
+            status: String(row.Status ?? '').trim(),
+          };
+        })
+        .filter(Boolean) as NormalizedAsisLoad[];
+
+      if (!normalizedLoads.length) {
+        toast({
+          title: 'No ASIS loads found',
+          description: 'ASISLoadData.xls did not return any rows.',
+        });
+        return;
+      }
+
+      const loadNumbers = normalizedLoads.map(load => load.loadNumber);
+      let existingLoadNumbers = new Set<string>();
+      if (loadNumbers.length) {
+        const { data, error } = await supabase
+          .from('load_metadata')
+          .select('sub_inventory_name')
+          .eq('location_id', locationId)
+          .eq('inventory_type', 'ASIS')
+          .in('sub_inventory_name', loadNumbers);
+        if (error) throw error;
+        existingLoadNumbers = new Set((data ?? []).map(load => load.sub_inventory_name));
+      }
+
+      const newLoads = normalizedLoads
+        .filter(load => !existingLoadNumbers.has(load.loadNumber))
+        .map(load => ({
+          company_id: companyId,
+          location_id: locationId,
+          inventory_type: 'ASIS',
+          sub_inventory_name: load.loadNumber,
+          status: 'active',
+          category: load.status || null,
+          notes: [load.notes, load.scannedAt].filter(Boolean).join(' • ') || null,
+        }));
+
+      if (newLoads.length) {
+        const { error } = await supabase.from('load_metadata').insert(newLoads);
+        if (error) throw error;
+      }
+
+      const loadItemRows: Array<{ row: AsisLoadItemRow; load: NormalizedAsisLoad }> = [];
+      const loadErrors: string[] = [];
+      for (const load of normalizedLoads) {
+        try {
+          const rows = await fetchAsisCsvRows<AsisLoadItemRow>(`${load.loadNumber}.csv`);
+          rows.forEach(row => loadItemRows.push({ row, load }));
+        } catch (err) {
+          loadErrors.push(`${load.loadNumber}: ${err instanceof Error ? err.message : 'Failed to load CSV.'}`);
+        }
+      }
+
+      const loadModels = loadItemRows
+        .map(item => String(item.row.MODELS ?? '').trim())
+        .filter(Boolean);
+      const productLookup = await buildProductLookup(loadModels);
+
+      const inventoryItems = loadItemRows
+        .map(({ row, load }) => {
+          const model = String(row.MODELS ?? '').trim();
+          if (!model) return null;
+          const serialValue = String(row.SERIALS ?? '').trim();
+          const qtyValue = typeof row.QTY === 'number' ? row.QTY : parseInt(String(row.QTY).trim(), 10);
+          const product = productLookup.get(model);
+          return {
+            cso: String(row.ORDC ?? '').trim() || 'ASIS',
+            model,
+            qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
+            serial: serialValue || undefined,
+            product_type: product?.product_type ?? 'UNKNOWN',
+            product_fk: product?.id,
+            status: load.status || undefined,
+            notes: load.notes || undefined,
+            inventory_type: 'ASIS' as const,
+            sub_inventory: load.loadNumber,
+            is_scanned: false,
+          };
+        })
+        .filter(Boolean) as InventoryItem[];
+
+      const payload = inventoryItems.map(item => ({
+        ...item,
+        company_id: companyId,
+        location_id: locationId,
+      }));
+
+      for (const chunk of chunkArray(payload, IMPORT_BATCH_SIZE)) {
+        const { error } = await supabase
+          .from('inventory_items')
+          .upsert(chunk, { onConflict: 'serial' });
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'ASIS loads imported',
+        description: `${normalizedLoads.length} loads, ${inventoryItems.length} items processed.`,
+      });
+
+      if (loadErrors.length) {
+        toast({
+          variant: 'destructive',
+          title: 'Some load CSVs failed',
+          description: `${loadErrors.length} CSV files could not be read.`,
+        });
+      }
+
+      refreshInventoryList();
+    } catch (err) {
+      console.error('Failed to import ASIS loads:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Load import failed',
+        description: err instanceof Error ? err.message : 'Unable to import ASIS loads.',
+      });
+    } finally {
+      setImportingLoads(false);
+    }
+  }, [buildProductLookup, companyId, importingLoads, importingProducts, locationId, refreshInventoryList, toast]);
+
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
     fetchInventoryPage(page + 1, { append: true });
@@ -725,13 +1044,34 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     <div className="min-h-screen bg-background">
       <AppHeader
         title="Inventory"
-        onSettingsClick={onSettingsClick}
         onMenuClick={onMenuClick}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => onViewChange('loads')}>
-              <PackageOpen className="mr-2 h-4 w-4" />
-              Manage Loads
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleImportProducts}
+              disabled={importingProducts || importingLoads}
+            >
+              {importingProducts ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Import products
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleImportLoads}
+              disabled={importingProducts || importingLoads}
+            >
+              {importingLoads ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Import loads
             </Button>
             <Button
               size="sm"
@@ -742,11 +1082,15 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
               <Download className="mr-2 h-4 w-4" />
               Export CSV
             </Button>
-            <Button size="sm" onClick={() => onViewChange('create-session')}>
-              <ScanBarcode className="mr-2 h-4 w-4" />
-              Scan
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setNukeDialogOpen(true)}
+              disabled={nuking}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Nuke products
             </Button>
-            
           </div>
         }
       />
@@ -1126,6 +1470,16 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={nukeDialogOpen}
+        onOpenChange={setNukeDialogOpen}
+        title="Nuke non-part inventory?"
+        description="This will delete every inventory item that is not a part for the active location. This cannot be undone."
+        confirmText="Delete non-part items"
+        destructive
+        onConfirm={handleNukeProducts}
+      />
 
       
     </div>

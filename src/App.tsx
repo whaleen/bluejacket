@@ -9,8 +9,9 @@ import { ProductEnrichment } from "./components/Products/ProductEnrichment";
 import { InventoryView } from "./components/Inventory/InventoryView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
-import { AppSidebar } from "./components/Navigation/AppSidebar";
+import { AppSidebar } from "./components/app-sidebar";
 import { getPathForView, parseRoute, type AppView } from "@/lib/routes";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 function App() {
   const { user, loading } = useAuth();
@@ -33,7 +34,6 @@ function App() {
 
   const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
   const [sessionId, setSessionId] = useState<string | null>(initialRoute.sessionId ?? null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigate = useCallback((view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => {
     const params = options?.params ?? new URLSearchParams(window.location.search);
@@ -55,7 +55,6 @@ function App() {
     window.dispatchEvent(new Event('app:locationchange'));
     setCurrentView(view);
     setSessionId(nextSessionId);
-    setSidebarOpen(false);
   }, []);
 
   const handleViewChange = (view: AppView) => {
@@ -84,73 +83,50 @@ function App() {
     }
   }, [getRouteFromLocation, navigate]);
 
-  const handleSettingsClick = () => {
-    navigate('settings');
-  };
-
   if (loading) return null;
   if (!user) return <LoginCard />;
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="min-h-screen bg-muted/40">
-        <div className="grid min-h-screen w-full lg:grid-cols-[16rem_1fr]">
-          <AppSidebar
-            currentView={currentView}
-            onViewChange={navigate}
-            open={sidebarOpen}
-            onOpenChange={setSidebarOpen}
-          />
+      <SidebarProvider>
+        <AppSidebar currentView={currentView} onViewChange={navigate} />
+        <SidebarInset className="bg-muted/40">
           <div className="flex min-h-screen flex-col min-w-0">
-        {currentView === "dashboard" && (
-          <DashboardView
-            onSettingsClick={handleSettingsClick}
-            onViewChange={handleViewChange}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-        )}
-        {currentView === "inventory" && (
-          <InventoryView
-            onSettingsClick={handleSettingsClick}
-            onViewChange={handleViewChange}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-        )}
-        {currentView === "products" && (
-          <ProductEnrichment
-            onSettingsClick={handleSettingsClick}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-        )}
-        {currentView === "loads" && (
-          <LoadManagementView
-            onSettingsClick={handleSettingsClick}
-            onViewChange={handleViewChange}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-        )}
-        {currentView === "create-load" && (
-          <CreateLoadView
-            onSettingsClick={handleSettingsClick}
-            onViewChange={handleViewChange}
-            onMenuClick={() => setSidebarOpen(true)}
-          />
-        )}
-        {currentView === "create-session" && (
-          <CreateSessionView
-            onSettingsClick={handleSettingsClick}
-            onViewChange={handleViewChange}
-            onMenuClick={() => setSidebarOpen(true)}
-            sessionId={sessionId}
-            onSessionChange={handleSessionChange}
-          />
-        )}
-        {currentView === "settings" && (
-          <SettingsView onSettingsClick={handleSettingsClick} onMenuClick={() => setSidebarOpen(true)} />
-        )}
+            {currentView === "dashboard" && (
+              <DashboardView
+                onViewChange={handleViewChange}
+              />
+            )}
+            {currentView === "inventory" && (
+              <InventoryView />
+            )}
+            {currentView === "products" && (
+              <ProductEnrichment
+              />
+            )}
+            {currentView === "loads" && (
+              <LoadManagementView
+                onViewChange={handleViewChange}
+              />
+            )}
+            {currentView === "create-load" && (
+              <CreateLoadView
+                onViewChange={handleViewChange}
+              />
+            )}
+            {currentView === "create-session" && (
+              <CreateSessionView
+                onViewChange={handleViewChange}
+                sessionId={sessionId}
+                onSessionChange={handleSessionChange}
+              />
+            )}
+            {currentView === "settings" && (
+              <SettingsView />
+            )}
           </div>
-        </div>
-      </div>
+        </SidebarInset>
+      </SidebarProvider>
     </ThemeProvider>
   );
 }

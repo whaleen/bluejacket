@@ -15,7 +15,6 @@ import { getPathForView } from '@/lib/routes';
 import { getActiveLocationContext } from '@/lib/tenant';
 
 interface DashboardViewProps {
-  onSettingsClick: () => void;
   onViewChange?: (view: 'dashboard' | 'inventory' | 'products' | 'settings' | 'loads') => void;
   onMenuClick?: () => void;
 }
@@ -56,7 +55,7 @@ interface DetailedStats {
   };
 }
 
-export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: DashboardViewProps) {
+export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps) {
   const { user } = useAuth();
   const { locationId } = getActiveLocationContext();
   const [stats, setStats] = useState<DetailedStats>({
@@ -331,7 +330,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Dashboard" onSettingsClick={onSettingsClick} onMenuClick={onMenuClick} />
+      <AppHeader title="Dashboard" onMenuClick={onMenuClick} />
 
       <PageContainer className="py-4 space-y-6 pb-24">
         {/* Welcome Header with Quick Stats */}

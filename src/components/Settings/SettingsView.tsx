@@ -20,7 +20,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface SettingsViewProps {
-  onSettingsClick: () => void
   onMenuClick?: () => void
 }
 
@@ -65,7 +64,7 @@ const slugify = (value: string) => {
     .replace(/(^-|-$)+/g, "")
 }
 
-export function SettingsView({ onSettingsClick, onMenuClick }: SettingsViewProps) {
+export function SettingsView({ onMenuClick }: SettingsViewProps) {
   const { user, updateUser } = useAuth()
   const [activeLocationKey, setActiveLocationKey] = useState<string | null>(() => {
     return (
@@ -685,7 +684,7 @@ export function SettingsView({ onSettingsClick, onMenuClick }: SettingsViewProps
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader title="Settings" onSettingsClick={onSettingsClick} onMenuClick={onMenuClick} />
+      <AppHeader title="Settings" onMenuClick={onMenuClick} />
 
       <PageContainer className="py-6 pb-24">
         <div className="max-w-2xl mx-auto space-y-6">

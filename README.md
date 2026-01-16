@@ -1,18 +1,20 @@
 # Warehouse - Inventory Management System
 
-A mobile-first React PWA for warehouse inventory management, barcode scanning, load tracking, and product data management with real-time Supabase backend.
+A mobile-first React PWA for warehouse inventory management, barcode scanning, load tracking, and product data management with a Supabase backend.
 
 ## Project Overview
 
-Warehouse is designed for warehouse inventory management including:
+Warehouse supports:
 - Barcode scanning (camera + manual entry)
 - Inventory item tracking with scan verification
 - Load/batch management (create, merge, rename, status tracking)
-- Customer order tracking (CSO)
+- Scanning sessions with progress tracking
 - Product database with GE Appliances catalog support
 - Serial number tracking for appliances
 - Inventory type conversion with audit trail
-- Scanning sessions with progress tracking
+- Multi-tenant setup (companies + locations, location-scoped data)
+- Settings for location-specific DMS SSO credentials
+- Simple user manager with admin/user roles
 
 ## Tech Stack
 
@@ -39,6 +41,12 @@ Create a `.env.local` file:
 ```env
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Optional for initial tenancy
+VITE_ACTIVE_COMPANY_ID=your_company_uuid
+VITE_ACTIVE_LOCATION_ID=your_location_uuid
+# Optional for unlocking company/location manager in Settings
+VITE_SUPERADMIN_USERNAME=your_admin_username
+VITE_SUPERADMIN_PASSWORD=your_admin_password
 ```
 
 ### 2. Install & Run
@@ -50,35 +58,33 @@ npm run dev
 
 ### 3. Database Setup
 
-Create the following tables in your Supabase project. See `planning-doc.md` for full schema details.
+Run the SQL in `migrations/` in order, or use `warehouse.sql` as a reference schema.
 
-**Required Tables:**
-- `inventory_items` - Main inventory tracking
-- `products` - Product catalog
-- `load_metadata` - Load/batch management
-- `inventory_conversions` - Conversion audit trail
-- `users` - User authentication (development mode)
+**Key tables:**
+- `companies`, `locations`, `settings`
+- `inventory_items`, `products`, `load_metadata`, `inventory_conversions`
+- `scanning_sessions`, `tracked_parts`, `inventory_counts`, `trucks`, `users`
 
 ## Project Structure
 
 ```
 src/
 ├── components/
-│   ├── ui/                 # shadcn/ui components (17 files)
+│   ├── ui/                 # shadcn/ui components
 │   ├── Auth/               # Login, avatar upload
 │   ├── Dashboard/          # Metrics overview
-│   ├── Inventory/          # Inventory management (11 components)
-│   ├── Navigation/         # Header, bottom nav
+│   ├── Inventory/          # Inventory management
+│   ├── Navigation/         # Header, user menu, location switcher
 │   ├── Products/           # Product search and details
 │   ├── Scanner/            # Barcode scanning
 │   ├── Session/            # Scanning sessions
-│   └── Settings/           # User settings
+│   └── Settings/           # Settings + user manager
 ├── context/
 │   └── AuthContext.tsx     # Authentication state
 ├── lib/
 │   ├── supabase.ts         # Supabase client
 │   ├── scanMatcher.ts      # Barcode matching logic
-│   ├── sessionManager.ts   # Session persistence (localStorage)
+│   ├── sessionManager.ts   # Session persistence
 │   ├── sessionScanner.ts   # Session scanning utilities
 │   ├── loadManager.ts      # Load CRUD operations
 │   ├── inventoryConverter.ts # Inventory type conversion
@@ -95,97 +101,34 @@ src/
 
 ### Core Functionality
 
-- [x] **Barcode Scanning** - Camera-based scanner with adjustable scan area and manual fallback
-- [x] **Inventory Management** - Full CRUD with search, filter, and bulk operations
-- [x] **CSV Upload** - Import inventory from CSV files
-- [x] **Load Management** - Create, rename, merge loads; track status (active → staged → in_transit → delivered)
-- [x] **Inventory Conversion** - Convert items between types with full audit trail
-- [x] **Scanning Sessions** - Track scanning progress with session persistence
-- [x] **Product Database** - Search and enrich product catalog
-- [x] **Dashboard** - Metrics, load statistics
+- **Barcode Scanning** - Camera-based scanner with adjustable scan area and manual fallback
+- **Inventory Management** - Full CRUD with search, filter, and bulk operations
+- **CSV Upload** - Import inventory from CSV files
+- **Load Management** - Create, rename, merge loads; track status (active → staged → in_transit → delivered)
+- **Inventory Conversion** - Convert items between types with full audit trail
+- **Scanning Sessions** - Track scanning progress with session persistence
+- **Product Database** - Search and enrich product catalog
+- **Dashboard** - Metrics, load statistics, reorder alerts
+
+### Multi-Tenant + Settings
+
+- **Companies + Locations** - Location-scoped data with a location switcher in the sidebar
+- **Settings** - Store DMS SSO credentials per location
+- **User Manager** - Simple admin/user roles (prototype mode)
 
 ### User Experience
 
-- [x] **Mobile-First Design** - Optimized for warehouse mobile devices
-- [x] **Dark Mode** - Theme switching support
-- [x] **Responsive PWA** - Installable progressive web app
-- [x] **Bottom Navigation** - Easy thumb-reach navigation
+- **Mobile-First Design** - Optimized for warehouse devices
+- **Dark Mode** - Theme switching support
+- **Responsive PWA** - Installable progressive web app
 
 ### Authentication (Development Mode)
 
-- [x] Username/password login
-- [x] Avatar upload
-- [x] Session persistence
+- Username/password login
+- Avatar upload
+- Session persistence
 
 > **Note:** Authentication uses plaintext passwords for rapid prototyping. See `IDGAF_About_Auth_Security.md` for details. Not suitable for production.
-
-## Database Schema
-
-### inventory_items
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| serial | text | Serial number |
-| cso | text | Customer Service Order |
-| model | text | Product model number |
-| inventory_type | text | ASIS, FG, LocalStock, Parts, BackHaul, Staged, Inbound, WillCall |
-| sub_inventory | text | Load/location name |
-| is_scanned | boolean | Scan status |
-| scanned_at | timestamp | When scanned |
-| scanned_by | text | Who scanned |
-| status | text | PICKED, DELIVERED, PENDING, SHIPPED |
-| product_fk | uuid | FK to products |
-
-### products
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| model | text | Unique model number |
-| product_type | text | WASHER, REFRIGERATOR, etc. |
-| product_category | text | appliance, part, accessory |
-| brand | text | Brand name |
-| image_url | text | Product image |
-| price / msrp | numeric | Pricing |
-| dimensions | jsonb | Width, height, depth |
-| specs | jsonb | All specifications |
-
-### load_metadata
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| inventory_type | text | Load type |
-| sub_inventory_name | text | Load name |
-| status | text | active, staged, in_transit, delivered |
-
-### inventory_conversions
-
-Audit trail for inventory type changes (from_type, to_type, converted_by, etc.)
-
-### users
-
-Development auth table (id, username, password, image)
-
-## Available Scripts
-
-```bash
-npm run dev      # Start development server
-npm run build    # Production build (TypeScript + Vite)
-npm run lint     # ESLint validation
-npm run preview  # Preview production build
-```
-
-## Product Categorization
-
-Products are categorized into three types:
-
-1. **Appliances** - Full units requiring serial numbers (washers, refrigerators, etc.)
-2. **Parts** - Replacement components (control boards, shelves, etc.)
-3. **Accessories** - Add-on items (filters, racks, kits, etc.)
-
-This helps warehouse staff understand which items need serial number tracking.
 
 ## Inventory Types
 
@@ -207,12 +150,14 @@ serial,cso,model,inventory_type,sub_inventory,date,consumer_customer_name
 VA715942,1064836060,GTD58EBSVWS,ASIS,Load-001,2025-12-31,John Smith
 ```
 
-## Contributing
+## Available Scripts
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+```bash
+npm run dev      # Start development server
+npm run build    # Production build (TypeScript + Vite)
+npm run lint     # ESLint validation
+npm run preview  # Preview production build
+```
 
 ## License
 
