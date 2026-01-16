@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { AppView } from '@/lib/routes';
+import { UserMenu } from '@/components/Navigation/UserMenu';
 
 interface AppSidebarProps {
   currentView: AppView;
@@ -191,13 +192,17 @@ function SidebarContent({
   onViewChange,
   onClose,
   showClose,
-  params
+  params,
+  showUserMenu,
+  onUserSettingsClick,
 }: {
   currentView: AppView;
   onViewChange: (view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => void;
   onClose?: () => void;
   showClose?: boolean;
   params: URLSearchParams;
+  showUserMenu?: boolean;
+  onUserSettingsClick?: () => void;
 }) {
   const handleNavigate = (item: NavItem) => {
     const nextParams = new URLSearchParams(window.location.search);
@@ -252,8 +257,20 @@ function SidebarContent({
         ))}
       </div>
 
-      <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-        Warehouse Inventory
+      <div className="border-t px-4 py-3 space-y-3">
+        {showUserMenu && (
+          <UserMenu
+            variant="row"
+            align="start"
+            onSettingsClick={() => {
+              onUserSettingsClick?.();
+              onClose?.();
+            }}
+          />
+        )}
+        <div className="text-xs text-muted-foreground">
+          Warehouse Inventory
+        </div>
       </div>
     </div>
   );
@@ -293,6 +310,13 @@ export function AppSidebar({ currentView, onViewChange, open, onOpenChange }: Ap
               params={params}
               onClose={() => onOpenChange(false)}
               showClose
+              showUserMenu
+              onUserSettingsClick={() => {
+                const nextParams = new URLSearchParams(window.location.search);
+                clearPartsParams(nextParams);
+                onViewChange('settings', { params: nextParams });
+                onOpenChange(false);
+              }}
             />
           </aside>
         </div>

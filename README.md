@@ -102,7 +102,7 @@ src/
 - [x] **Inventory Conversion** - Convert items between types with full audit trail
 - [x] **Scanning Sessions** - Track scanning progress with session persistence
 - [x] **Product Database** - Search and enrich product catalog
-- [x] **Dashboard** - Metrics, load statistics, recent activity with charts
+- [x] **Dashboard** - Metrics, load statistics
 
 ### User Experience
 

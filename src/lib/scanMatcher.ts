@@ -1,5 +1,6 @@
 import supabase from './supabase';
 import type { ScanResult } from '@/types/inventory';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 /**
  * Search for inventory items matching the scanned barcode
@@ -16,10 +17,12 @@ export async function findMatchingItems(
   }
 
   try {
+    const { locationId } = getActiveLocationContext();
     // Build query
     let query = supabase
       .from('inventory_items')
       .select('*')
+      .eq('location_id', locationId)
       .eq('is_scanned', false); // Only search unscanned items
 
     // Filter by inventory type if provided
@@ -96,13 +99,15 @@ export async function findMatchingItems(
  */
 export async function markItemAsScanned(itemId: string): Promise<boolean> {
   try {
+    const { locationId } = getActiveLocationContext();
     const { error } = await supabase
       .from('inventory_items')
       .update({
         is_scanned: true,
         scanned_at: new Date().toISOString()
       })
-      .eq('id', itemId);
+      .eq('id', itemId)
+      .eq('location_id', locationId);
 
     if (error) {
       console.error('Error marking item as scanned:', error);
@@ -121,13 +126,15 @@ export async function markItemAsScanned(itemId: string): Promise<boolean> {
  */
 export async function markItemsAsScanned(itemIds: string[]): Promise<boolean> {
   try {
+    const { locationId } = getActiveLocationContext();
     const { error } = await supabase
       .from('inventory_items')
       .update({
         is_scanned: true,
         scanned_at: new Date().toISOString()
       })
-      .in('id', itemIds);
+      .in('id', itemIds)
+      .eq('location_id', locationId);
 
     if (error) {
       console.error('Error marking items as scanned:', error);

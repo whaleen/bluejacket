@@ -13,6 +13,7 @@ import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
 import { ChangeItemAssignmentDialog } from './ChangeItemAssignmentDialog';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 // interface InventoryItemWithProduct extends InventoryItem {
 //   products: {
@@ -45,6 +46,7 @@ export function InventoryItemDetailDialog({
   onOpenChange,
   itemId,
 }: InventoryItemDetailDialogProps) {
+  const { locationId } = getActiveLocationContext();
   const [item, setItem] =
   useState<InventoryItem | null>(null);
 
@@ -55,7 +57,7 @@ export function InventoryItemDetailDialog({
     if (open && itemId) {
       fetchItemDetails();
     }
-  }, [open, itemId]);
+  }, [open, itemId, locationId]);
 
   const fetchItemDetails = async () => {
     setLoading(true);
@@ -79,6 +81,7 @@ export function InventoryItemDetailDialog({
           )
         `)
         .eq('id', itemId)
+        .eq('location_id', locationId)
         .single();
 
       if (error) throw error;

@@ -1,5 +1,7 @@
 export interface InventoryItem {
   id?: string;
+  company_id?: string;
+  location_id?: string;
   date?: string;
   route_id?: string;
   stop?: number;
@@ -95,6 +97,8 @@ export type LoadStatus = 'active' | 'staged' | 'in_transit' | 'delivered';
 
 export interface LoadMetadata {
   id?: string;
+  company_id?: string;
+  location_id?: string;
   inventory_type: InventoryType;
   sub_inventory_name: string;
   status: LoadStatus;
@@ -114,6 +118,8 @@ export interface LoadWithItems {
 // Inventory Conversion Types
 export interface InventoryConversion {
   id?: string;
+  company_id?: string;
+  location_id?: string;
   inventory_item_id: string;
   from_inventory_type: InventoryType | 'Salvage'; // Include Salvage for historical data
   to_inventory_type: InventoryType;
@@ -127,6 +133,8 @@ export interface InventoryConversion {
 // Parts Inventory Tracking Types
 export interface TrackedPart {
   id: string;
+  company_id?: string;
+  location_id?: string;
   product_id: string;
   reorder_threshold: number;
   is_active: boolean;
@@ -144,6 +152,8 @@ export interface TrackedPartWithDetails extends TrackedPart {
 
 export interface InventoryCount {
   id: string;
+  company_id?: string;
+  location_id?: string;
   product_id: string;
   tracked_part_id?: string;
   qty: number;

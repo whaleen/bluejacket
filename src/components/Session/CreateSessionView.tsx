@@ -19,6 +19,7 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { useAuth } from '@/context/AuthContext';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 interface CreateSessionViewProps {
   onSettingsClick: () => void;
@@ -84,6 +85,7 @@ function getInitials(name?: string) {
 
 export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, sessionId, onSessionChange }: CreateSessionViewProps) {
   const { user } = useAuth();
+  const { locationId, companyId } = getActiveLocationContext();
   const [activeTab, setActiveTab] = useState<'existing' | 'upload'>('existing');
   const [pageTab, setPageTab] = useState<'sessions' | 'new'>('sessions');
   const [sessionListTab, setSessionListTab] = useState<'active' | 'closed' | 'all'>('active');
@@ -114,6 +116,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
       const { data } = await supabase
         .from('inventory_items')
         .select('sub_inventory')
+        .eq('location_id', locationId)
         .eq('inventory_type', inventoryType)
         .not('sub_inventory', 'is', null);
 
@@ -124,7 +127,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
     };
 
     fetchSubInventories();
-  }, [inventoryType]);
+  }, [inventoryType, locationId]);
 
   // Auto-generate session name when inventory type or sub-inventory changes
   useEffect(() => {
@@ -142,6 +145,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
       let query = supabase
         .from('inventory_items')
         .select('id', { count: 'exact', head: true })
+        .eq('location_id', locationId)
         .eq('inventory_type', inventoryType);
 
       if (subInventory !== 'all') {
@@ -153,7 +157,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
     };
 
     fetchPreview();
-  }, [inventoryType, subInventory, activeTab]);
+  }, [inventoryType, subInventory, activeTab, locationId]);
 
   const fetchSessions = useCallback(async () => {
     setSessionsLoading(true);
@@ -171,10 +175,10 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
       );
 
       if (createdByNames.length > 0) {
-        const { data: usersData, error: usersError } = await supabase
-          .from('users')
-          .select('username, image')
-          .in('username', createdByNames);
+          const { data: usersData, error: usersError } = await supabase
+            .from('users')
+            .select('username, image')
+            .in('username', createdByNames);
 
         if (!usersError && usersData) {
           const nextMap: Record<string, string | null> = {};
@@ -421,7 +425,13 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
 
           const { data: insertedItems, error: insertError } = await supabase
             .from('inventory_items')
-            .insert(inventoryItems)
+            .insert(
+              inventoryItems.map(item => ({
+                ...item,
+                company_id: companyId,
+                location_id: locationId,
+              }))
+            )
             .select('*');
 
           if (insertError) {
@@ -472,6 +482,7 @@ export function CreateSessionView({ onSettingsClick, onViewChange, onMenuClick, 
       let query = supabase
         .from('inventory_items')
         .select('*')
+        .eq('location_id', locationId)
         .eq('inventory_type', inventoryType);
 
       if (subInventory !== 'all') {

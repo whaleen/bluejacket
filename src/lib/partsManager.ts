@@ -7,6 +7,7 @@ import type {
   ReorderAlert,
   Product
 } from '@/types/inventory';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 /**
  * Get all tracked parts with their current quantities from inventory_items
@@ -15,6 +16,7 @@ export async function getTrackedParts(): Promise<{
   data: TrackedPartWithDetails[] | null;
   error: any
 }> {
+  const { locationId } = getActiveLocationContext();
   // First get all tracked parts with product info
   const { data: trackedParts, error: trackedError } = await supabase
     .from('tracked_parts')
@@ -30,6 +32,7 @@ export async function getTrackedParts(): Promise<{
       )
     `)
     .eq('is_active', true)
+    .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   if (trackedError || !trackedParts) {
@@ -42,6 +45,7 @@ export async function getTrackedParts(): Promise<{
   const { data: inventoryItems, error: invError } = await supabase
     .from('inventory_items')
     .select('id, product_fk, qty')
+    .eq('location_id', locationId)
     .eq('inventory_type', 'Parts')
     .in('product_fk', productIds);
 
@@ -76,9 +80,12 @@ export async function addTrackedPart(
   reorderThreshold: number = 5,
   createdBy?: string
 ): Promise<{ data: TrackedPart | null; error: any }> {
+  const { locationId, companyId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from('tracked_parts')
     .insert({
+      company_id: companyId,
+      location_id: locationId,
       product_id: productId,
       reorder_threshold: reorderThreshold,
       is_active: true,
@@ -97,13 +104,15 @@ export async function updateThreshold(
   trackedPartId: string,
   threshold: number
 ): Promise<{ success: boolean; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
     .update({
       reorder_threshold: threshold,
       updated_at: new Date().toISOString()
     })
-    .eq('id', trackedPartId);
+    .eq('id', trackedPartId)
+    .eq('location_id', locationId);
 
   return { success: !error, error };
 }
@@ -114,13 +123,15 @@ export async function updateThreshold(
 export async function removeTrackedPart(
   trackedPartId: string
 ): Promise<{ success: boolean; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
     .update({
       is_active: false,
       updated_at: new Date().toISOString()
     })
-    .eq('id', trackedPartId);
+    .eq('id', trackedPartId)
+    .eq('location_id', locationId);
 
   return { success: !error, error };
 }
@@ -131,13 +142,15 @@ export async function removeTrackedPart(
 export async function markAsReordered(
   trackedPartId: string
 ): Promise<{ success: boolean; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
     .update({
       reordered_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
-    .eq('id', trackedPartId);
+    .eq('id', trackedPartId)
+    .eq('location_id', locationId);
 
   return { success: !error, error };
 }
@@ -148,13 +161,15 @@ export async function markAsReordered(
 export async function clearReorderedStatus(
   trackedPartId: string
 ): Promise<{ success: boolean; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
     .update({
       reordered_at: null,
       updated_at: new Date().toISOString()
     })
-    .eq('id', trackedPartId);
+    .eq('id', trackedPartId)
+    .eq('location_id', locationId);
 
   return { success: !error, error };
 }
@@ -169,10 +184,12 @@ export async function updatePartCount(
   notes?: string,
   reason?: 'usage' | 'return' | 'restock'
 ): Promise<{ success: boolean; error: any }> {
+  const { locationId, companyId } = getActiveLocationContext();
   // Get current qty from inventory_items
   const { data: currentItem, error: fetchError } = await supabase
     .from('inventory_items')
     .select('id, qty')
+    .eq('location_id', locationId)
     .eq('product_fk', productId)
     .eq('inventory_type', 'Parts')
     .single();
@@ -190,6 +207,7 @@ export async function updatePartCount(
     .select('id, reorder_threshold, reordered_at')
     .eq('product_id', productId)
     .eq('is_active', true)
+    .eq('location_id', locationId)
     .single();
 
   // Update or create the inventory_items record
@@ -200,7 +218,8 @@ export async function updatePartCount(
         qty: newQty,
         updated_at: new Date().toISOString()
       })
-      .eq('id', currentItem.id);
+      .eq('id', currentItem.id)
+      .eq('location_id', locationId);
 
     if (updateError) {
       return { success: false, error: updateError };
@@ -220,6 +239,8 @@ export async function updatePartCount(
     const { error: insertError } = await supabase
       .from('inventory_items')
       .insert({
+        company_id: companyId,
+        location_id: locationId,
         product_fk: productId,
         model: product.model,
         product_type: product.product_type,
@@ -238,6 +259,8 @@ export async function updatePartCount(
   const { error: snapshotError } = await supabase
     .from('inventory_counts')
     .insert({
+      company_id: companyId,
+      location_id: locationId,
       product_id: productId,
       tracked_part_id: trackedPart?.id,
       qty: newQty,
@@ -260,7 +283,8 @@ export async function updatePartCount(
         reordered_at: null,
         updated_at: new Date().toISOString()
       })
-      .eq('id', trackedPart.id);
+      .eq('id', trackedPart.id)
+      .eq('location_id', locationId);
   }
 
   return { success: true, error: null };
@@ -273,12 +297,14 @@ export async function getCountHistory(
   productId?: string,
   days: number = 30
 ): Promise<{ data: InventoryCount[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
   let query = supabase
     .from('inventory_counts')
     .select('*')
+    .eq('location_id', locationId)
     .gte('created_at', startDate.toISOString())
     .order('created_at', { ascending: true });
 
@@ -298,6 +324,7 @@ export async function getCountHistoryWithProducts(
   productId?: string,
   days: number = 90
 ): Promise<{ data: InventoryCountWithProduct[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
@@ -320,6 +347,7 @@ export async function getCountHistoryWithProducts(
         msrp
       )
     `)
+    .eq('location_id', locationId)
     .gte('created_at', startDate.toISOString())
     .order('created_at', { ascending: true });
 
@@ -339,6 +367,7 @@ export async function getReorderAlerts(): Promise<{
   data: ReorderAlert[] | null;
   error: any
 }> {
+  const { locationId } = getActiveLocationContext();
   // Get all active tracked parts with product info
   const { data: trackedParts, error: trackedError } = await supabase
     .from('tracked_parts')
@@ -352,7 +381,8 @@ export async function getReorderAlerts(): Promise<{
         description
       )
     `)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('location_id', locationId);
 
   if (trackedError || !trackedParts) {
     return { data: null, error: trackedError };
@@ -364,6 +394,7 @@ export async function getReorderAlerts(): Promise<{
   const { data: inventoryItems, error: invError } = await supabase
     .from('inventory_items')
     .select('product_fk, qty')
+    .eq('location_id', locationId)
     .eq('inventory_type', 'Parts')
     .in('product_fk', productIds);
 
@@ -424,6 +455,7 @@ export async function getAvailablePartsToTrack(options?: {
     trackedMatches?: Product[];
   };
 }> {
+  const { locationId } = getActiveLocationContext();
   const searchTerm = options?.searchTerm?.trim();
   const limit = options?.limit ?? 1000;
 
@@ -431,7 +463,8 @@ export async function getAvailablePartsToTrack(options?: {
   const { data: tracked } = await supabase
     .from('tracked_parts')
     .select('product_id')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('location_id', locationId);
 
   const trackedIds = tracked?.map(t => t.product_id) ?? [];
   const trackedIdSet = new Set(trackedIds);
@@ -483,12 +516,15 @@ export async function snapshotTrackedParts(
   countedBy?: string,
   notes: string = 'snapshot: manual'
 ): Promise<{ success: boolean; error: any; inserted: number }> {
+  const { locationId, companyId } = getActiveLocationContext();
   if (parts.length === 0) {
     return { success: true, error: null, inserted: 0 };
   }
 
   const createdAt = new Date().toISOString();
   const rows = parts.map(part => ({
+    company_id: companyId,
+    location_id: locationId,
     product_id: part.product_id,
     tracked_part_id: part.id,
     qty: part.current_qty,

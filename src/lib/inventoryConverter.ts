@@ -1,5 +1,6 @@
 import supabase from './supabase';
 import type { InventoryType, InventoryConversion } from '@/types/inventory';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 /**
  * Convert one or more inventory items to a different type
@@ -16,11 +17,14 @@ export async function convertInventoryType(
     return { success: false, error: 'No items provided for conversion' };
   }
 
+  const { locationId, companyId } = getActiveLocationContext();
+
   // Fetch current state of items for history
   const { data: items, error: fetchError } = await supabase
     .from('inventory_items')
     .select('id, inventory_type, sub_inventory')
-    .in('id', itemIds);
+    .in('id', itemIds)
+    .eq('location_id', locationId);
 
   if (fetchError || !items || items.length === 0) {
     return { success: false, error: fetchError || 'Items not found' };
@@ -28,6 +32,8 @@ export async function convertInventoryType(
 
   // Create conversion history records
   const conversions: Partial<InventoryConversion>[] = items.map(item => ({
+    company_id: companyId,
+    location_id: locationId,
     inventory_item_id: item.id,
     from_inventory_type: item.inventory_type,
     to_inventory_type: toInventoryType,
@@ -61,7 +67,8 @@ export async function convertInventoryType(
   const { error: updateError } = await supabase
     .from('inventory_items')
     .update(updateData)
-    .in('id', itemIds);
+    .in('id', itemIds)
+    .eq('location_id', locationId);
 
   return { success: !updateError, error: updateError };
 }
@@ -72,10 +79,12 @@ export async function convertInventoryType(
 export async function getItemConversionHistory(
   itemId: string
 ): Promise<{ data: InventoryConversion[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from('inventory_conversions')
     .select('*')
     .eq('inventory_item_id', itemId)
+    .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   return { data, error };
@@ -88,9 +97,11 @@ export async function getConversionsByDateRange(
   startDate: string,
   endDate: string
 ): Promise<{ data: InventoryConversion[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from('inventory_conversions')
     .select('*')
+    .eq('location_id', locationId)
     .gte('created_at', startDate)
     .lte('created_at', endDate)
     .order('created_at', { ascending: false });
@@ -105,9 +116,11 @@ export async function getConversionStats(): Promise<{
   data: { from_type: string; to_type: string; count: number }[] | null;
   error: any;
 }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from('inventory_conversions')
     .select('from_inventory_type, to_inventory_type')
+    .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   if (error || !data) {

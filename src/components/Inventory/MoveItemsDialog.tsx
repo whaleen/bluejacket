@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react';
 import { getAllLoads, createLoad } from '@/lib/loadManager';
 import supabase from '@/lib/supabase';
 import type { InventoryType, LoadMetadata } from '@/types/inventory';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 interface MoveItemsDialogProps {
   open: boolean;
@@ -27,6 +28,7 @@ export function MoveItemsDialog({
   selectedItemIds,
   onSuccess,
 }: MoveItemsDialogProps) {
+  const { locationId } = getActiveLocationContext();
   const [moveType, setMoveType] = useState<'existing' | 'new' | 'remove'>('existing');
   const [targetLoadName, setTargetLoadName] = useState('');
   const [newLoadName, setNewLoadName] = useState('');
@@ -96,7 +98,8 @@ export function MoveItemsDialog({
           sub_inventory: finalLoadName,
           updated_at: new Date().toISOString(),
         })
-        .in('id', selectedItemIds);
+        .in('id', selectedItemIds)
+        .eq('location_id', locationId);
 
       if (updateError) {
         setError(updateError.message || 'Failed to update items');

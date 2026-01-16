@@ -12,6 +12,7 @@ import { ReorderAlertsCard } from './ReorderAlertsCard';
 import { useAuth } from '@/context/AuthContext';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { getPathForView } from '@/lib/routes';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 interface DashboardViewProps {
   onSettingsClick: () => void;
@@ -57,6 +58,7 @@ interface DetailedStats {
 
 export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: DashboardViewProps) {
   const { user } = useAuth();
+  const { locationId } = getActiveLocationContext();
   const [stats, setStats] = useState<DetailedStats>({
     totalItems: 0,
     localStock: { total: 0, unassigned: 0, staged: 0, inbound: 0, routes: 0 },
@@ -108,18 +110,10 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
     lastActive: new Date().toLocaleTimeString(),
   };
 
-  // Mock recent activity
-  const recentActivity = [
-    { id: 1, action: 'Created load', target: 'LOAD-2026-01-09-A', type: 'ASIS', time: '10 minutes ago' },
-    { id: 2, action: 'Moved 5 items to', target: 'Salvage Load B', type: 'ASIS', time: '25 minutes ago' },
-    { id: 3, action: 'Updated status', target: 'ROUTE-CAP-001', type: 'Local Stock', time: '1 hour ago' },
-    { id: 4, action: 'Scanned 12 items', target: 'Session #127', type: 'FG', time: '2 hours ago' },
-    { id: 5, action: 'Merged loads', target: '3 Back Haul loads', type: 'FG', time: '3 hours ago' },
-  ];
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [locationId]);
 
   const fetchData = async () => {
     try {
@@ -133,6 +127,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
         const { data, error } = await supabase
           .from('inventory_items')
           .select('*')
+          .eq('location_id', locationId)
           .range(from, from + batchSize - 1);
 
         if (error) throw error;
@@ -621,34 +616,9 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
           </div>
         </div> */}
 
-        {/* Recent Activity & Actions */}
+        {/* Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
-            <Card className="p-4">
-              <div className="space-y-3 max-h-[50vh] sm:max-h-[360px] overflow-y-auto pr-1">
-                {recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-3 pb-3 last:pb-0 border-b last:border-0">
-                    <div className="p-2 bg-muted rounded-lg mt-0.5">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm">
-                        <span className="font-medium">{activity.action}</span>{' '}
-                        <span className="text-muted-foreground">{activity.target}</span>
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline" className="text-xs">
-                          {activity.type}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{activity.time}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          </div>
+
 
           <div>
             <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
@@ -684,7 +654,7 @@ export function DashboardView({ onSettingsClick, onViewChange, onMenuClick }: Da
                   onClick={() => onViewChange?.('products')}
                 >
                   <Package className="mr-2 h-4 w-4" />
-                  Product Catalog
+                  Product Lookup
                 </Button>
               </div>
             </Card>

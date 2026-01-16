@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
+import { getActiveLocationContext } from '@/lib/tenant';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -126,6 +127,7 @@ interface InventoryViewProps {
 }
 
 export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: InventoryViewProps) {
+  const { locationId } = getActiveLocationContext();
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -379,6 +381,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
       const { data, error } = await supabase
         .from('load_metadata')
         .select('sub_inventory_name')
+        .eq('location_id', locationId)
         .in('inventory_type', types);
 
       if (error) {
@@ -394,7 +397,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
     };
 
     fetchSubInventories();
-  }, [inventoryTypeFilter, resolveInventoryTypes]);
+  }, [inventoryTypeFilter, resolveInventoryTypes, locationId]);
 
   const handleViewProduct = (model: string) => {
     setSelectedModel(model);
@@ -468,6 +471,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
             )
           `
           )
+          .eq('location_id', locationId)
           .range(from, from + EXPORT_BATCH_SIZE - 1);
 
         query = applyInventoryFilters(query, exportFilters);
@@ -531,6 +535,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
   }, [
     applyInventoryFilters,
     applyInventorySort,
+    locationId,
     exportColumnKeys,
     exporting,
     inventoryTypeFilter,
@@ -588,6 +593,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
         `,
           { count: 'exact' }
         )
+        .eq('location_id', locationId)
         .range(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE - 1);
 
       query = applyInventoryFilters(query, filters);
@@ -621,7 +627,7 @@ export function InventoryView({ onSettingsClick, onViewChange, onMenuClick }: In
         setLoadingMore(false);
       }
     }
-  }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort]);
+  }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort, locationId]);
 
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;

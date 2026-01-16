@@ -9,6 +9,7 @@ import type { InventoryType, InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 interface AddItemsToLoadDialogProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function AddItemsToLoadDialog({
   currentLoadName,
   onSuccess,
 }: AddItemsToLoadDialogProps) {
+  const { locationId } = getActiveLocationContext();
   const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +64,7 @@ export function AddItemsToLoadDialog({
           )
         `,
         )
+        .eq('location_id', locationId)
         .eq('inventory_type', inventoryType)
         .order('created_at', { ascending: false });
 
@@ -88,7 +91,7 @@ export function AddItemsToLoadDialog({
       setSearchTerm('');
       setError(null);
     }
-  }, [open, inventoryType, currentLoadName]);
+  }, [open, inventoryType, currentLoadName, locationId]);
 
   const filteredItems = items.filter((item) => {
     if (!searchTerm) return true;
@@ -139,7 +142,8 @@ export function AddItemsToLoadDialog({
           sub_inventory: currentLoadName,
           updated_at: new Date().toISOString(),
         })
-        .in('id', Array.from(selectedItems));
+        .in('id', Array.from(selectedItems))
+        .eq('location_id', locationId);
 
       if (updateError) throw updateError;
 

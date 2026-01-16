@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, Loader2 } from 'lucide-react';
 import type { InventoryType, InventoryItem } from '@/types/inventory';
 import supabase from '@/lib/supabase';
+import { getActiveLocationContext } from '@/lib/tenant';
 
 interface CSVUploadProps {
   open: boolean;
@@ -30,6 +31,7 @@ interface CSVRow {
 }
 
 export function CSVUpload({ open, onOpenChange, onUploadComplete }: CSVUploadProps) {
+  const { locationId, companyId } = getActiveLocationContext();
   const [inventoryType, setInventoryType] = useState<InventoryType>('ASIS');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -90,7 +92,13 @@ export function CSVUpload({ open, onOpenChange, onUploadComplete }: CSVUploadPro
           // Insert into database
           const { error: insertError } = await supabase
             .from('inventory_items')
-            .insert(inventoryItems);
+            .insert(
+              inventoryItems.map(item => ({
+                ...item,
+                company_id: companyId,
+                location_id: locationId,
+              }))
+            );
 
           if (insertError) {
             setError(`Failed to upload: ${insertError.message}`);

@@ -1,4 +1,5 @@
 import supabase from '@/lib/supabase';
+import { getActiveLocationContext } from '@/lib/tenant';
 import type { InventoryItem } from '@/types/inventory';
 import type { ScanningSession, SessionStatus, SessionSummary } from '@/types/session';
 
@@ -58,9 +59,11 @@ function toSummary(record: SessionRecord): SessionSummary {
 }
 
 export async function getAllSessions(): Promise<{ data: ScanningSession[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from(SESSION_TABLE)
     .select('*')
+    .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -74,9 +77,11 @@ export async function getAllSessions(): Promise<{ data: ScanningSession[] | null
 }
 
 export async function getSessionSummaries(): Promise<{ data: SessionSummary[] | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from(SESSION_TABLE)
     .select('id, name, inventory_type, sub_inventory, status, created_at, updated_at, closed_at, created_by, items, scanned_item_ids')
+    .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -90,10 +95,12 @@ export async function getSessionSummaries(): Promise<{ data: SessionSummary[] | 
 }
 
 export async function getSession(sessionId: string): Promise<{ data: ScanningSession | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from(SESSION_TABLE)
     .select('*')
     .eq('id', sessionId)
+    .eq('location_id', locationId)
     .single();
 
   if (error || !data) {
@@ -111,9 +118,12 @@ export async function createSession(input: {
   status?: SessionStatus;
   createdBy?: string;
 }): Promise<{ data: ScanningSession | null; error: any }> {
+  const { locationId, companyId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from(SESSION_TABLE)
     .insert({
+      company_id: companyId,
+      location_id: locationId,
       name: input.name,
       inventory_type: input.inventoryType,
       sub_inventory: input.subInventory ?? null,
@@ -139,6 +149,7 @@ export async function updateSessionScannedItems(input: {
   scannedItemIds: string[];
   updatedBy?: string;
 }): Promise<{ data: ScanningSession | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from(SESSION_TABLE)
     .update({
@@ -147,6 +158,7 @@ export async function updateSessionScannedItems(input: {
       updated_at: new Date().toISOString()
     })
     .eq('id', input.sessionId)
+    .eq('location_id', locationId)
     .select('*')
     .single();
 
@@ -162,10 +174,12 @@ export async function updateSessionStatus(input: {
   status: SessionStatus;
   updatedBy?: string;
 }): Promise<{ data: ScanningSession | null; error: any }> {
+  const { locationId } = getActiveLocationContext();
   const { data: current, error: currentError } = await supabase
     .from(SESSION_TABLE)
     .select('status, items, scanned_item_ids')
     .eq('id', input.sessionId)
+    .eq('location_id', locationId)
     .single();
 
   if (currentError) {
@@ -205,6 +219,7 @@ export async function updateSessionStatus(input: {
     .from(SESSION_TABLE)
     .update(updates)
     .eq('id', input.sessionId)
+    .eq('location_id', locationId)
     .select('*')
     .single();
 
@@ -216,10 +231,12 @@ export async function updateSessionStatus(input: {
 }
 
 export async function deleteSession(sessionId: string): Promise<{ success: boolean; error?: any }> {
+  const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from(SESSION_TABLE)
     .delete()
-    .eq('id', sessionId);
+    .eq('id', sessionId)
+    .eq('location_id', locationId);
 
   return { success: !error, error };
 }
