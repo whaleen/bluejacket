@@ -18,6 +18,7 @@ interface CreateLoadViewProps {
 export function CreateLoadView({ onViewChange, onMenuClick }: CreateLoadViewProps) {
   const [inventoryType, setInventoryType] = useState<InventoryType>('ASIS');
   const [loadName, setLoadName] = useState('');
+  const [friendlyName, setFriendlyName] = useState('');
   const [category, setCategory] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,8 @@ export function CreateLoadView({ onViewChange, onMenuClick }: CreateLoadViewProp
       loadName.trim(),
       notes.trim() || undefined,
       undefined, // createdBy
-      category && category !== 'none' ? category.trim() : undefined
+      category && category !== 'none' ? category.trim() : undefined,
+      friendlyName.trim() || undefined
     );
 
     setLoading(false);
@@ -123,7 +125,7 @@ export function CreateLoadView({ onViewChange, onMenuClick }: CreateLoadViewProp
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="load-name">Load Name *</Label>
+              <Label htmlFor="load-name">Load Number *</Label>
               <Button
                 type="button"
                 variant="ghost"
@@ -140,6 +142,19 @@ export function CreateLoadView({ onViewChange, onMenuClick }: CreateLoadViewProp
               placeholder="e.g., LOAD-2026-01-09-A"
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="friendly-name">Friendly Name (Optional)</Label>
+            <Input
+              id="friendly-name"
+              value={friendlyName}
+              onChange={(e) => setFriendlyName(e.target.value)}
+              placeholder="e.g., Costco Run - East"
+            />
+            <p className="text-xs text-muted-foreground">
+              Friendly names are display-only and do not change the load number.
+            </p>
           </div>
 
           <div className="space-y-2">

@@ -27,7 +27,9 @@ export async function createLoad(
   subInventoryName: string,
   notes?: string,
   createdBy?: string,
-  category?: string
+  category?: string,
+  friendlyName?: string,
+  primaryColor?: string
 ): Promise<{ data: LoadMetadata | null; error: any }> {
   const { locationId, companyId } = getActiveLocationContext();
   const { data, error } = await supabase
@@ -37,6 +39,12 @@ export async function createLoad(
       location_id: locationId,
       inventory_type: inventoryType,
       sub_inventory_name: subInventoryName,
+      friendly_name: friendlyName || null,
+      primary_color: primaryColor || null,
+      prep_tagged: false,
+      prep_wrapped: false,
+      pickup_date: null,
+      pickup_tba: false,
       status: 'active' as LoadStatus,
       category,
       notes,
@@ -159,7 +167,16 @@ export async function updateLoadStatus(
 export async function updateLoadMetadata(
   inventoryType: InventoryType,
   subInventoryName: string,
-  updates: { category?: string; notes?: string }
+  updates: {
+    category?: string;
+    notes?: string;
+    friendly_name?: string | null;
+    primary_color?: string | null;
+    prep_tagged?: boolean;
+    prep_wrapped?: boolean;
+    pickup_date?: string | null;
+    pickup_tba?: boolean;
+  }
 ): Promise<{ success: boolean; error?: any }> {
   const { locationId } = getActiveLocationContext();
   const { error } = await supabase

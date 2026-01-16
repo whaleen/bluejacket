@@ -1,6 +1,7 @@
 export type AppView =
   | 'dashboard'
   | 'inventory'
+  | 'parts'
   | 'products'
   | 'settings'
   | 'loads'
@@ -26,6 +27,8 @@ export function getPathForView(view: AppView, sessionId?: string | null): string
       return '/';
     case 'inventory':
       return '/inventory';
+    case 'parts':
+      return '/parts';
     case 'products':
       return '/products';
     case 'loads':
@@ -52,6 +55,8 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'dashboard' };
     case 'inventory':
       return { view: 'inventory' };
+    case 'parts':
+      return { view: 'parts' };
     case 'products':
       return { view: 'products' };
     case 'loads':

@@ -5,10 +5,13 @@ const ASIS_BASE_URL = (import.meta.env.VITE_ASIS_BASE_URL as string | undefined)
 
 const normalizeBaseUrl = (baseUrl: string) => baseUrl.replace(/\/$/, '');
 
-export const getAsisFileUrl = (fileName: string) => `${normalizeBaseUrl(ASIS_BASE_URL)}/${fileName}`;
+export const getAsisFileUrl = (fileName: string, baseUrlOverride?: string) => {
+  const baseUrl = baseUrlOverride ?? ASIS_BASE_URL;
+  return `${normalizeBaseUrl(baseUrl)}/${fileName}`;
+};
 
-export async function fetchAsisXlsRows<T>(fileName: string): Promise<T[]> {
-  const response = await fetch(getAsisFileUrl(fileName));
+export async function fetchAsisXlsRows<T>(fileName: string, baseUrlOverride?: string): Promise<T[]> {
+  const response = await fetch(getAsisFileUrl(fileName, baseUrlOverride));
   if (!response.ok) {
     throw new Error(`Failed to load ${fileName} (${response.status})`);
   }
@@ -19,8 +22,8 @@ export async function fetchAsisXlsRows<T>(fileName: string): Promise<T[]> {
   return XLSX.utils.sheet_to_json<T>(sheet, { defval: '' });
 }
 
-export async function fetchAsisCsvRows<T>(fileName: string): Promise<T[]> {
-  const response = await fetch(getAsisFileUrl(fileName));
+export async function fetchAsisCsvRows<T>(fileName: string, baseUrlOverride?: string): Promise<T[]> {
+  const response = await fetch(getAsisFileUrl(fileName, baseUrlOverride));
   if (!response.ok) {
     throw new Error(`Failed to load ${fileName} (${response.status})`);
   }

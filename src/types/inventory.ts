@@ -101,6 +101,13 @@ export interface LoadMetadata {
   location_id?: string;
   inventory_type: InventoryType;
   sub_inventory_name: string;
+  friendly_name?: string;
+  ge_source_status?: string;
+  primary_color?: string;
+  prep_tagged?: boolean;
+  prep_wrapped?: boolean;
+  pickup_date?: string | null;
+  pickup_tba?: boolean;
   status: LoadStatus;
   category?: string;
   created_at?: string;

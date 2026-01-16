@@ -1,59 +1,50 @@
-import { createContext, useCallback, useContext, useState } from "react"
-import { cn } from "@/lib/utils"
+import { createContext, useContext, useMemo } from "react"
+import { Toaster, toast as sonnerToast } from "sonner"
 
 type ToastVariant = "default" | "success" | "error"
 
 type Toast = {
-  id: string
   title?: string
   message: string
   variant?: ToastVariant
   duration?: number
+  dismissible?: boolean
 }
 
 type ToastContextValue = {
-  toast: (toast: Omit<Toast, "id">) => void
+  toast: (toast: Toast) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const toast = useMemo(
+    () => (newToast: Toast) => {
+      const { title, message, variant = "default", duration, dismissible } = newToast
+      const options = {
+        duration,
+        dismissible,
+        description: title ? message : undefined,
+      }
+      const content = title ?? message
 
-  const removeToast = useCallback((id: string) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id))
-  }, [])
-
-  const toast = useCallback(
-    (newToast: Omit<Toast, "id">) => {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const duration = newToast.duration ?? 3000
-
-      setToasts((current) => [...current, { id, ...newToast }])
-      window.setTimeout(() => removeToast(id), duration)
+      if (variant === "success") {
+        sonnerToast.success(content, options)
+        return
+      }
+      if (variant === "error") {
+        sonnerToast.error(content, options)
+        return
+      }
+      sonnerToast(content, options)
     },
-    [removeToast]
+    []
   )
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed bottom-20 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 space-y-2">
-        {toasts.map((item) => (
-          <div
-            key={item.id}
-            role="status"
-            className={cn(
-              "border-border bg-background text-foreground rounded-lg border px-4 py-3 shadow-lg",
-              item.variant === "success" && "border-emerald-500/30 bg-emerald-500/10",
-              item.variant === "error" && "border-destructive/30 bg-destructive/10"
-            )}
-          >
-            {item.title && <div className="text-sm font-semibold">{item.title}</div>}
-            <div className="text-sm">{item.message}</div>
-          </div>
-        ))}
-      </div>
+      <Toaster position="bottom-center" closeButton />
     </ToastContext.Provider>
   )
 }

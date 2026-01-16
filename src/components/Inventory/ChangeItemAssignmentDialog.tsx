@@ -117,7 +117,10 @@ export function ChangeItemAssignmentDialog({
     const scoped = loads.filter((load) => load.inventory_type === destinationType)
     if (!loadSearch.trim()) return scoped
     const q = loadSearch.toLowerCase()
-    return scoped.filter((load) => load.sub_inventory_name.toLowerCase().includes(q))
+    return scoped.filter((load) => {
+      const candidate = `${load.friendly_name ?? ""} ${load.sub_inventory_name}`.toLowerCase()
+      return candidate.includes(q)
+    })
   }, [loads, loadSearch, destinationType])
 
   const summary = useMemo(() => {
@@ -332,7 +335,7 @@ export function ChangeItemAssignmentDialog({
                       ) : (
                         filteredLoads.map((load) => (
                           <SelectItem key={load.id} value={load.sub_inventory_name}>
-                            {load.sub_inventory_name} ({load.status})
+                            {load.friendly_name ? `${load.friendly_name} (Load # ${load.sub_inventory_name})` : load.sub_inventory_name}
                           </SelectItem>
                         ))
                       )}

@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState, type ComponentProps } from "react"
 import type { ComponentType } from "react"
 import {
   AlertTriangle,
-  BarChart3,
   ClipboardList,
   Database,
   History,
   LayoutDashboard,
-  ListChecks,
   Package,
   ScanBarcode,
   Settings,
@@ -77,8 +75,7 @@ const navSections: NavSection[] = [
         icon: ClipboardList,
         view: "inventory",
         applyParams: clearPartsParams,
-        isActive: (currentView, params) =>
-          currentView === "inventory" && params.get("type") !== "Parts",
+        isActive: (currentView) => currentView === "inventory",
       },
       {
         label: "Loads",
@@ -102,73 +99,39 @@ const navSections: NavSection[] = [
       {
         label: "Parts Inventory",
         icon: Package,
-        view: "inventory",
+        view: "parts",
         applyParams: (params) => {
-          params.set("type", "Parts")
-          params.set("partsTab", "inventory")
-          params.delete("partsStatus")
+          params.delete("tab")
+          params.delete("status")
         },
         isActive: (currentView, params) =>
-          currentView === "inventory" &&
-          params.get("type") === "Parts" &&
-          (params.get("partsTab") ?? "inventory") === "inventory" &&
-          params.get("partsStatus") !== "reorder",
-      },
-      {
-        label: "Parts Tracking",
-        icon: ListChecks,
-        view: "inventory",
-        applyParams: (params) => {
-          params.set("type", "Parts")
-          params.set("partsTab", "tracked")
-          params.delete("partsStatus")
-        },
-        isActive: (currentView, params) =>
-          currentView === "inventory" &&
-          params.get("type") === "Parts" &&
-          params.get("partsTab") === "tracked",
+          currentView === "parts" &&
+          (params.get("tab") ?? "inventory") === "inventory" &&
+          params.get("status") !== "reorder",
       },
       {
         label: "Parts History",
         icon: History,
-        view: "inventory",
+        view: "parts",
         applyParams: (params) => {
-          params.set("type", "Parts")
-          params.set("partsTab", "history")
-          params.delete("partsStatus")
+          params.set("tab", "history")
+          params.delete("status")
         },
         isActive: (currentView, params) =>
-          currentView === "inventory" &&
-          params.get("type") === "Parts" &&
-          params.get("partsTab") === "history",
-      },
-      {
-        label: "Parts Reports",
-        icon: BarChart3,
-        view: "inventory",
-        applyParams: (params) => {
-          params.set("type", "Parts")
-          params.set("partsTab", "reports")
-          params.delete("partsStatus")
-        },
-        isActive: (currentView, params) =>
-          currentView === "inventory" &&
-          params.get("type") === "Parts" &&
-          params.get("partsTab") === "reports",
+          currentView === "parts" &&
+          params.get("tab") === "history",
       },
       {
         label: "Reorder Alerts",
         icon: AlertTriangle,
-        view: "inventory",
+        view: "parts",
         applyParams: (params) => {
-          params.set("type", "Parts")
-          params.set("partsTab", "inventory")
-          params.set("partsStatus", "reorder")
+          params.delete("tab")
+          params.set("status", "reorder")
         },
         isActive: (currentView, params) =>
-          currentView === "inventory" &&
-          params.get("type") === "Parts" &&
-          params.get("partsStatus") === "reorder",
+          currentView === "parts" &&
+          params.get("status") === "reorder",
       },
     ],
   },

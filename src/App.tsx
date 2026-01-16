@@ -7,6 +7,7 @@ import { LoginCard } from "@/components/Auth/LoginCard";
 import { useCallback, useEffect, useState } from "react";
 import { ProductEnrichment } from "./components/Products/ProductEnrichment";
 import { InventoryView } from "./components/Inventory/InventoryView";
+import { PartsView } from "./components/Parts/PartsView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/app-sidebar";
@@ -23,7 +24,7 @@ function App() {
     if (
       route.view === 'dashboard' &&
       legacyView &&
-      ['inventory', 'products', 'settings', 'loads', 'create-load', 'create-session'].includes(legacyView)
+      ['inventory', 'parts', 'products', 'settings', 'loads', 'create-load', 'create-session'].includes(legacyView)
     ) {
       return { view: legacyView as AppView, sessionId: null };
     }
@@ -99,6 +100,9 @@ function App() {
             )}
             {currentView === "inventory" && (
               <InventoryView />
+            )}
+            {currentView === "parts" && (
+              <PartsView />
             )}
             {currentView === "products" && (
               <ProductEnrichment

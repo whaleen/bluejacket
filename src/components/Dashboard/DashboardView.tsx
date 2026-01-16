@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Package, TruckIcon, PackageOpen, Clock, User, Activity, ScanBarcode, ArrowRight } from 'lucide-react';
+import { Package, TruckIcon, PackageOpen, User, Activity, ScanBarcode, ArrowRight } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import supabase from '@/lib/supabase';
@@ -105,7 +105,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   // Mock user - replace with actual auth later
   const currentUser = {
     name: 'Josh Vaage',
-    role: 'Warehouse Manager',
+    role: 'Warehouse Floor',
     lastActive: new Date().toLocaleTimeString(),
   };
 
@@ -225,19 +225,19 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           newStats.loads.byType.asis++;
           if (load.category === 'Regular') {
             loadsByCategory['ASIS-regular'].push({
-              loadName: load.sub_inventory_name,
+              loadName: load.friendly_name || load.sub_inventory_name,
               count: itemsInLoad,
               category: load.category
             });
           } else if (load.category === 'Salvage') {
             loadsByCategory['ASIS-salvage'].push({
-              loadName: load.sub_inventory_name,
+              loadName: load.friendly_name || load.sub_inventory_name,
               count: itemsInLoad,
               category: load.category
             });
           } else if (load.category === 'Scrap') {
             loadsByCategory['ASIS-scrap'].push({
-              loadName: load.sub_inventory_name,
+              loadName: load.friendly_name || load.sub_inventory_name,
               count: itemsInLoad,
               category: load.category
             });
@@ -245,7 +245,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         } else if (load.inventory_type === 'BackHaul') {
           newStats.loads.byType.fg++;
           loadsByCategory['FG-backhaul'].push({
-            loadName: load.sub_inventory_name,
+            loadName: load.friendly_name || load.sub_inventory_name,
             count: itemsInLoad
           });
         } else if (
@@ -255,7 +255,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         ) {
           newStats.loads.byType.localStock++;
           loadsByCategory['LocalStock-routes'].push({
-            loadName: load.sub_inventory_name,
+            loadName: load.friendly_name || load.sub_inventory_name,
             count: itemsInLoad
           });
         }

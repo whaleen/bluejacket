@@ -161,7 +161,7 @@ export function MoveItemsDialog({
                   <SelectContent>
                     {availableLoads.map((load) => (
                       <SelectItem key={load.id} value={load.sub_inventory_name}>
-                        {load.sub_inventory_name} ({load.status})
+                        {load.friendly_name ? `${load.friendly_name} (Load # ${load.sub_inventory_name})` : load.sub_inventory_name}
                       </SelectItem>
                     ))}
                   </SelectContent>

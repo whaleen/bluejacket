@@ -1,12 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import { renameLoad, updateLoadMetadata } from '@/lib/loadManager';
+import { updateLoadMetadata } from '@/lib/loadManager';
 import type { LoadMetadata } from '@/types/inventory';
+import { cn } from '@/lib/utils';
+
+const COLOR_OPTIONS = [
+  { label: 'Red', value: '#E53935' },
+  { label: 'Red-Orange', value: '#F4511E' },
+  { label: 'Orange', value: '#FB8C00' },
+  { label: 'Yellow-Orange', value: '#F9A825' },
+  { label: 'Yellow', value: '#FDD835' },
+  { label: 'Yellow-Green', value: '#C0CA33' },
+  { label: 'Green', value: '#43A047' },
+  { label: 'Blue-Green', value: '#009688' },
+  { label: 'Blue', value: '#1E88E5' },
+  { label: 'Blue-Violet', value: '#5E35B1' },
+  { label: 'Violet', value: '#8E24AA' },
+  { label: 'Red-Violet', value: '#D81B60' },
+];
 
 interface RenameLoadDialogProps {
   open: boolean;
@@ -16,15 +32,25 @@ interface RenameLoadDialogProps {
 }
 
 export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: RenameLoadDialogProps) {
-  const [newName, setNewName] = useState('');
+  const [friendlyName, setFriendlyName] = useState('');
   const [category, setCategory] = useState('none');
+  const [primaryColor, setPrimaryColor] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const paletteOptions = useMemo(() => {
+    const normalized = (primaryColor || '').toLowerCase();
+    const paletteValues = new Set(COLOR_OPTIONS.map((option) => option.value.toLowerCase()));
+    if (normalized && !paletteValues.has(normalized)) {
+      return [...COLOR_OPTIONS, { label: 'Custom', value: primaryColor }];
+    }
+    return COLOR_OPTIONS;
+  }, [primaryColor]);
 
   useEffect(() => {
     if (open) {
-      setNewName(load.sub_inventory_name);
+      setFriendlyName(load.friendly_name || '');
       setCategory(load.category || 'none');
+      setPrimaryColor(load.primary_color || '');
       setError(null);
     }
   }, [open, load]);
@@ -32,16 +58,14 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!newName.trim()) {
-      setError('Load name is required');
-      return;
-    }
-
     const normalizedCategory = category === 'none' ? '' : category;
-    const nameChanged = newName.trim() !== load.sub_inventory_name;
+    const nextFriendlyName = friendlyName.trim();
+    const nextPrimaryColor = primaryColor.trim();
+    const friendlyNameChanged = nextFriendlyName !== (load.friendly_name || '');
     const categoryChanged = normalizedCategory.trim() !== (load.category || '');
+    const colorChanged = nextPrimaryColor !== (load.primary_color || '');
 
-    if (!nameChanged && !categoryChanged) {
+    if (!friendlyNameChanged && !categoryChanged && !colorChanged) {
       setError('No changes to save');
       return;
     }
@@ -49,34 +73,20 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
     setLoading(true);
     setError(null);
 
-    // If name changed, rename the load
-    if (nameChanged) {
-      const { success, error: renameError } = await renameLoad(
-        load.inventory_type,
-        load.sub_inventory_name,
-        newName.trim()
-      );
-
-      if (!success) {
-        setError(renameError || 'Failed to rename load');
-        setLoading(false);
-        return;
+    const { success, error: updateError } = await updateLoadMetadata(
+      load.inventory_type,
+      load.sub_inventory_name,
+      {
+        category: normalizedCategory.trim() || undefined,
+        friendly_name: nextFriendlyName ? nextFriendlyName : null,
+        primary_color: nextPrimaryColor ? nextPrimaryColor : null,
       }
-    }
+    );
 
-    // If category changed, update metadata
-    if (categoryChanged) {
-      const { success, error: updateError } = await updateLoadMetadata(
-        load.inventory_type,
-        nameChanged ? newName.trim() : load.sub_inventory_name,
-        { category: normalizedCategory.trim() || undefined }
-      );
-
-      if (!success) {
-        setError(updateError || 'Failed to update category');
-        setLoading(false);
-        return;
-      }
+    if (!success) {
+      setError(updateError || 'Failed to update load details');
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
@@ -90,33 +100,74 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit Load</DialogTitle>
+          <DialogTitle>Edit Load Details</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="current-name">Current Name</Label>
+            <Label htmlFor="current-name">Load Number</Label>
             <Input id="current-name" value={load.sub_inventory_name} disabled />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-name">New Name *</Label>
+            <Label htmlFor="friendly-name">Friendly Name (Optional)</Label>
             <Input
-              id="new-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Enter new load name..."
-              required
+              id="friendly-name"
+              value={friendlyName}
+              onChange={(e) => setFriendlyName(e.target.value)}
+              placeholder="Enter a display name..."
             />
             <p className="text-xs text-muted-foreground">
-              This will update the load metadata and all {load.inventory_type} items with this
-              sub_inventory value.
+              Friendly names do not change the underlying load number.
             </p>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="primary-color">Primary Color</Label>
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
+              {paletteOptions.map((option) => {
+                const isSelected = option.value.toLowerCase() === (primaryColor || '').toLowerCase();
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    onClick={() => setPrimaryColor(option.value)}
+                    className={cn(
+                      'flex h-12 w-12 items-center justify-center rounded-md ring-2 ring-transparent transition',
+                      isSelected && 'ring-primary'
+                    )}
+                    style={{ background: option.value }}
+                    aria-label={option.label}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{primaryColor ? `Selected: ${primaryColor}` : 'No color selected.'}</span>
+              {primaryColor && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setPrimaryColor('')}>
+                  Clear
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Used for print tag color blocks.
+            </p>
+          </div>
+
+          {load.ge_source_status && (
+            <div className="space-y-2">
+              <Label htmlFor="ge-status">GE Status (Read-only)</Label>
+              <Input id="ge-status" value={load.ge_source_status} disabled />
+              <p className="text-xs text-muted-foreground">
+                Imported from GE and not editable here.
+              </p>
+            </div>
+          )}
+
           {(load.inventory_type === 'ASIS' || load.inventory_type === 'FG') && (
             <div className="space-y-2">
-              <Label htmlFor="category">Category (Optional)</Label>
+              <Label htmlFor="category">Category (Manual)</Label>
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger id="category">
                 <SelectValue placeholder="Select category..." />
@@ -153,7 +204,7 @@ export function RenameLoadDialog({ open, onOpenChange, load, onSuccess }: Rename
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading || !newName.trim()}>
+            <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>

@@ -11,25 +11,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
-import { PartsInventoryTab } from './PartsInventoryTab';
-import { PartsTrackingTab } from './PartsTrackingTab';
-import { PartsHistoryChart } from './PartsHistoryChart';
-import { PartsReportsTab } from './PartsReportsTab';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { Loader2, Search, ClipboardList, X, FileText, PackageSearch, Download, Trash2, Upload } from 'lucide-react';
+import { Loader2, Search, X, FileText, PackageSearch, Download, Trash2, Upload } from 'lucide-react';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
-import { fetchAsisCsvRows, fetchAsisXlsRows } from '@/lib/asisImport';
+import { fetchAsisXlsRows } from '@/lib/asisImport';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -45,7 +39,7 @@ type InventoryItemWithProduct = InventoryItem & {
   } | null;
 };
 
-type AsisProductRow = {
+type ProductImportRow = {
   'Model #': string;
   'Serial #': string;
   'Inv Qty': string | number;
@@ -53,43 +47,60 @@ type AsisProductRow = {
   'Availability Message': string;
 };
 
-type AsisLoadRow = {
-  'Load Number': string;
-  Units: string | number;
-  Notes?: string;
-  'Scanned Date/Time'?: string;
-  Status?: string;
-};
-
-type AsisLoadItemRow = {
-  ORDC: string;
-  MODELS: string;
-  SERIALS: string;
-  QTY: string | number;
-  'LOAD NUMBER': string;
-};
-
-type NormalizedAsisLoad = {
-  loadNumber: string;
-  units: number;
-  notes: string;
-  scannedAt: string;
-  status: string;
-};
-
 const PAGE_SIZE = 60;
 const EXPORT_BATCH_SIZE = 1000;
 const IMPORT_BATCH_SIZE = 500;
 
+type InventoryTypeFilter = 'all' | 'ASIS' | 'FG' | 'LocalStock';
+
 type InventoryFilters = {
-  inventoryType: 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts';
+  inventoryType: InventoryTypeFilter;
   subInventory: string;
-  productCategory: 'all' | 'appliance' | 'part' | 'accessory';
+  productCategory: 'all' | 'appliance' | 'accessory';
   brand: string;
   search: string;
 };
 
 type InventorySort = 'model-asc' | 'model-desc' | 'created-desc' | 'created-asc';
+
+type ProductImportSource = {
+  label: string;
+  baseUrl: string;
+  fileName: string;
+  inventoryType: 'ASIS' | 'FG' | 'Staged';
+  csoValue: string;
+};
+
+const PRODUCT_IMPORT_SOURCES_BY_FILTER: Record<'ASIS' | 'FG' | 'LocalStock', ProductImportSource> = {
+  ASIS: {
+    label: 'ASIS',
+    baseUrl: '/ASIS',
+    fileName: 'ASIS.xls',
+    inventoryType: 'ASIS',
+    csoValue: 'ASIS',
+  },
+  FG: {
+    label: 'FG',
+    baseUrl: '/FG',
+    fileName: 'ERP On Hand Qty.xls',
+    inventoryType: 'FG',
+    csoValue: 'FG',
+  },
+  LocalStock: {
+    label: 'Local Stock (STA)',
+    baseUrl: '/STA',
+    fileName: 'ERP On Hand Qty.xls',
+    inventoryType: 'Staged',
+    csoValue: 'STA',
+  },
+};
+
+const resolveProductImportSource = (filter: InventoryTypeFilter) => {
+  if (filter === 'ASIS' || filter === 'FG' || filter === 'LocalStock') {
+    return PRODUCT_IMPORT_SOURCES_BY_FILTER[filter];
+  }
+  return null;
+};
 
 type ExportColumnKey =
   | 'item_id'
@@ -164,14 +175,6 @@ const chunkArray = <T,>(items: T[], size: number) => {
   return chunks;
 };
 
-const parseAsisTimestamp = (value: string) => {
-  if (!value) return 0;
-  const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
-  if (!match) return 0;
-  const [, year, month, day, hour, minute, second] = match;
-  return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`).getTime();
-};
-
 const dedupeBySerial = (items: InventoryItem[]) => {
   const seen = new Map<string, InventoryItem>();
   const output: InventoryItem[] = [];
@@ -214,7 +217,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [nukeDialogOpen, setNukeDialogOpen] = useState(false);
   const [nuking, setNuking] = useState(false);
   const [importingProducts, setImportingProducts] = useState(false);
-  const [importingLoads, setImportingLoads] = useState(false);
   const [exportColumnKeys, setExportColumnKeys] = useState<Set<ExportColumnKey>>(
     () => new Set(exportColumns.map(column => column.key))
   );
@@ -223,26 +225,13 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Read filter from URL on mount
-  const getInitialFilter = (): 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts' => {
+  const getInitialFilter = (): InventoryTypeFilter => {
     const params = new URLSearchParams(window.location.search);
     const type = params.get('type');
-    if (type === 'ASIS' || type === 'FG' || type === 'LocalStock' || type === 'Parts') {
+    if (type === 'ASIS' || type === 'FG' || type === 'LocalStock') {
       return type;
     }
     return 'all';
-  };
-  const getInitialPartsTab = (): 'inventory' | 'tracked' | 'history' | 'reports' => {
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get('partsTab');
-    if (tab === 'tracked' || tab === 'history' || tab === 'reports' || tab === 'inventory') {
-      return tab;
-    }
-    return 'inventory';
-  };
-  const getInitialPartsStatus = (): 'all' | 'reorder' => {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get('partsStatus');
-    return status === 'reorder' ? 'reorder' : 'all';
   };
   const getInitialSort = (): InventorySort => {
     const params = new URLSearchParams(window.location.search);
@@ -257,9 +246,9 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [inventoryTypeFilter, setInventoryTypeFilter] =
-    useState<'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts'>(getInitialFilter);
+    useState<InventoryTypeFilter>(getInitialFilter);
   const [subInventoryFilter, setSubInventoryFilter] = useState('all');
-  const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'part' | 'accessory'>('all');
+  const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'accessory'>('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [sortOption, setSortOption] = useState<InventorySort>(getInitialSort);
   const [subInventoryOptions, setSubInventoryOptions] = useState<string[]>([]);
@@ -270,11 +259,9 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [selectedModel, setSelectedModel] = useState('');
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
-  const [partsTab, setPartsTab] = useState<'inventory' | 'tracked' | 'history' | 'reports'>(getInitialPartsTab);
-  const [partsStatus, setPartsStatus] = useState<'all' | 'reorder'>(getInitialPartsStatus);
   const { view, setView, isImageView } = usePartsListView();
 
-  const resolveInventoryTypes = useCallback((type: 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts') => {
+  const resolveInventoryTypes = useCallback((type: InventoryTypeFilter) => {
     if (type === 'FG') {
       return ['FG', 'BackHaul'];
     }
@@ -283,9 +270,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     }
     if (type === 'ASIS') {
       return ['ASIS'];
-    }
-    if (type === 'Parts') {
-      return ['Parts'];
     }
     return [];
   }, []);
@@ -348,16 +332,9 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       const params = new URLSearchParams(window.location.search);
       const type = params.get('type');
       const nextType =
-        type === 'ASIS' || type === 'FG' || type === 'LocalStock' || type === 'Parts'
+        type === 'ASIS' || type === 'FG' || type === 'LocalStock'
           ? type
           : 'all';
-      const tab = params.get('partsTab');
-      const nextTab =
-        tab === 'tracked' || tab === 'history' || tab === 'reports' || tab === 'inventory'
-          ? tab
-          : 'inventory';
-      const status = params.get('partsStatus');
-      const nextStatus = status === 'reorder' ? 'reorder' : 'all';
       const sort = params.get('sort');
       const nextSort =
         sort === 'model-desc' || sort === 'created-desc' || sort === 'created-asc' || sort === 'model-asc'
@@ -365,8 +342,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
           : 'model-asc';
 
       setInventoryTypeFilter(prev => (prev === nextType ? prev : nextType));
-      setPartsTab(prev => (prev === nextTab ? prev : nextTab));
-      setPartsStatus(prev => (prev === nextStatus ? prev : nextStatus));
       setSortOption(prev => (prev === nextSort ? prev : nextSort));
     };
 
@@ -379,12 +354,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       window.removeEventListener('popstate', handleChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (partsTab !== 'inventory' && partsStatus !== 'all') {
-      setPartsStatus('all');
-    }
-  }, [partsTab, partsStatus]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -403,18 +372,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       params.delete('type');
     }
 
-    if (inventoryTypeFilter === 'Parts') {
-      params.set('partsTab', partsTab);
-      if (partsStatus !== 'all') {
-        params.set('partsStatus', partsStatus);
-      } else {
-        params.delete('partsStatus');
-      }
-    } else {
-      params.delete('partsTab');
-      params.delete('partsStatus');
-    }
-
     if (sortOption !== 'model-asc') {
       params.set('sort', sortOption);
     } else {
@@ -424,7 +381,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
     window.history.replaceState({}, '', newUrl);
     window.dispatchEvent(new Event('app:locationchange'));
-  }, [inventoryTypeFilter, partsTab, partsStatus, sortOption]);
+  }, [inventoryTypeFilter, sortOption]);
 
   useEffect(() => {
     const fetchBrands = async () => {
@@ -706,7 +663,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort, locationId]);
 
   const refreshInventoryList = useCallback(() => {
-    if (inventoryTypeFilter === 'Parts') return;
     setItems([]);
     setPage(0);
     setHasMore(true);
@@ -714,46 +670,56 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     setListError(null);
     setLoadingMore(false);
     fetchInventoryPage(0, { append: false });
-  }, [fetchInventoryPage, inventoryTypeFilter]);
+  }, [fetchInventoryPage]);
 
   const handleNukeProducts = useCallback(async () => {
     if (nuking) return;
     if (!locationId) {
       toast({
-        variant: 'destructive',
+        variant: 'error',
         title: 'No active location',
-        description: 'Select a location before clearing inventory.',
+        message: 'Select a location before clearing inventory.',
       });
       return;
     }
 
-    setNuking(true);
     try {
+      const source = resolveProductImportSource(inventoryTypeFilter);
+      if (!source) {
+        toast({
+          variant: 'error',
+          title: 'Missing source',
+          message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+        });
+        return;
+      }
+      setNuking(true);
       const { error, count } = await supabase
         .from('inventory_items')
         .delete({ count: 'exact' })
         .eq('location_id', locationId)
-        .or('inventory_type.neq.Parts,inventory_type.is.null');
+        .eq('inventory_type', source.inventoryType);
 
       if (error) throw error;
 
       toast({
-        title: 'Non-part inventory cleared',
-        description: typeof count === 'number' ? `${count} items removed.` : 'Non-part items removed.',
+        title: `${source.label} inventory cleared`,
+        message: typeof count === 'number' ? `${count} items removed.` : `${source.label} items removed.`,
       });
 
       refreshInventoryList();
+      setNukeDialogOpen(false);
     } catch (err) {
-      console.error('Failed to clear non-part inventory:', err);
+      console.error('Failed to clear inventory:', err);
       toast({
-        variant: 'destructive',
+        variant: 'error',
         title: 'Failed to clear inventory',
-        description: err instanceof Error ? err.message : 'Unable to delete non-part items.',
+        message: err instanceof Error ? err.message : 'Unable to delete inventory items.',
       });
     } finally {
       setNuking(false);
     }
-  }, [locationId, nuking, refreshInventoryList, toast]);
+  }, [inventoryTypeFilter, locationId, nuking, refreshInventoryList, toast]);
 
   const buildProductLookup = useCallback(async (models: string[]) => {
     const uniqueModels = Array.from(new Set(models.map(model => model.trim()).filter(Boolean)));
@@ -772,14 +738,23 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   }, []);
 
   const handleImportProducts = useCallback(async () => {
-    if (importingProducts || importingLoads) return;
+    if (importingProducts) return;
+    const source = resolveProductImportSource(inventoryTypeFilter);
+    if (!source) {
+      toast({
+        variant: 'error',
+        title: 'Missing source',
+        message: 'Pick ASIS, FG, or Local Stock in the type filter before importing.',
+      });
+      return;
+    }
     setImportingProducts(true);
     try {
-      const rows = await fetchAsisXlsRows<AsisProductRow>('ASIS.xls');
+      const rows = await fetchAsisXlsRows<ProductImportRow>(source.fileName, source.baseUrl);
       if (!rows.length) {
         toast({
-          title: 'No ASIS products found',
-          description: 'ASIS.xls did not return any rows.',
+          title: `No ${source.label} products found`,
+          message: `${source.fileName} did not return any rows.`,
         });
         return;
       }
@@ -797,7 +772,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
           const qtyValue = typeof row['Inv Qty'] === 'number' ? row['Inv Qty'] : parseInt(String(row['Inv Qty']).trim(), 10);
           const product = productLookup.get(model);
           return {
-            cso: 'ASIS',
+            cso: source.csoValue,
             model,
             qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
             serial: serialValue || undefined,
@@ -805,7 +780,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             product_fk: product?.id,
             status: String(row['Availability Status'] ?? '').trim() || undefined,
             notes: String(row['Availability Message'] ?? '').trim() || undefined,
-            inventory_type: 'ASIS' as const,
+            inventory_type: source.inventoryType,
             is_scanned: false,
           };
         })
@@ -815,7 +790,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       if (duplicates > 0) {
         toast({
           title: 'Duplicate serials collapsed',
-          description: `${duplicates} duplicate serials were merged before import.`,
+          message: `${duplicates} duplicate serials were merged before import.`,
         });
       }
 
@@ -833,253 +808,21 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       }
 
       toast({
-        title: 'ASIS products imported',
-        description: `${dedupedItems.length} items processed.`,
+        title: `${source.label} products imported`,
+        message: `${dedupedItems.length} items processed.`,
       });
       refreshInventoryList();
     } catch (err) {
-      console.error('Failed to import ASIS products:', err);
+      console.error('Failed to import products:', err);
       toast({
-        variant: 'destructive',
-        title: 'ASIS import failed',
-        description: err instanceof Error ? err.message : 'Unable to import ASIS.xls.',
+        variant: 'error',
+        title: 'Import failed',
+        message: err instanceof Error ? err.message : 'Unable to import inventory file.',
       });
     } finally {
       setImportingProducts(false);
     }
-  }, [buildProductLookup, companyId, importingLoads, importingProducts, locationId, refreshInventoryList, toast]);
-
-  const handleImportLoads = useCallback(async () => {
-    if (importingProducts || importingLoads) return;
-    setImportingLoads(true);
-    try {
-      const loadRows = await fetchAsisXlsRows<AsisLoadRow>('ASISLoadData.xls');
-      const normalizedLoads: NormalizedAsisLoad[] = loadRows
-        .map(row => {
-          const loadNumber = String(row['Load Number'] ?? '').trim();
-          if (!loadNumber) return null;
-          const unitsValue = typeof row.Units === 'number' ? row.Units : parseInt(String(row.Units).trim(), 10);
-          return {
-            loadNumber,
-            units: Number.isFinite(unitsValue) ? unitsValue : 0,
-            notes: String(row.Notes ?? '').trim(),
-            scannedAt: String(row['Scanned Date/Time'] ?? '').trim(),
-            status: String(row.Status ?? '').trim(),
-          };
-        })
-        .filter(Boolean) as NormalizedAsisLoad[];
-
-      if (!normalizedLoads.length) {
-        toast({
-          title: 'No ASIS loads found',
-          description: 'ASISLoadData.xls did not return any rows.',
-        });
-        return;
-      }
-
-      const loadNumbers = normalizedLoads.map(load => load.loadNumber);
-      let existingLoadNumbers = new Set<string>();
-      if (loadNumbers.length) {
-        const { data, error } = await supabase
-          .from('load_metadata')
-          .select('sub_inventory_name')
-          .eq('location_id', locationId)
-          .eq('inventory_type', 'ASIS')
-          .in('sub_inventory_name', loadNumbers);
-        if (error) throw error;
-        existingLoadNumbers = new Set((data ?? []).map(load => load.sub_inventory_name));
-      }
-
-      const newLoads = normalizedLoads
-        .filter(load => !existingLoadNumbers.has(load.loadNumber))
-        .map(load => ({
-          company_id: companyId,
-          location_id: locationId,
-          inventory_type: 'ASIS',
-          sub_inventory_name: load.loadNumber,
-          status: 'active',
-          category: load.status || null,
-          notes: [load.notes, load.scannedAt].filter(Boolean).join(' • ') || null,
-        }));
-
-      if (newLoads.length) {
-        const { error } = await supabase.from('load_metadata').insert(newLoads);
-        if (error) throw error;
-      }
-
-      const loadItemRows: Array<{ row: AsisLoadItemRow; load: NormalizedAsisLoad }> = [];
-      const loadErrors: string[] = [];
-      const loadIndexByNumber = new Map<string, number>();
-      const loadTimestampByNumber = new Map<string, number>();
-      normalizedLoads.forEach((load, index) => {
-        loadIndexByNumber.set(load.loadNumber, index);
-        loadTimestampByNumber.set(load.loadNumber, parseAsisTimestamp(load.scannedAt));
-      });
-      for (const load of normalizedLoads) {
-        try {
-          const rows = await fetchAsisCsvRows<AsisLoadItemRow>(`${load.loadNumber}.csv`);
-          rows.forEach(row => loadItemRows.push({ row, load }));
-        } catch (err) {
-          loadErrors.push(`${load.loadNumber}: ${err instanceof Error ? err.message : 'Failed to load CSV.'}`);
-        }
-      }
-
-      const loadModels = loadItemRows
-        .map(item => String(item.row.MODELS ?? '').trim())
-        .filter(Boolean);
-      const productLookup = await buildProductLookup(loadModels);
-
-      const serialCandidates = new Map<
-        string,
-        Array<{
-          item: InventoryItem;
-          loadNumber: string;
-          loadIndex: number;
-          loadTimestamp: number;
-        }>
-      >();
-      const noSerialItems: InventoryItem[] = [];
-      const conflictRows: Array<{ serial: string; loadNumber: string; conflictingLoad: string }> = [];
-      loadItemRows.forEach(({ row, load }) => {
-        const model = String(row.MODELS ?? '').trim();
-        if (!model) return;
-        const serialValue = String(row.SERIALS ?? '').trim();
-        const qtyValue = typeof row.QTY === 'number' ? row.QTY : parseInt(String(row.QTY).trim(), 10);
-        const product = productLookup.get(model);
-        const item: InventoryItem = {
-          cso: String(row.ORDC ?? '').trim() || 'ASIS',
-          model,
-          qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
-          serial: serialValue || undefined,
-          product_type: product?.product_type ?? 'UNKNOWN',
-          product_fk: product?.id,
-          status: load.status || undefined,
-          notes: load.notes || undefined,
-          inventory_type: 'ASIS',
-          sub_inventory: load.loadNumber,
-          is_scanned: false,
-        };
-
-        if (!serialValue) {
-          noSerialItems.push(item);
-          return;
-        }
-
-        const candidates = serialCandidates.get(serialValue) ?? [];
-        candidates.push({
-          item,
-          loadNumber: load.loadNumber,
-          loadIndex: loadIndexByNumber.get(load.loadNumber) ?? 0,
-          loadTimestamp: loadTimestampByNumber.get(load.loadNumber) ?? 0,
-        });
-        serialCandidates.set(serialValue, candidates);
-      });
-
-      const dedupedItems: InventoryItem[] = [...noSerialItems];
-      serialCandidates.forEach((candidates, serial) => {
-        let canonical = candidates[0];
-        candidates.forEach(candidate => {
-          if (candidate.loadTimestamp > canonical.loadTimestamp) {
-            canonical = candidate;
-            return;
-          }
-          if (
-            candidate.loadTimestamp === canonical.loadTimestamp &&
-            candidate.loadIndex > canonical.loadIndex
-          ) {
-            canonical = candidate;
-          }
-        });
-
-        dedupedItems.push(canonical.item);
-        const uniqueLoads = new Set(candidates.map(candidate => candidate.loadNumber));
-        if (uniqueLoads.size > 1) {
-          candidates.forEach(candidate => {
-            if (candidate.loadNumber !== canonical.loadNumber) {
-              conflictRows.push({
-                serial,
-                loadNumber: candidate.loadNumber,
-                conflictingLoad: canonical.loadNumber,
-              });
-            }
-          });
-        }
-      });
-
-      const payload = dedupedItems.map(item => ({
-        ...item,
-        company_id: companyId,
-        location_id: locationId,
-      }));
-
-      for (const chunk of chunkArray(payload, IMPORT_BATCH_SIZE)) {
-        const { error } = await supabase
-          .from('inventory_items')
-          .upsert(chunk, { onConflict: 'serial' });
-        if (error) throw error;
-      }
-
-      if (loadNumbers.length) {
-        const { error } = await supabase
-          .from('load_conflicts')
-          .delete()
-          .eq('location_id', locationId)
-          .eq('inventory_type', 'ASIS')
-          .in('load_number', loadNumbers);
-        if (error) throw error;
-      }
-
-      if (conflictRows.length > 0) {
-        const conflictPayload = conflictRows.map(conflict => ({
-          company_id: companyId,
-          location_id: locationId,
-          inventory_type: 'ASIS',
-          load_number: conflict.loadNumber,
-          serial: conflict.serial,
-          conflicting_load: conflict.conflictingLoad,
-          status: 'open',
-        }));
-        for (const chunk of chunkArray(conflictPayload, IMPORT_BATCH_SIZE)) {
-          const { error } = await supabase
-            .from('load_conflicts')
-            .upsert(chunk, { onConflict: 'location_id,load_number,serial' });
-          if (error) throw error;
-        }
-      }
-
-      toast({
-        title: 'ASIS loads imported',
-        description: `${normalizedLoads.length} loads, ${dedupedItems.length} items processed.`,
-      });
-
-      if (conflictRows.length > 0) {
-        toast({
-          variant: 'destructive',
-          title: 'Serial conflicts detected',
-          description: `${conflictRows.length} conflict${conflictRows.length === 1 ? '' : 's'} logged.`,
-        });
-      }
-
-      if (loadErrors.length) {
-        toast({
-          variant: 'destructive',
-          title: 'Some load CSVs failed',
-          description: `${loadErrors.length} CSV files could not be read.`,
-        });
-      }
-
-      refreshInventoryList();
-    } catch (err) {
-      console.error('Failed to import ASIS loads:', err);
-      toast({
-        variant: 'destructive',
-        title: 'Load import failed',
-        description: err instanceof Error ? err.message : 'Unable to import ASIS loads.',
-      });
-    } finally {
-      setImportingLoads(false);
-    }
-  }, [buildProductLookup, companyId, importingLoads, importingProducts, locationId, refreshInventoryList, toast]);
+  }, [buildProductLookup, companyId, importingProducts, inventoryTypeFilter, locationId, refreshInventoryList, toast]);
 
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
@@ -1091,16 +834,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   }, [inventoryTypeFilter]);
 
   useEffect(() => {
-    if (inventoryTypeFilter === 'Parts') {
-      setItems([]);
-      setTotalCount(0);
-      setHasMore(false);
-      setListError(null);
-      setLoading(false);
-      setLoadingMore(false);
-      return;
-    }
-
     const timeout = window.setTimeout(() => {
       setItems([]);
       setPage(0);
@@ -1115,7 +848,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   }, [searchTerm, inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, sortOption, fetchInventoryPage]);
 
   useEffect(() => {
-    if (inventoryTypeFilter === 'Parts') return;
     const node = loadMoreRef.current;
     if (!node) return;
 
@@ -1130,7 +862,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [handleLoadMore, inventoryTypeFilter]);
+  }, [handleLoadMore]);
 
   const activeFilters = [
     searchTerm && {
@@ -1173,60 +905,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     setSortOption('model-asc');
   };
 
+  const selectedImportSource = resolveProductImportSource(inventoryTypeFilter);
+
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader
-        title="Inventory"
-        onMenuClick={onMenuClick}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleImportProducts}
-              disabled={importingProducts || importingLoads}
-            >
-              {importingProducts ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              Import products
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleImportLoads}
-              disabled={importingProducts || importingLoads}
-            >
-              {importingLoads ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              Import loads
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setExportDialogOpen(true)}
-              disabled={inventoryTypeFilter === 'Parts'}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setNukeDialogOpen(true)}
-              disabled={nuking}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Nuke products
-            </Button>
-          </div>
-        }
-      />
+      <AppHeader title="Inventory" onMenuClick={onMenuClick} />
 
       {/* Filters */}
       <div className="border-b">
@@ -1245,7 +928,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             <Select
               value={inventoryTypeFilter}
               onValueChange={v =>
-                setInventoryTypeFilter(v as 'all' | 'ASIS' | 'FG' | 'LocalStock' | 'Parts')
+                setInventoryTypeFilter(v as InventoryTypeFilter)
               }
             >
             <SelectTrigger className="w-full">
@@ -1256,14 +939,13 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
                 <SelectItem value="ASIS">ASIS</SelectItem>
                 <SelectItem value="FG">FG</SelectItem>
                 <SelectItem value="LocalStock">Local Stock</SelectItem>
-                <SelectItem value="Parts">Parts</SelectItem>
               </SelectContent>
             </Select>
 
             <Select
               value={productCategoryFilter}
               onValueChange={v =>
-                setProductCategoryFilter(v as 'all' | 'appliance' | 'part' | 'accessory')
+                setProductCategoryFilter(v as 'all' | 'appliance' | 'accessory')
               }
             >
             <SelectTrigger className="w-full">
@@ -1272,7 +954,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
                 <SelectItem value="appliance">Appliances</SelectItem>
-                <SelectItem value="part">Parts</SelectItem>
                 <SelectItem value="accessory">Accessories</SelectItem>
               </SelectContent>
             </Select>
@@ -1364,48 +1045,56 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             </div>
           )}
 
-          {inventoryTypeFilter !== 'Parts' && (
-            <div className="flex justify-end">
-              <PartsListViewToggle view={view} onChange={setView} />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <PartsListViewToggle view={view} onChange={setView} />
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleImportProducts}
+                disabled={importingProducts}
+              >
+                {importingProducts ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-2 h-4 w-4" />
+                )}
+                Import products
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setExportDialogOpen(true)}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  if (!selectedImportSource) {
+                    toast({
+                      variant: 'error',
+                      title: 'Missing source',
+                      message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+                    });
+                    return;
+                  }
+                  setNukeDialogOpen(true);
+                }}
+                disabled={nuking}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Nuke products
+              </Button>
             </div>
-          )}
+          </div>
         </PageContainer>
       </div>
 
-      {/* Parts Inventory with Tabs */}
-      {inventoryTypeFilter === 'Parts' ? (
-        <PageContainer className="py-4 pb-24">
-          <Tabs value={partsTab} onValueChange={(v) => setPartsTab(v as typeof partsTab)}>
-            <TabsList className="w-full grid grid-cols-2 sm:grid-cols-4 mb-4">
-              <TabsTrigger value="inventory">
-                <ClipboardList className="h-4 w-4 mr-2" />
-                Inventory
-              </TabsTrigger>
-              <TabsTrigger value="tracked">Tracked Parts</TabsTrigger>
-              <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="reports">Reports</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="inventory">
-              <PartsInventoryTab searchTerm={searchInput} statusFilter={partsStatus} />
-            </TabsContent>
-
-            <TabsContent value="tracked">
-              <PartsTrackingTab />
-            </TabsContent>
-
-            <TabsContent value="history">
-              <PartsHistoryChart />
-            </TabsContent>
-
-            <TabsContent value="reports">
-              <PartsReportsTab />
-            </TabsContent>
-          </Tabs>
-        </PageContainer>
-      ) : (
-        /* Regular Inventory List */
-        <PageContainer className="py-4 pb-24 space-y-2">
+      {/* Inventory List */}
+      <PageContainer className="py-4 pb-24 space-y-2">
           {listError && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {listError}
@@ -1484,7 +1173,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             </div>
           )}
         </PageContainer>
-      )}
 
       <ProductDetailDialog
         open={productDetailOpen}
@@ -1604,15 +1292,38 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={nukeDialogOpen}
-        onOpenChange={setNukeDialogOpen}
-        title="Nuke non-part inventory?"
-        description="This will delete every inventory item that is not a part for the active location. This cannot be undone."
-        confirmText="Delete non-part items"
-        destructive
-        onConfirm={handleNukeProducts}
-      />
+      <Dialog open={nukeDialogOpen} onOpenChange={setNukeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuke inventory?</DialogTitle>
+            <DialogDescription>
+              This will delete every inventory item for the selected source at the active location. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            Source: <span className="font-medium text-foreground">{selectedImportSource?.label ?? 'Unknown'}</span>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNukeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleNukeProducts}
+              disabled={nuking || !selectedImportSource}
+            >
+              {nuking ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                'Delete items'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       
     </div>

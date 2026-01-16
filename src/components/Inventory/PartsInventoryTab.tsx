@@ -3,13 +3,16 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertTriangle, Check, Package, ShoppingCart, Camera } from 'lucide-react';
+import { Loader2, AlertTriangle, Check, Package, ShoppingCart, Camera, Plus, Trash2 } from 'lucide-react';
 import {
   getTrackedParts,
   updatePartCount,
   markAsReordered,
-  snapshotTrackedParts
+  snapshotTrackedParts,
+  updateThreshold,
+  removeTrackedPart
 } from '@/lib/partsManager';
+import { PartsTrackingDialog } from './PartsTrackingDialog';
 import type { TrackedPartWithDetails } from '@/types/inventory';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
@@ -41,6 +44,9 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
   const [pendingPart, setPendingPart] = useState<TrackedPartWithDetails | null>(null);
   const [pendingQty, setPendingQty] = useState<number | null>(null);
   const [selectedReason, setSelectedReason] = useState<'usage' | 'return' | 'restock' | ''>('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
+  const [thresholdValue, setThresholdValue] = useState<string>('');
   const { view, setView, isImageView } = usePartsListView();
 
   const fetchParts = useCallback(async () => {
@@ -166,10 +172,84 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
     setSelectedReason('');
   };
 
+  // Threshold editing
+  const handleStartEditThreshold = (part: TrackedPartWithDetails) => {
+    setEditingThresholdId(part.id);
+    setThresholdValue(part.reorder_threshold.toString());
+  };
+
+  const handleCancelEditThreshold = () => {
+    setEditingThresholdId(null);
+    setThresholdValue('');
+  };
+
+  const handleSaveThreshold = async (part: TrackedPartWithDetails) => {
+    const newThreshold = parseInt(thresholdValue, 10);
+    if (isNaN(newThreshold) || newThreshold < 0) {
+      handleCancelEditThreshold();
+      return;
+    }
+
+    if (newThreshold === part.reorder_threshold) {
+      handleCancelEditThreshold();
+      return;
+    }
+
+    setUpdating(part.id);
+    const { success, error } = await updateThreshold(part.id, newThreshold);
+
+    if (success) {
+      setParts(prev =>
+        prev.map(p =>
+          p.id === part.id ? { ...p, reorder_threshold: newThreshold } : p
+        )
+      );
+      onRefresh?.();
+    } else {
+      console.error('Failed to update threshold:', error);
+    }
+
+    setUpdating(null);
+    handleCancelEditThreshold();
+  };
+
+  const handleThresholdKeyDown = (
+    e: React.KeyboardEvent,
+    part: TrackedPartWithDetails
+  ) => {
+    if (e.key === 'Enter') {
+      handleSaveThreshold(part);
+    } else if (e.key === 'Escape') {
+      handleCancelEditThreshold();
+    }
+  };
+
+  const handleRemovePart = async (part: TrackedPartWithDetails) => {
+    if (!confirm(`Stop tracking ${part.products?.model ?? 'this part'}?`)) {
+      return;
+    }
+
+    setUpdating(part.id);
+    const { success, error } = await removeTrackedPart(part.id);
+
+    if (success) {
+      setParts(prev => prev.filter(p => p.id !== part.id));
+      onRefresh?.();
+    } else {
+      console.error('Failed to remove tracked part:', error);
+    }
+
+    setUpdating(null);
+  };
+
+  const handlePartAdded = () => {
+    fetchParts();
+    onRefresh?.();
+  };
+
   const getStatusBadge = (part: TrackedPartWithDetails) => {
     const { current_qty, reorder_threshold, reordered_at } = part;
 
-    // If reordered, show reordered badge
     if (reordered_at && current_qty <= reorder_threshold) {
       return (
         <Badge variant="outline" className="text-green-600 border-green-600">
@@ -226,26 +306,57 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
 
   if (parts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <Package className="h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-medium mb-2">No Parts Being Tracked</h3>
-        <p className="text-muted-foreground text-sm max-w-sm">
-          Go to the "Tracked Parts" tab to add parts you want to monitor for inventory counts.
-        </p>
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Parts
+          </Button>
+        </div>
+        <Card className="p-8 text-center">
+          <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-medium mb-2">No Parts Being Tracked</h3>
+          <p className="text-muted-foreground text-sm max-w-sm mx-auto mb-4">
+            Add parts you want to monitor for inventory counts and reorder alerts.
+          </p>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Your First Part
+          </Button>
+        </Card>
+        <PartsTrackingDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onPartAdded={handlePartAdded}
+        />
       </div>
     );
   }
 
   if (statusFilteredParts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-muted-foreground">
-          {statusFilter === 'reorder'
-            ? searchTerm
-              ? 'No parts needing reorder match your search.'
-              : 'No parts need reordering right now.'
-            : 'No parts match your search.'}
-        </p>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PartsListViewToggle view={view} onChange={setView} />
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Parts
+          </Button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <p className="text-muted-foreground">
+            {statusFilter === 'reorder'
+              ? searchTerm
+                ? 'No parts needing reorder match your search.'
+                : 'No parts need reordering right now.'
+              : 'No parts match your search.'}
+          </p>
+        </div>
+        <PartsTrackingDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          onPartAdded={handlePartAdded}
+        />
       </div>
     );
   }
@@ -254,24 +365,30 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <PartsListViewToggle view={view} onChange={setView} />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleSnapshotAll}
-          disabled={snapshotting || parts.length === 0}
-        >
-          {snapshotting ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Snapshotting...
-            </>
-          ) : (
-            <>
-              <Camera className="h-4 w-4 mr-2" />
-              Snapshot All
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSnapshotAll}
+            disabled={snapshotting || parts.length === 0}
+          >
+            {snapshotting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Snapshotting...
+              </>
+            ) : (
+              <>
+                <Camera className="h-4 w-4 mr-2" />
+                Snapshot All
+              </>
+            )}
+          </Button>
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Parts
+          </Button>
+        </div>
       </div>
       {statusFilteredParts.map(part => (
         <Card key={part.id} className="p-4">
@@ -307,13 +424,34 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
                     {part.products.description}
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground mt-1">
-                  Reorder at: {part.reorder_threshold}
-                </p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                  <span>Reorder at:</span>
+                  {editingThresholdId === part.id ? (
+                    <Input
+                      type="number"
+                      min="0"
+                      value={thresholdValue}
+                      onChange={e => setThresholdValue(e.target.value)}
+                      onKeyDown={e => handleThresholdKeyDown(e, part)}
+                      onBlur={() => handleSaveThreshold(part)}
+                      autoFocus
+                      className="w-14 h-6 text-center text-xs"
+                      disabled={updating === part.id}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => handleStartEditThreshold(part)}
+                      className="font-mono px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 hover:border-primary hover:text-primary transition-colors"
+                      title="Click to edit threshold"
+                    >
+                      {part.reorder_threshold}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               {editingId === part.id ? (
                 <div className="flex items-center gap-2">
                   <Input
@@ -359,6 +497,17 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
                   )}
                 </Button>
               )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleRemovePart(part)}
+                disabled={updating === part.id}
+                className="text-muted-foreground hover:text-destructive h-8 w-8"
+                title="Stop tracking"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </Card>
@@ -415,6 +564,12 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
           </div>
         </DialogContent>
       </Dialog>
+
+      <PartsTrackingDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onPartAdded={handlePartAdded}
+      />
     </div>
   );
 }
