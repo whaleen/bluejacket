@@ -14,7 +14,23 @@
     <title>Warehouse Inventory Scanner</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Fallback content shown before JS loads -->
+      <div id="loading-fallback" style="min-height:100vh;background:#0f172a;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
+        <div style="text-align:center;color:#fff;">
+          <div style="font-size:2rem;margin-bottom:1rem;">Loading...</div>
+          <div style="color:#64748b;font-size:0.875rem;">If this doesn't change, your browser may not be supported.</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
+    <noscript>
+      <div style="min-height:100vh;background:#0f172a;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
+        <div style="text-align:center;color:#fff;">
+          <div style="font-size:2rem;margin-bottom:1rem;">JavaScript Required</div>
+          <div style="color:#64748b;">Please enable JavaScript to use this application.</div>
+        </div>
+      </div>
+    </noscript>
   </body>
 </html>

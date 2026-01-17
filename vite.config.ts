@@ -1,6 +1,7 @@
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
+import legacy from "@vitejs/plugin-legacy"
 import { defineConfig } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { qrcode } from "vite-plugin-qrcode"
@@ -28,6 +29,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    legacy({
+      targets: ['defaults', 'not IE 11', 'chrome >= 50'], // Support Samsung TV browsers
+    }),
     qrcode(), // <- prints QR code in terminal
     VitePWA({
       registerType: 'autoUpdate',

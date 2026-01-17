@@ -11,7 +11,8 @@ import { PartsView } from "./components/Parts/PartsView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/app-sidebar";
-import { getPathForView, parseRoute, type AppView } from "@/lib/routes";
+import { getPathForView, parseRoute, isPublicRoute, type AppView } from "@/lib/routes";
+import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 function App() {
@@ -35,17 +36,19 @@ function App() {
 
   const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
   const [sessionId, setSessionId] = useState<string | null>(initialRoute.sessionId ?? null);
+  const [displayId, setDisplayId] = useState<string | null>(initialRoute.displayId ?? null);
 
-  const navigate = useCallback((view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; replace?: boolean }) => {
+  const navigate = useCallback((view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; displayId?: string | null; replace?: boolean }) => {
     const params = options?.params ?? new URLSearchParams(window.location.search);
     const nextSessionId = options?.sessionId ?? null;
+    const nextDisplayId = options?.displayId ?? null;
     params.delete('view');
     if (view === 'dashboard') {
       params.delete('type');
       params.delete('partsTab');
       params.delete('partsStatus');
     }
-    const path = getPathForView(view, nextSessionId ?? undefined);
+    const path = getPathForView(view, nextSessionId ?? undefined, nextDisplayId ?? undefined);
     const query = params.toString();
     const nextUrl = query ? `${path}?${query}` : path;
     if (options?.replace) {
@@ -56,6 +59,7 @@ function App() {
     window.dispatchEvent(new Event('app:locationchange'));
     setCurrentView(view);
     setSessionId(nextSessionId);
+    setDisplayId(nextDisplayId);
   }, []);
 
   const handleViewChange = (view: AppView) => {
@@ -71,6 +75,7 @@ function App() {
       const route = getRouteFromLocation();
       setCurrentView(route.view);
       setSessionId(route.sessionId ?? null);
+      setDisplayId(route.displayId ?? null);
     };
     window.addEventListener('popstate', syncRoute);
     return () => window.removeEventListener('popstate', syncRoute);
@@ -85,6 +90,16 @@ function App() {
   }, [getRouteFromLocation, navigate]);
 
   if (loading) return null;
+
+  // Public route: floor display (no auth required)
+  if (isPublicRoute(window.location.pathname)) {
+    return (
+      <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+        <FloorDisplayView displayId={displayId} />
+      </ThemeProvider>
+    );
+  }
+
   if (!user) return <LoginCard />;
 
   return (

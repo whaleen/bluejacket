@@ -6,20 +6,26 @@ export type AppView =
   | 'settings'
   | 'loads'
   | 'create-load'
-  | 'create-session';
+  | 'create-session'
+  | 'floor-display';
 
 export type RouteState = {
   view: AppView;
   sessionId?: string | null;
+  displayId?: string | null;
 };
 
 const baseSessionPath = '/scanning-sessions';
 
-export function getPathForView(view: AppView, sessionId?: string | null): string {
+export function getPathForView(view: AppView, sessionId?: string | null, displayId?: string | null): string {
   if (view === 'create-load') return '/loads/new';
   if (view === 'create-session') {
     if (sessionId) return `${baseSessionPath}/${sessionId}`;
     return baseSessionPath;
+  }
+  if (view === 'floor-display') {
+    if (displayId) return `/display/${displayId}`;
+    return '/display';
   }
 
   switch (view) {
@@ -69,7 +75,13 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'create-session', sessionId: second ?? null };
     case 'settings':
       return { view: 'settings' };
+    case 'display':
+      return { view: 'floor-display', displayId: second ?? null };
     default:
       return { view: 'dashboard' };
   }
+}
+
+export function isPublicRoute(pathname: string): boolean {
+  return pathname.startsWith('/display');
 }

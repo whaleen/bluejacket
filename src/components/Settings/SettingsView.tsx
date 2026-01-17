@@ -18,6 +18,7 @@ import {
   setActiveLocationContext,
 } from "@/lib/tenant"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DisplayManager } from "@/components/FloorDisplay/DisplayManager"
 
 interface SettingsViewProps {
   onMenuClick?: () => void
@@ -689,9 +690,10 @@ export function SettingsView({ onMenuClick }: SettingsViewProps) {
       <PageContainer className="py-6 pb-24">
         <div className="max-w-2xl mx-auto space-y-6">
           <Tabs defaultValue="location">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="location">Locations</TabsTrigger>
               <TabsTrigger value="user">User</TabsTrigger>
+              <TabsTrigger value="displays">Displays</TabsTrigger>
             </TabsList>
 
             <TabsContent value="location" className="space-y-6 mt-6">
@@ -1305,6 +1307,10 @@ export function SettingsView({ onMenuClick }: SettingsViewProps) {
                   </div>
                 </div>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="displays" className="space-y-6 mt-6">
+              <DisplayManager />
             </TabsContent>
           </Tabs>
         </div>
