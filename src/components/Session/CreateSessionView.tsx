@@ -34,6 +34,7 @@ const inventoryTypeLabels: Record<InventoryType, string> = {
   BackHaul: 'BackHaul',
   Staged: 'Staged',
   Inbound: 'Inbound',
+  STA: 'STA',
   FG: 'FG',
   LocalStock: 'LocalStock',
   Parts: 'Parts',

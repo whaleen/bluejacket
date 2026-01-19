@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import supabase from '@/lib/supabase';
-import { fetchAsisCsvRows, fetchAsisXlsRows } from '@/lib/asisImport';
+import { fetchAsisCsvRows } from '@/lib/asisImport';
 import { getActiveLocationContext } from '@/lib/tenant';
 import type { AppView } from '@/lib/routes';
 
@@ -109,7 +109,7 @@ export function LoadManagementView({ onViewChange, onMenuClick }: LoadManagement
 
   const buildProductLookup = useCallback(async (models: string[]) => {
     const uniqueModels = Array.from(new Set(models.map(model => model.trim()).filter(Boolean)));
-    const lookup = new Map<string, { id?: string; product_type?: string }>();
+    const lookup = new Map<string, { id: string; product_type: string }>();
     for (const chunk of chunkArray(uniqueModels, 500)) {
       const { data, error } = await supabase
         .from('products')
@@ -117,7 +117,9 @@ export function LoadManagementView({ onViewChange, onMenuClick }: LoadManagement
         .in('model', chunk);
       if (error) throw error;
       (data ?? []).forEach(product => {
-        lookup.set(product.model, { id: product.id, product_type: product.product_type });
+        if (product.id && product.product_type) {
+          lookup.set(product.model, { id: product.id, product_type: product.product_type });
+        }
       });
     }
     return lookup;
@@ -407,7 +409,7 @@ export function LoadManagementView({ onViewChange, onMenuClick }: LoadManagement
       const loadTimestampByNumber = new Map<string, number>();
       normalizedLoads.forEach((load, index) => {
         loadIndexByNumber.set(load.loadNumber, index);
-        loadTimestampByNumber.set(load.loadNumber, parseAsisTimestamp(load.scannedAt));
+        loadTimestampByNumber.set(load.loadNumber, parseAsisTimestamp(load.ge_scanned_at));
       });
   
       for (const load of normalizedLoads) {
@@ -481,18 +483,18 @@ export function LoadManagementView({ onViewChange, onMenuClick }: LoadManagement
           serial: serialValue || undefined,
           product_type: product?.product_type ?? 'UNKNOWN',
           product_fk: product?.id,
-          notes: null,
+          notes: undefined,
           inventory_type: 'ASIS',
           sub_inventory: load.loadNumber,
           is_scanned: false,
-          scanned_at: null,
-          scanned_by: null,
+          scanned_at: undefined,
+          scanned_by: undefined,
           ge_model: model || undefined,
           ge_serial: serialValue || undefined,
           ge_inv_qty: Number.isFinite(qtyValue) ? qtyValue : undefined,
           ge_ordc: ordcValue || undefined,
           ge_orphaned: isOrphaned,
-          ge_orphaned_at: isOrphaned ? new Date().toISOString() : null,
+          ge_orphaned_at: isOrphaned ? new Date().toISOString() : undefined,
         };
 
         if (!serialValue) {

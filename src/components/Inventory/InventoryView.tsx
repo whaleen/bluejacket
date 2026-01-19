@@ -25,7 +25,6 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { fetchAsisXlsRows } from '@/lib/asisImport';
 import { calculateGESyncStats, prepareGESync, executeGESync } from '@/lib/geSync';
-import type { GESyncStats } from '@/lib/geSync';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -767,7 +766,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
 
   const buildProductLookup = useCallback(async (models: string[]) => {
     const uniqueModels = Array.from(new Set(models.map(model => model.trim()).filter(Boolean)));
-    const lookup = new Map<string, { id?: string; product_type?: string }>();
+    const lookup = new Map<string, { id: string; product_type: string }>();
     for (const chunk of chunkArray(uniqueModels, 500)) {
       const { data, error } = await supabase
         .from('products')
@@ -775,7 +774,9 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         .in('model', chunk);
       if (error) throw error;
       (data ?? []).forEach(product => {
-        lookup.set(product.model, { id: product.id, product_type: product.product_type });
+        if (product.id && product.product_type) {
+          lookup.set(product.model, { id: product.id, product_type: product.product_type });
+        }
       });
     }
     return lookup;
@@ -876,17 +877,17 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               product_fk: product?.id,
               inventory_type: source.inventoryType,
               is_scanned: false,
-              scanned_at: null,
-              scanned_by: null,
-              notes: null,
-              status: null,
+              scanned_at: undefined,
+              scanned_by: undefined,
+              notes: undefined,
+              status: undefined,
               ge_model: model || undefined,
               ge_serial: serialValue || undefined,
               ge_inv_qty: Number.isFinite(qtyValue) ? qtyValue : undefined,
               ge_availability_status: String(row['Availability Status'] ?? '').trim() || undefined,
               ge_availability_message: String(row['Availability Message'] ?? '').trim() || undefined,
               ge_orphaned: false,
-              ge_orphaned_at: null,
+              ge_orphaned_at: undefined,
             };
           })
           .filter(Boolean) as InventoryItem[];

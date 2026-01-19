@@ -151,9 +151,10 @@ export function FloorDisplayView({ displayId }: Props) {
         return;
       }
 
+      const company = Array.isArray(data.companies) ? data.companies[0] : data.companies;
       setLocationLabel({
         locationName: data.name,
-        companyName: data.companies?.name ?? null,
+        companyName: company?.name ?? null,
       });
     };
 
