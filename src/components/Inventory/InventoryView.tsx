@@ -24,6 +24,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
 import { fetchAsisXlsRows } from '@/lib/asisImport';
+import { calculateGESyncStats, prepareGESync, executeGESync } from '@/lib/geSync';
+import type { GESyncStats } from '@/lib/geSync';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -67,7 +69,7 @@ type ProductImportSource = {
   label: string;
   baseUrl: string;
   fileName: string;
-  inventoryType: 'ASIS' | 'FG' | 'Staged';
+  inventoryType: 'ASIS' | 'FG' | 'STA';
   csoValue: string;
 };
 
@@ -90,7 +92,7 @@ const PRODUCT_IMPORT_SOURCES_BY_FILTER: Record<'ASIS' | 'FG' | 'LocalStock', Pro
     label: 'Local Stock (STA)',
     baseUrl: '/STA',
     fileName: 'ERP On Hand Qty.xls',
-    inventoryType: 'Staged',
+    inventoryType: 'STA',
     csoValue: 'STA',
   },
 };
@@ -121,7 +123,14 @@ type ExportColumnKey =
   | 'product_category'
   | 'description'
   | 'image_url'
-  | 'product_url';
+  | 'product_url'
+  | 'ge_model'
+  | 'ge_serial'
+  | 'ge_inv_qty'
+  | 'ge_availability_status'
+  | 'ge_availability_message'
+  | 'ge_ordc'
+  | 'ge_orphaned';
 
 type ExportColumn = {
   key: ExportColumnKey;
@@ -142,6 +151,13 @@ const exportColumns: ExportColumn[] = [
   { key: 'is_scanned', label: 'Scanned', group: 'Item', getValue: item => item.is_scanned },
   { key: 'customer', label: 'Customer', group: 'Item', getValue: item => item.consumer_customer_name },
   { key: 'created_at', label: 'Created At', group: 'Item', getValue: item => item.created_at },
+  { key: 'ge_model', label: 'GE Model #', group: 'Item', getValue: item => item.ge_model },
+  { key: 'ge_serial', label: 'GE Serial #', group: 'Item', getValue: item => item.ge_serial },
+  { key: 'ge_inv_qty', label: 'GE Inv Qty', group: 'Item', getValue: item => item.ge_inv_qty },
+  { key: 'ge_availability_status', label: 'GE Availability Status', group: 'Item', getValue: item => item.ge_availability_status },
+  { key: 'ge_availability_message', label: 'GE Availability Message', group: 'Item', getValue: item => item.ge_availability_message },
+  { key: 'ge_ordc', label: 'GE ORDC', group: 'Item', getValue: item => item.ge_ordc },
+  { key: 'ge_orphaned', label: 'GE Orphaned', group: 'Item', getValue: item => item.ge_orphaned },
   { key: 'product_id', label: 'Product ID', group: 'Product', getValue: item => item.products?.id },
   { key: 'product_model', label: 'Product Model', group: 'Product', getValue: item => item.products?.model },
   { key: 'product_type', label: 'Product Type', group: 'Product', getValue: item => item.products?.product_type },
@@ -173,27 +189,6 @@ const chunkArray = <T,>(items: T[], size: number) => {
     chunks.push(items.slice(i, i + size));
   }
   return chunks;
-};
-
-const dedupeBySerial = (items: InventoryItem[]) => {
-  const seen = new Map<string, InventoryItem>();
-  const output: InventoryItem[] = [];
-  let duplicates = 0;
-
-  items.forEach(item => {
-    const serial = item.serial?.trim();
-    if (!serial) {
-      output.push(item);
-      return;
-    }
-    if (seen.has(serial)) {
-      duplicates += 1;
-    }
-    seen.set(serial, { ...item, serial });
-  });
-
-  output.push(...seen.values());
-  return { items: output, duplicates };
 };
 
 interface InventoryViewProps {
@@ -261,18 +256,48 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [selectedItemId, setSelectedItemId] = useState('');
   const { view, setView, isImageView } = usePartsListView();
 
+  // GE sync stats (for ASIS)
+  const [geSyncStats, setGeSyncStats] = useState<{
+    totalItems: number;
+    itemsInLoads: number;
+    unassignedItems: number;
+    forSaleLoads: number;
+    pickedLoads: number;
+  } | null>(null);
+  const [loadingGEStats, setLoadingGEStats] = useState(false);
+
   const resolveInventoryTypes = useCallback((type: InventoryTypeFilter) => {
     if (type === 'FG') {
       return ['FG', 'BackHaul'];
     }
     if (type === 'LocalStock') {
-      return ['LocalStock', 'Staged', 'Inbound', 'WillCall'];
+      return ['LocalStock', 'Staged', 'STA', 'Inbound', 'WillCall'];
     }
     if (type === 'ASIS') {
       return ['ASIS'];
     }
     return [];
   }, []);
+
+  const findCrossTypeSerials = useCallback(async (serials: string[], inventoryType: string) => {
+    if (!locationId || serials.length === 0) return new Set<string>();
+    const conflictSerials = new Set<string>();
+    for (const chunk of chunkArray(serials, 500)) {
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .select('serial, inventory_type')
+        .eq('location_id', locationId)
+        .in('serial', chunk)
+        .neq('inventory_type', inventoryType);
+      if (error) throw error;
+      (data ?? []).forEach(row => {
+        if (row.serial) {
+          conflictSerials.add(row.serial);
+        }
+      });
+    }
+    return conflictSerials;
+  }, [locationId]);
 
   const applyInventoryFilters = useCallback(
     (query: any, filters: InventoryFilters) => {
@@ -492,6 +517,13 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             is_scanned,
             consumer_customer_name,
             created_at,
+            ge_model,
+            ge_serial,
+            ge_inv_qty,
+            ge_availability_status,
+            ge_availability_message,
+            ge_ordc,
+            ge_orphaned,
             products:product_fk (
               id,
               model,
@@ -614,6 +646,13 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
           route_id,
           is_scanned,
           consumer_customer_name,
+          ge_model,
+          ge_serial,
+          ge_inv_qty,
+          ge_availability_status,
+          ge_availability_message,
+          ge_ordc,
+          ge_orphaned,
           products:product_fk (
             id,
             model,
@@ -694,17 +733,22 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         return;
       }
       setNuking(true);
+      const types = resolveInventoryTypes(inventoryTypeFilter);
+      const typeFilter = types.length > 0 ? types : [source.inventoryType];
+
       const { error, count } = await supabase
         .from('inventory_items')
         .delete({ count: 'exact' })
         .eq('location_id', locationId)
-        .eq('inventory_type', source.inventoryType);
+        .in('inventory_type', typeFilter);
 
       if (error) throw error;
 
       toast({
         title: `${source.label} inventory cleared`,
-        message: typeof count === 'number' ? `${count} items removed.` : `${source.label} items removed.`,
+        message: typeof count === 'number'
+          ? `${count} items removed (${typeFilter.join(', ')}).`
+          : `${source.label} items removed.`,
       });
 
       refreshInventoryList();
@@ -750,67 +794,207 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     }
     setImportingProducts(true);
     try {
-      const rows = await fetchAsisXlsRows<ProductImportRow>(source.fileName, source.baseUrl);
-      if (!rows.length) {
-        toast({
-          title: `No ${source.label} products found`,
-          message: `${source.fileName} did not return any rows.`,
+      // For ASIS, use the GE sync logic (GE fields become source of truth)
+      if (inventoryTypeFilter === 'ASIS') {
+        // First, build product lookup for all models in ASIS.json
+        const asIsRows = await fetchAsisXlsRows<ProductImportRow>('ASIS.json', '/ASIS');
+        const models = asIsRows
+          .map(row => String(row['Model #'] ?? '').trim())
+          .filter(Boolean);
+        const productLookup = await buildProductLookup(models);
+
+        // Prepare the sync (fetches GE data, existing DB items, builds reconciliation)
+        const syncResult = await prepareGESync(supabase, companyId, locationId, productLookup);
+
+        const incomingSerials = Array.from(
+          new Set(syncResult.itemsToUpsert.map(item => item.serial).filter(Boolean))
+        ) as string[];
+        const crossTypeSerials = await findCrossTypeSerials(incomingSerials, 'ASIS');
+        const filteredSyncResult = crossTypeSerials.size > 0
+          ? {
+              ...syncResult,
+              itemsToUpsert: syncResult.itemsToUpsert.filter(
+                (item) => !item.serial || !crossTypeSerials.has(item.serial)
+              ),
+            }
+          : syncResult;
+
+        // Execute the sync
+        await executeGESync(supabase, filteredSyncResult, {
+          batchSize: IMPORT_BATCH_SIZE,
+          markOrphans: true,
+          orphanStatus: 'NOT_IN_GE',
         });
-        return;
-      }
 
-      const models = rows
-        .map(row => String(row['Model #'] ?? '').trim())
-        .filter(Boolean);
-      const productLookup = await buildProductLookup(models);
-
-      const inventoryItems = rows
-        .map(row => {
-          const model = String(row['Model #'] ?? '').trim();
-          if (!model) return null;
-          const serialValue = String(row['Serial #'] ?? '').trim();
-          const qtyValue = typeof row['Inv Qty'] === 'number' ? row['Inv Qty'] : parseInt(String(row['Inv Qty']).trim(), 10);
-          const product = productLookup.get(model);
-          return {
-            cso: source.csoValue,
-            model,
-            qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
-            serial: serialValue || undefined,
-            product_type: product?.product_type ?? 'UNKNOWN',
-            product_fk: product?.id,
-            status: String(row['Availability Status'] ?? '').trim() || undefined,
-            notes: String(row['Availability Message'] ?? '').trim() || undefined,
-            inventory_type: source.inventoryType,
-            is_scanned: false,
-          };
-        })
-        .filter(Boolean) as InventoryItem[];
-
-      const { items: dedupedItems, duplicates } = dedupeBySerial(inventoryItems);
-      if (duplicates > 0) {
+        const { stats } = syncResult;
         toast({
-          title: 'Duplicate serials collapsed',
-          message: `${duplicates} duplicate serials were merged before import.`,
+          title: 'ASIS sync complete',
+          message: `${stats.totalGEItems} items synced. ${stats.newItems} new, ${stats.updatedItems} updated. ${stats.unassignedItems} not in loads. ${stats.orphanedItems} orphaned.`,
         });
-      }
 
-      const payload = dedupedItems.map(item => ({
-        ...item,
-        company_id: companyId,
-        location_id: locationId,
-      }));
+        if (crossTypeSerials.size > 0) {
+          toast({
+            variant: 'error',
+            title: 'Cross-type conflicts',
+            message: `${crossTypeSerials.size} ASIS serial${crossTypeSerials.size === 1 ? '' : 's'} skipped because they exist in another inventory type.`,
+          });
+        }
 
-      for (const chunk of chunkArray(payload, IMPORT_BATCH_SIZE)) {
-        const { error } = await supabase
+        // Refresh GE stats after import
+        calculateGESyncStats().then(setGeSyncStats).catch(console.error);
+      } else {
+        // For FG/STA, import GE snapshot (GE fields become source of truth)
+        const rows = await fetchAsisXlsRows<ProductImportRow>(source.fileName, source.baseUrl);
+        if (!rows.length) {
+          toast({
+            title: `No ${source.label} products found`,
+            message: `${source.fileName} did not return any rows.`,
+          });
+          return;
+        }
+
+        const models = rows
+          .map(row => String(row['Model #'] ?? '').trim())
+          .filter(Boolean);
+        const productLookup = await buildProductLookup(models);
+
+        const inventoryItems = rows
+          .map(row => {
+            const model = String(row['Model #'] ?? '').trim();
+            if (!model) return null;
+            const serialValue = String(row['Serial #'] ?? '').trim();
+            const qtyValue = typeof row['Inv Qty'] === 'number'
+              ? row['Inv Qty']
+              : parseInt(String(row['Inv Qty']).trim(), 10);
+            const product = productLookup.get(model);
+            return {
+              cso: source.csoValue,
+              model,
+              qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
+              serial: serialValue || undefined,
+              product_type: product?.product_type ?? 'UNKNOWN',
+              product_fk: product?.id,
+              inventory_type: source.inventoryType,
+              is_scanned: false,
+              scanned_at: null,
+              scanned_by: null,
+              notes: null,
+              status: null,
+              ge_model: model || undefined,
+              ge_serial: serialValue || undefined,
+              ge_inv_qty: Number.isFinite(qtyValue) ? qtyValue : undefined,
+              ge_availability_status: String(row['Availability Status'] ?? '').trim() || undefined,
+              ge_availability_message: String(row['Availability Message'] ?? '').trim() || undefined,
+              ge_orphaned: false,
+              ge_orphaned_at: null,
+            };
+          })
+          .filter(Boolean) as InventoryItem[];
+
+        const incomingSerials = Array.from(
+          new Set(inventoryItems.map(item => item.serial).filter(Boolean))
+        ) as string[];
+        const crossTypeSerials = await findCrossTypeSerials(incomingSerials, source.inventoryType);
+
+        const filteredItems = inventoryItems.filter(
+          (item) => !item.serial || !crossTypeSerials.has(item.serial)
+        );
+
+        const uniqueBySerial = new Map<string, InventoryItem>();
+        const itemsWithoutSerial: InventoryItem[] = [];
+        filteredItems.forEach(item => {
+          if (!item.serial) {
+            itemsWithoutSerial.push(item);
+            return;
+          }
+          if (!uniqueBySerial.has(item.serial)) {
+            uniqueBySerial.set(item.serial, item);
+          }
+        });
+
+        const uniqueItems = [...itemsWithoutSerial, ...uniqueBySerial.values()];
+
+        // Fetch existing items for this inventory type (for id matching)
+        const { data: existingItems, error: existingError } = await supabase
           .from('inventory_items')
-          .upsert(chunk, { onConflict: 'serial' });
-        if (error) throw error;
+          .select('id, serial')
+          .eq('location_id', locationId)
+          .eq('inventory_type', source.inventoryType);
+
+        if (existingError) throw existingError;
+
+        const existingBySerial = new Map<string, string>();
+        const existingIds = new Set<string>();
+
+        (existingItems ?? []).forEach(item => {
+          if (!item.serial || !item.id) return;
+          if (!existingBySerial.has(item.serial)) {
+            existingBySerial.set(item.serial, item.id);
+          }
+          existingIds.add(item.id);
+        });
+
+        const matchedIds = new Set<string>();
+        const payload = uniqueItems.map(item => {
+          if (!item.serial) {
+            return {
+              ...item,
+              company_id: companyId,
+              location_id: locationId,
+            };
+          }
+
+          const existingId = existingBySerial.get(item.serial);
+          if (existingId) {
+            matchedIds.add(existingId);
+          }
+
+          return {
+            ...item,
+            id: existingId,
+            company_id: companyId,
+            location_id: locationId,
+          };
+        });
+
+        const payloadWithId = payload.filter(item => item.id);
+        const payloadWithoutId = payload
+          .filter(item => !item.id)
+          .map(({ id, ...rest }) => rest);
+
+        for (const chunk of chunkArray(payloadWithoutId, IMPORT_BATCH_SIZE)) {
+          if (chunk.length === 0) continue;
+          const { error } = await supabase
+            .from('inventory_items')
+            .insert(chunk);
+          if (error) throw error;
+        }
+
+        for (const chunk of chunkArray(payloadWithId, IMPORT_BATCH_SIZE)) {
+          if (chunk.length === 0) continue;
+          const { error } = await supabase
+            .from('inventory_items')
+            .upsert(chunk, { onConflict: 'id' });
+          if (error) throw error;
+        }
+
+        // Flag items that no longer exist in GE for this inventory type
+        const orphanIds = Array.from(existingIds).filter(id => !matchedIds.has(id));
+        for (const chunk of chunkArray(orphanIds, IMPORT_BATCH_SIZE)) {
+          if (chunk.length === 0) continue;
+          const { error } = await supabase
+            .from('inventory_items')
+            .update({ status: 'NOT_IN_GE', ge_orphaned: true, ge_orphaned_at: new Date().toISOString() })
+            .in('id', chunk);
+          if (error) throw error;
+        }
+
+        toast({
+          title: `${source.label} products imported`,
+          message: `${inventoryItems.length} rows processed. ${crossTypeSerials.size} skipped due to cross-type conflicts.`,
+        });
       }
 
-      toast({
-        title: `${source.label} products imported`,
-        message: `${dedupedItems.length} items processed.`,
-      });
       refreshInventoryList();
     } catch (err) {
       console.error('Failed to import products:', err);
@@ -822,7 +1006,16 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     } finally {
       setImportingProducts(false);
     }
-  }, [buildProductLookup, companyId, importingProducts, inventoryTypeFilter, locationId, refreshInventoryList, toast]);
+  }, [
+    buildProductLookup,
+    companyId,
+    findCrossTypeSerials,
+    importingProducts,
+    inventoryTypeFilter,
+    locationId,
+    refreshInventoryList,
+    toast,
+  ]);
 
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
@@ -831,6 +1024,39 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
 
   useEffect(() => {
     setSubInventoryFilter('all');
+  }, [inventoryTypeFilter]);
+
+  // Fetch GE sync stats when ASIS filter is active
+  useEffect(() => {
+    if (inventoryTypeFilter !== 'ASIS') {
+      setGeSyncStats(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingGEStats(true);
+
+    calculateGESyncStats()
+      .then((stats) => {
+        if (!cancelled) {
+          setGeSyncStats(stats);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch GE sync stats:', err);
+        if (!cancelled) {
+          setGeSyncStats(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingGEStats(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [inventoryTypeFilter]);
 
   useEffect(() => {
@@ -1030,6 +1256,35 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               </Button>
             )}
           </div>
+
+          {/* GE Sync Stats (ASIS only) */}
+          {inventoryTypeFilter === 'ASIS' && (
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+              {loadingGEStats ? (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading GE data...
+                </div>
+              ) : geSyncStats ? (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="font-medium">GE Status:</span>
+                  <span>{geSyncStats.totalItems} total</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span>{geSyncStats.itemsInLoads} in loads</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    {geSyncStats.unassignedItems} not in any load
+                  </span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground">
+                    ({geSyncStats.forSaleLoads} FOR SALE, {geSyncStats.pickedLoads} Picked)
+                  </span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground">Unable to load GE stats</span>
+              )}
+            </div>
+          )}
 
           {(exporting || exportError) && (
             <div className="text-xs">

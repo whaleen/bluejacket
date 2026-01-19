@@ -21,6 +21,15 @@ export interface InventoryItem {
   product_fk?: string;
   created_at?: string;
   updated_at?: string;
+  // GE-sourced fields (from ASIS.csv and per-load CSVs)
+  ge_model?: string;
+  ge_serial?: string;
+  ge_inv_qty?: number;
+  ge_orphaned?: boolean;
+  ge_orphaned_at?: string;
+  ge_availability_status?: string;
+  ge_availability_message?: string;
+  ge_ordc?: string;
   // Joined data
   products?: Product;
 }
@@ -66,6 +75,7 @@ export type InventoryType =
   | 'ASIS'
   | 'BackHaul'
   | 'Staged'
+  | 'STA'
   | 'Inbound'
   | 'WillCall'
   | 'FG'
@@ -102,7 +112,17 @@ export interface LoadMetadata {
   inventory_type: InventoryType;
   sub_inventory_name: string;
   friendly_name?: string;
+  // GE-sourced fields
   ge_source_status?: string;
+  ge_cso_status?: string;
+  ge_inv_org?: string;
+  ge_units?: number;
+  ge_submitted_date?: string;
+  ge_cso?: string;
+  ge_pricing?: string;
+  ge_notes?: string;
+  ge_scanned_at?: string;
+  // Internal fields
   primary_color?: string;
   prep_tagged?: boolean;
   prep_wrapped?: boolean;
@@ -110,10 +130,10 @@ export interface LoadMetadata {
   pickup_tba?: boolean;
   status: LoadStatus;
   category?: string;
+  notes?: string;
   created_at?: string;
   updated_at?: string;
   created_by?: string;
-  notes?: string;
 }
 
 export interface LoadConflict {
@@ -127,6 +147,24 @@ export interface LoadConflict {
   status?: 'open' | 'resolved';
   notes?: string;
   detected_at?: string;
+}
+
+export interface InventoryConflictGroup {
+  inventory_type: InventoryType | string;
+  sub_inventory?: string | null;
+  count?: number;
+}
+
+export interface InventoryConflict {
+  id?: string;
+  company_id?: string;
+  location_id?: string;
+  serial: string;
+  groups: InventoryConflictGroup[];
+  source?: string | null;
+  status?: 'open' | 'resolved';
+  detected_at?: string;
+  updated_at?: string;
 }
 
 export interface LoadWithItems {

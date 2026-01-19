@@ -79,6 +79,12 @@ export function LoadDetailPanel({
 
   const getItemStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
+      case 'available':
+        return 'bg-emerald-500';
+      case 'reserved':
+        return 'bg-amber-500';
+      case 'not available':
+        return 'bg-red-500';
       case 'picked':
         return 'bg-blue-500';
       case 'shipped':
@@ -548,7 +554,13 @@ export function LoadDetailPanel({
                   showRouteBadge={false}
                   showProductMeta
                   showImage={Boolean((normalizedItem.products as any)?.image_url)}
-                  badges={item.status ? <Badge className={getItemStatusColor(item.status)}>{item.status}</Badge> : null}
+                  badges={(item.ge_availability_status || item.status)
+                    ? (
+                      <Badge className={getItemStatusColor(item.ge_availability_status ?? item.status ?? '')}>
+                        {item.ge_availability_status ?? item.status}
+                      </Badge>
+                    )
+                    : null}
                 />
               );
             })

@@ -333,6 +333,31 @@ export function InventoryItemDetailDialog({
               </Card>
             )}
 
+            {(item.ge_availability_status || item.ge_availability_message) && (
+              <Card className="p-4 space-y-2">
+                <h3 className="font-semibold">GE Availability</h3>
+                {item.ge_availability_status && (
+                  <p className="text-sm text-muted-foreground">
+                    Status: {item.ge_availability_status}
+                  </p>
+                )}
+                {item.ge_availability_message && (
+                  <p className="text-sm text-muted-foreground">
+                    Message: {item.ge_availability_message}
+                  </p>
+                )}
+              </Card>
+            )}
+
+            {item.ge_orphaned && (
+              <Card className="p-4 space-y-2 border-destructive/40">
+                <h3 className="font-semibold text-destructive">GE Orphaned</h3>
+                <p className="text-sm text-muted-foreground">
+                  This serial was not found in the latest GE snapshot.
+                </p>
+              </Card>
+            )}
+
             {/* Notes */}
             {item.notes && (
               <Card className="p-4 space-y-2">

@@ -165,14 +165,14 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
       // Count all items
       (itemsData || []).forEach((item) => {
         // Local Stock (includes LocalStock, Staged, Inbound)
-        if (item.inventory_type === 'LocalStock' || item.inventory_type === 'Staged' || item.inventory_type === 'Inbound') {
+        if (item.inventory_type === 'LocalStock' || item.inventory_type === 'Staged' || item.inventory_type === 'STA' || item.inventory_type === 'Inbound') {
           newStats.localStock.total++;
           if (!item.sub_inventory) {
             newStats.localStock.unassigned++;
           } else {
             newStats.localStock.routes++;
           }
-          if (item.inventory_type === 'Staged') newStats.localStock.staged++;
+          if (item.inventory_type === 'Staged' || item.inventory_type === 'STA') newStats.localStock.staged++;
           if (item.inventory_type === 'Inbound') newStats.localStock.inbound++;
         }
         // FG (includes FG and BackHaul)
@@ -251,6 +251,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         } else if (
           load.inventory_type === 'LocalStock' ||
           load.inventory_type === 'Staged' ||
+          load.inventory_type === 'STA' ||
           load.inventory_type === 'Inbound'
         ) {
           newStats.loads.byType.localStock++;

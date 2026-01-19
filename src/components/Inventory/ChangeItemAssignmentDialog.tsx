@@ -40,7 +40,7 @@ const TYPE_OPTIONS: Array<{
 
 const getLoadGroup = (type: InventoryType): InventoryType | null => {
   if (type === "FG" || type === "BackHaul") return "FG"
-  if (type === "LocalStock" || type === "Staged" || type === "Inbound" || type === "WillCall")
+  if (type === "LocalStock" || type === "Staged" || type === "STA" || type === "Inbound" || type === "WillCall")
     return "LocalStock"
   if (type === "ASIS") return "ASIS"
   return null

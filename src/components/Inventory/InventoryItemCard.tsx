@@ -151,6 +151,8 @@ export const InventoryItemCard = memo(function InventoryItemCard({
   const productTypeLabel = item.products?.product_type ?? item.product_type;
   const routeDisplay = routeValue ?? item.route_id;
   const resolvedImage = imageUrl ?? item.products?.image_url ?? null;
+  const availabilityStatus = item.ge_availability_status ?? item.status;
+  const isGeOrphaned = Boolean(item.ge_orphaned);
 
   return (
     <Card
@@ -186,6 +188,12 @@ export const InventoryItemCard = memo(function InventoryItemCard({
               <span className="font-semibold text-foreground">{productTypeLabel}</span>
               {showInventoryTypeBadge && (
                 <Badge variant="secondary">{item.inventory_type}</Badge>
+              )}
+              {availabilityStatus && (
+                <Badge variant="outline">{availabilityStatus}</Badge>
+              )}
+              {isGeOrphaned && (
+                <Badge variant="destructive">Not in GE</Badge>
               )}
               {showScannedBadge && item.is_scanned && (
                 <Badge variant="outline">Scanned</Badge>
