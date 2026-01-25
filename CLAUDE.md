@@ -89,6 +89,29 @@ See `agent-instructions/cli-tools.md` for full documentation.
 - **Backend**: ge-sync service (Node.js + Playwright), deployed to Railway
 - **Database**: Supabase (PostgreSQL + Realtime)
 
+## Git Commits
+
+Use **Conventional Commits** format:
+
+```
+type(scope): description
+
+# Types:
+# feat     - new feature
+# fix      - bug fix
+# docs     - documentation changes
+# style    - formatting, no code change
+# refactor - code restructuring
+# test     - adding/updating tests
+# chore    - maintenance, dependencies
+```
+
+Examples:
+- `feat(sync): add retry logic for GE auth`
+- `fix(scanner): handle missing serial numbers`
+- `docs: update CLI tools reference`
+- `chore: update dependencies`
+
 ## Don't
 
 - Don't run `npm run dev` unless explicitly asked
