@@ -1,0 +1,64 @@
+# Warehouse - Agent Instructions
+
+## Project Overview
+
+Warehouse is an inventory management system for GE appliance dealers. It syncs data from GE DMS (Dealer Management System), tracks loads (shipments of ~60 appliances on semi trucks), and provides barcode scanning for verification.
+
+## CLI Tools Available
+
+This project has linked CLIs. **Use them instead of writing scripts or asking the user to use web UIs.**
+
+Before using any CLI for the first time, ask: "Can I use the [tool] CLI to [action]?"
+
+### Supabase CLI
+
+For database migrations, use the CLI instead of creating SQL files for manual paste:
+
+```bash
+supabase migration new <name>   # Create migration file
+supabase db push                # Apply migrations
+supabase migration list         # Check migration status
+supabase inspect db             # Inspect database structure
+```
+
+### Netlify CLI
+
+For frontend deployments and environment variables:
+
+```bash
+netlify deploy --prod           # Deploy to production
+netlify env:list                # List env vars
+netlify env:set KEY value       # Set env var
+```
+
+### Railway CLI
+
+For the ge-sync backend service:
+
+```bash
+railway status                  # Check service status
+railway logs                    # View logs
+railway variables               # List env vars
+railway variables set KEY=value # Set env var
+```
+
+See `agent-instructions/cli-tools.md` for full documentation.
+
+## Key Terminology
+
+- **Load**: A shipment of ~60 GE appliances loaded on a semi truck (not a pallet)
+- **ASIS**: "As-Is" inventory - open-box/damaged items sold at discount
+- **GE DMS**: GE's Dealer Management System - the source of truth for inventory data
+- **ge-sync**: Backend service that syncs data from GE DMS to Supabase using Playwright
+
+## Architecture
+
+- **Frontend**: React + Vite, deployed to Netlify
+- **Backend**: ge-sync service (Node.js + Playwright), deployed to Railway
+- **Database**: Supabase (PostgreSQL + Realtime)
+
+## Don't
+
+- Don't run `npm run dev` unless explicitly asked
+- Don't create documentation files unless explicitly asked
+- Don't use Claude mentions in commit messages

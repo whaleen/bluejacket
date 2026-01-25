@@ -49,7 +49,6 @@ dev-dist
 
 # Development
 
-agent-instructions
 migrations
 IDGAF_About_Auth_Security.md
 warehouse.sql
