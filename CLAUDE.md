@@ -10,6 +10,17 @@ This project has linked CLIs. **Use them instead of writing scripts or asking th
 
 Before using any CLI for the first time, ask: "Can I use the [tool] CLI to [action]?"
 
+### If a CLI fails or isn't linked
+
+**Do not work around it.** If a CLI command fails because the project isn't linked or needs authentication:
+
+1. Tell the user what failed and why
+2. Ask them to run the link command manually (e.g., `supabase link --project-ref wxfdrdqchfrcdgprdznr`)
+3. **Wait for confirmation** before proceeding
+4. Then retry the original command
+
+Do not fall back to curl, REST APIs, or other workarounds. The CLIs are the intended interface.
+
 ### Supabase CLI
 
 For database migrations, use the CLI instead of creating SQL files for manual paste:
