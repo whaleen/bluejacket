@@ -68,6 +68,13 @@ const navSections: NavSection[] = [
         applyParams: clearPartsParams,
         isActive: (currentView) => currentView === "dashboard",
       },
+      {
+        label: "Activity Log",
+        icon: History,
+        view: "activity",
+        applyParams: clearPartsParams,
+        isActive: (currentView) => currentView === "activity",
+      },
     ],
   },
   {
@@ -85,7 +92,7 @@ const navSections: NavSection[] = [
         icon: TruckIcon,
         view: "loads",
         applyParams: clearPartsParams,
-        isActive: (currentView) => currentView === "loads" || currentView === "create-load",
+        isActive: (currentView) => currentView === "loads",
       },
       {
         label: "Scanning Sessions",

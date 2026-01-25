@@ -9,48 +9,21 @@ CREATE TABLE public.companies (
   active boolean DEFAULT true,
   CONSTRAINT companies_pkey PRIMARY KEY (id)
 );
-
-CREATE TABLE public.locations (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL,
-  slug text NOT NULL,
-  name text NOT NULL,
-  created_at timestamp with time zone DEFAULT now(),
-  active boolean DEFAULT true,
-  CONSTRAINT locations_pkey PRIMARY KEY (id),
-  CONSTRAINT locations_company_slug_key UNIQUE (company_id, slug),
-  CONSTRAINT locations_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id)
-);
-
-CREATE TABLE public.settings (
-  location_id uuid NOT NULL,
-  company_id uuid NOT NULL,
-  sso_username text,
-  sso_password text,
-  updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT settings_pkey PRIMARY KEY (location_id),
-  CONSTRAINT settings_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id),
-  CONSTRAINT settings_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id)
-);
-
 CREATE TABLE public.customers (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   customer_name text NOT NULL,
   address text,
   phone text,
   email text,
   created_at timestamp with time zone DEFAULT now(),
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT customers_pkey PRIMARY KEY (id),
   CONSTRAINT customers_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT customers_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
 CREATE TABLE public.deliveries (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   date date NOT NULL,
   truck_id text NOT NULL,
   stop integer NOT NULL,
@@ -69,6 +42,8 @@ CREATE TABLE public.deliveries (
   product_fk uuid,
   marked_for_truck boolean DEFAULT false,
   staged boolean DEFAULT false,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT deliveries_pkey PRIMARY KEY (id),
   CONSTRAINT fk_deliveries_truck FOREIGN KEY (truck_fk) REFERENCES public.trucks(id),
   CONSTRAINT fk_deliveries_customer FOREIGN KEY (customer_fk) REFERENCES public.customers(id),
@@ -76,11 +51,62 @@ CREATE TABLE public.deliveries (
   CONSTRAINT deliveries_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT deliveries_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
-CREATE TABLE public.inventory_conversions (
+CREATE TABLE public.floor_displays (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  location_id uuid NOT NULL,
+  name text NOT NULL DEFAULT 'Floor Display'::text,
+  pairing_code text NOT NULL UNIQUE,
+  paired boolean NOT NULL DEFAULT false,
+  state_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_heartbeat timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT floor_displays_pkey PRIMARY KEY (id),
+  CONSTRAINT floor_displays_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT floor_displays_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
+);
+CREATE TABLE public.ge_changes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  location_id uuid NOT NULL,
+  inventory_type text NOT NULL,
+  serial text,
+  model text,
+  load_number text,
+  cso text,
+  change_type text NOT NULL,
+  field_changed text,
+  old_value text,
+  new_value text,
+  previous_state jsonb,
+  current_state jsonb,
+  source text NOT NULL,
+  processed boolean DEFAULT false,
+  processed_at timestamp with time zone,
+  processed_action text,
+  notes text,
+  detected_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ge_changes_pkey PRIMARY KEY (id),
+  CONSTRAINT ge_changes_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT ge_changes_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(id)
+);
+CREATE TABLE public.inventory_conflicts (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   company_id uuid NOT NULL,
   location_id uuid NOT NULL,
+  serial text NOT NULL,
+  groups jsonb NOT NULL,
+  source text,
+  status text NOT NULL DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'resolved'::text])),
+  detected_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT inventory_conflicts_pkey PRIMARY KEY (id),
+  CONSTRAINT inventory_conflicts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT inventory_conflicts_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
+);
+CREATE TABLE public.inventory_conversions (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
   inventory_item_id uuid NOT NULL,
   from_inventory_type text NOT NULL,
   to_inventory_type text NOT NULL,
@@ -89,16 +115,15 @@ CREATE TABLE public.inventory_conversions (
   converted_by text,
   notes text,
   created_at timestamp with time zone DEFAULT now(),
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT inventory_conversions_pkey PRIMARY KEY (id),
   CONSTRAINT fk_conversion_item FOREIGN KEY (inventory_item_id) REFERENCES public.inventory_items(id),
   CONSTRAINT inventory_conversions_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT inventory_conversions_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
 CREATE TABLE public.inventory_counts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   product_id uuid NOT NULL,
   tracked_part_id uuid,
   qty integer NOT NULL,
@@ -108,17 +133,16 @@ CREATE TABLE public.inventory_counts (
   notes text,
   created_at timestamp with time zone DEFAULT now(),
   count_reason text,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT inventory_counts_pkey PRIMARY KEY (id),
   CONSTRAINT inventory_counts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
   CONSTRAINT inventory_counts_tracked_part_id_fkey FOREIGN KEY (tracked_part_id) REFERENCES public.tracked_parts(id),
   CONSTRAINT inventory_counts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT inventory_counts_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
 CREATE TABLE public.inventory_items (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   date date,
   route_id text,
   stop integer,
@@ -138,37 +162,21 @@ CREATE TABLE public.inventory_items (
   product_fk uuid,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
+  ge_availability_status text,
+  ge_availability_message text,
+  ge_ordc text,
+  ge_model text,
+  ge_serial text,
+  ge_inv_qty integer,
+  ge_orphaned boolean DEFAULT false,
+  ge_orphaned_at timestamp with time zone,
   CONSTRAINT inventory_items_pkey PRIMARY KEY (id),
   CONSTRAINT fk_inventory_product FOREIGN KEY (product_fk) REFERENCES public.products(id),
-  CONSTRAINT inventory_items_serial_key UNIQUE (serial),
   CONSTRAINT inventory_items_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT inventory_items_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
-CREATE TABLE public.load_metadata (
-  id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
-  inventory_type text NOT NULL,
-  sub_inventory_name text NOT NULL,
-  friendly_name text,
-  ge_source_status text,
-  primary_color text,
-  prep_tagged boolean DEFAULT false,
-  prep_wrapped boolean DEFAULT false,
-  pickup_date date,
-  pickup_tba boolean DEFAULT false,
-  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'staged'::text, 'in_transit'::text, 'delivered'::text])),
-  created_at timestamp with time zone DEFAULT now(),
-  updated_at timestamp with time zone DEFAULT now(),
-  created_by text,
-  notes text,
-  category text,
-  CONSTRAINT load_metadata_pkey PRIMARY KEY (id),
-  CONSTRAINT load_metadata_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
-  CONSTRAINT load_metadata_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
-);
-
 CREATE TABLE public.load_conflicts (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   company_id uuid NOT NULL,
@@ -181,11 +189,50 @@ CREATE TABLE public.load_conflicts (
   notes text,
   detected_at timestamp with time zone DEFAULT now(),
   CONSTRAINT load_conflicts_pkey PRIMARY KEY (id),
-  CONSTRAINT load_conflicts_unique UNIQUE (location_id, load_number, serial),
   CONSTRAINT load_conflicts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT load_conflicts_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
+CREATE TABLE public.load_metadata (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  inventory_type text NOT NULL,
+  sub_inventory_name text NOT NULL,
+  status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'staged'::text, 'in_transit'::text, 'delivered'::text])),
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  created_by text,
+  notes text,
+  category text,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
+  friendly_name text,
+  ge_source_status text,
+  primary_color text,
+  prep_tagged boolean DEFAULT false,
+  prep_wrapped boolean DEFAULT false,
+  pickup_date date,
+  pickup_tba boolean DEFAULT false,
+  ge_cso_status text,
+  ge_inv_org text,
+  ge_units integer,
+  ge_submitted_date text,
+  ge_cso text,
+  ge_pricing text,
+  ge_notes text,
+  ge_scanned_at text,
+  CONSTRAINT load_metadata_pkey PRIMARY KEY (id),
+  CONSTRAINT load_metadata_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT load_metadata_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
+);
+CREATE TABLE public.locations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  company_id uuid NOT NULL,
+  slug text NOT NULL,
+  name text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  active boolean DEFAULT true,
+  CONSTRAINT locations_pkey PRIMARY KEY (id),
+  CONSTRAINT locations_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id)
+);
 CREATE TABLE public.products (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   model text NOT NULL UNIQUE,
@@ -208,32 +255,38 @@ CREATE TABLE public.products (
   is_part boolean DEFAULT false,
   CONSTRAINT products_pkey PRIMARY KEY (id)
 );
-
 CREATE TABLE public.scanning_sessions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   name text NOT NULL,
   inventory_type text NOT NULL,
   sub_inventory text,
   status text NOT NULL DEFAULT 'active'::text CHECK (status = ANY (ARRAY['draft'::text, 'active'::text, 'closed'::text])),
   items jsonb NOT NULL DEFAULT '[]'::jsonb,
-  scanned_item_ids uuid[] NOT NULL DEFAULT '{}'::uuid[],
+  scanned_item_ids ARRAY NOT NULL DEFAULT '{}'::uuid[],
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   closed_at timestamp with time zone,
   created_by text,
   updated_by text,
   closed_by text,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT scanning_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT scanning_sessions_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
   CONSTRAINT scanning_sessions_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
+CREATE TABLE public.settings (
+  company_id uuid NOT NULL,
+  sso_username text,
+  sso_password text,
+  updated_at timestamp with time zone DEFAULT now(),
+  location_id uuid NOT NULL,
+  CONSTRAINT settings_pkey PRIMARY KEY (location_id),
+  CONSTRAINT settings_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
+  CONSTRAINT settings_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
+);
 CREATE TABLE public.tracked_parts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   product_id uuid NOT NULL,
   reorder_threshold integer NOT NULL DEFAULT 5,
   is_active boolean DEFAULT true,
@@ -241,38 +294,35 @@ CREATE TABLE public.tracked_parts (
   updated_at timestamp with time zone DEFAULT now(),
   created_by text,
   reordered_at timestamp with time zone,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT tracked_parts_pkey PRIMARY KEY (id),
   CONSTRAINT tracked_parts_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id),
   CONSTRAINT tracked_parts_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
-  CONSTRAINT tracked_parts_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id),
-  CONSTRAINT tracked_parts_location_product_unique UNIQUE (location_id, product_id)
+  CONSTRAINT tracked_parts_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
 CREATE TABLE public.trucks (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
-  company_id uuid NOT NULL,
-  location_id uuid NOT NULL,
   truck_id text NOT NULL,
   driver_name text,
   capacity integer DEFAULT 50,
   active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
-  abbreviated_name text,
+  abbreviated_name text UNIQUE,
   color text DEFAULT '#3B82F6'::text,
+  company_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
+  location_id uuid NOT NULL,
   CONSTRAINT trucks_pkey PRIMARY KEY (id),
   CONSTRAINT trucks_company_fk FOREIGN KEY (company_id) REFERENCES public.companies(id),
-  CONSTRAINT trucks_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id),
-  CONSTRAINT trucks_location_truck_id_unique UNIQUE (location_id, truck_id),
-  CONSTRAINT trucks_location_abbrev_unique UNIQUE (location_id, abbreviated_name)
+  CONSTRAINT trucks_location_fk FOREIGN KEY (location_id) REFERENCES public.locations(id)
 );
-
 CREATE TABLE public.users (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   username character varying UNIQUE,
   password character varying,
   image character varying,
-  role text,
-  company_ids uuid[] DEFAULT '{}'::uuid[],
+  company_ids ARRAY DEFAULT '{}'::uuid[],
+  role text NOT NULL DEFAULT 'user'::text CHECK (role = ANY (ARRAY['admin'::text, 'user'::text])),
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );

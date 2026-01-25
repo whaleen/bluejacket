@@ -1,8 +1,8 @@
-import { useState, useEffect, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, Search, X, Edit, Trash2, Printer } from 'lucide-react';
+import { Loader2, Search, X, Trash2, Printer } from 'lucide-react';
 import { getLoadWithItems, getLoadConflicts, updateLoadMetadata } from '@/lib/loadManager';
 import type { LoadMetadata, InventoryItem, LoadConflict } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
@@ -10,22 +10,27 @@ import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { useToast } from '@/components/ui/toast';
 import JsBarcode from 'jsbarcode';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useAuth } from '@/context/AuthContext';
+import { getActiveLocationContext } from '@/lib/tenant';
+import { logActivity } from '@/lib/activityLog';
 
 interface LoadDetailPanelProps {
   load: LoadMetadata;
+  allLoads?: LoadMetadata[];
   onClose?: () => void;
-  onRename?: (load: LoadMetadata) => void;
   onDelete?: (load: LoadMetadata) => void;
-  onMetaUpdated?: () => void;
+  onMetaUpdated?: (updates: Partial<LoadMetadata>) => void;
 }
 
 export function LoadDetailPanel({
   load,
+  allLoads = [],
   onClose,
-  onRename,
   onDelete,
   onMetaUpdated,
 }: LoadDetailPanelProps) {
+  const { user } = useAuth();
+  const { locationId, companyId } = getActiveLocationContext();
   const { toast } = useToast();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [conflicts, setConflicts] = useState<LoadConflict[]>([]);
@@ -36,6 +41,30 @@ export function LoadDetailPanel({
   const [pickupDate, setPickupDate] = useState('');
   const [pickupTba, setPickupTba] = useState(false);
   const [savingPrep, setSavingPrep] = useState(false);
+  const [friendlyName, setFriendlyName] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('');
+  const [notes, setNotes] = useState('');
+  const [isSalvage, setIsSalvage] = useState(false);
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [savePulse, setSavePulse] = useState(false);
+  const metaSaveTimeoutRef = useRef<number | null>(null);
+  const recentWindowSize = 20;
+
+  const COLOR_OPTIONS = [
+    { label: 'Red', value: '#E53935' },
+    { label: 'Red-Orange', value: '#F4511E' },
+    { label: 'Orange', value: '#FB8C00' },
+    { label: 'Yellow-Orange', value: '#F9A825' },
+    { label: 'Yellow', value: '#FDD835' },
+    { label: 'Yellow-Green', value: '#C0CA33' },
+    { label: 'Green', value: '#43A047' },
+    { label: 'Blue-Green', value: '#009688' },
+    { label: 'Blue', value: '#1E88E5' },
+    { label: 'Blue-Violet', value: '#5E35B1' },
+    { label: 'Violet', value: '#8E24AA' },
+    { label: 'Red-Violet', value: '#D81B60' },
+  ];
 
   const fetchItems = async () => {
     setLoading(true);
@@ -58,7 +87,21 @@ export function LoadDetailPanel({
     setPrepWrapped(Boolean(load.prep_wrapped));
     setPickupDate(load.pickup_date ? load.pickup_date.slice(0, 10) : '');
     setPickupTba(Boolean(load.pickup_tba));
-  }, [load.prep_tagged, load.prep_wrapped, load.pickup_date, load.pickup_tba]);
+    setFriendlyName(load.friendly_name || '');
+    setPrimaryColor(load.primary_color || '');
+    setNotes(load.notes || '');
+    setIsSalvage((load.category || '').toLowerCase() === 'salvage');
+    setMetaError(null);
+  }, [
+    load.prep_tagged,
+    load.prep_wrapped,
+    load.pickup_date,
+    load.pickup_tba,
+    load.friendly_name,
+    load.primary_color,
+    load.notes,
+    load.category,
+  ]);
 
   const filteredItems = items.filter((item) => {
     if (!searchTerm) return true;
@@ -153,10 +196,247 @@ export function LoadDetailPanel({
         message: error?.message || 'Unable to save prep details.',
       });
     } else {
-      onMetaUpdated?.();
+      onMetaUpdated?.(updates);
+      triggerSavePulse();
+      const { error: activityError } = await logActivity({
+        companyId,
+        locationId,
+        user,
+        action: 'load_update',
+        entityType: 'ASIS_LOAD',
+        entityId: load.sub_inventory_name,
+        details: {
+          loadNumber: load.sub_inventory_name,
+          friendlyName: load.friendly_name ?? null,
+          fields: Object.keys(updates),
+          updates,
+        },
+      });
+      if (activityError) {
+        console.warn('Failed to log activity (load_update):', activityError.message);
+      }
     }
     setSavingPrep(false);
   };
+
+  const triggerSavePulse = () => {
+    setSavePulse(true);
+    window.setTimeout(() => setSavePulse(false), 1200);
+  };
+
+  const deriveFriendlyNameFromNotes = (notes?: string | null, status?: string | null) => {
+    if (!notes) return null;
+    const trimmed = notes.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.toUpperCase();
+    const statusValue = status?.toUpperCase().trim() ?? '';
+    if (statusValue && statusValue !== 'FOR SALE') return null;
+
+    const letterMatch = normalized.match(/\bLETTER\s+([A-Z]{1,2})\b/);
+    if (letterMatch?.[1]) return letterMatch[1];
+
+    const firstToken = normalized.split(/[\s-]+/).find(Boolean);
+    if (firstToken && /^[A-Z]{1,2}$/.test(firstToken)) return firstToken;
+
+    const dateMatch = normalized.match(/\b(\d{1,2}\/\d{1,2})\b/);
+    if (dateMatch?.[1]) return dateMatch[1];
+
+    const dayMatch = normalized.match(/\b(\d{1,2}(?:ST|ND|RD|TH))\b/);
+    if (dayMatch?.[1]) return dayMatch[1];
+
+    return null;
+  };
+
+  const parseLoadTimestamp = (value?: string | null) => {
+    if (!value) return 0;
+    const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (match) {
+      const [, year, month, day, hour, minute, second] = match;
+      const date = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second ?? '0')
+      );
+      return date.getTime();
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const normalizeFriendlyCode = (value?: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim().toUpperCase();
+    if (!trimmed) return null;
+    if (!/^[A-Z]{1,2}$/.test(trimmed)) return null;
+    return trimmed;
+  };
+
+  const recentCodes = (() => {
+    if (!allLoads.length) return new Set<string>();
+    const sorted = [...allLoads]
+      .filter((entry) => entry.inventory_type === load.inventory_type)
+      .sort((a, b) => {
+        const aTime = parseLoadTimestamp(a.ge_scanned_at) || (a.created_at ? Date.parse(a.created_at) : 0);
+        const bTime = parseLoadTimestamp(b.ge_scanned_at) || (b.created_at ? Date.parse(b.created_at) : 0);
+        return bTime - aTime;
+      })
+      .slice(0, recentWindowSize);
+
+    const codes = new Set<string>();
+    sorted.forEach((entry) => {
+      const direct = normalizeFriendlyCode(entry.friendly_name);
+      const derived = direct ?? normalizeFriendlyCode(deriveFriendlyNameFromNotes(entry.ge_notes, entry.ge_source_status));
+      if (derived) {
+        codes.add(derived);
+      }
+    });
+    return codes;
+  })();
+
+  const normalizedFriendlyInput = normalizeFriendlyCode(friendlyName);
+  const originalFriendly = (load.friendly_name ?? '').trim().toUpperCase();
+  const currentFriendly = friendlyName.trim().toUpperCase();
+  const friendlyNameError = (() => {
+    if (load.inventory_type !== 'ASIS') return null;
+    if (!currentFriendly) return null;
+    if (currentFriendly === originalFriendly && !normalizeFriendlyCode(originalFriendly)) {
+      return null;
+    }
+    if (!normalizedFriendlyInput) return 'Use 1–2 letters only (A–Z).';
+    if (normalizedFriendlyInput === normalizeFriendlyCode(load.friendly_name)) return null;
+    if (recentCodes.has(normalizedFriendlyInput)) {
+      return `Already used in the last ${recentWindowSize} loads.`;
+    }
+    return null;
+  })();
+
+  const suggestedCodes = (() => {
+    if (load.inventory_type !== 'ASIS') return [];
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    const suggestions: string[] = [];
+    const used = recentCodes;
+
+    for (const letter of alphabet) {
+      if (!used.has(letter)) {
+        suggestions.push(letter);
+      }
+      if (suggestions.length >= 8) return suggestions;
+    }
+
+    for (const first of alphabet) {
+      for (const second of alphabet) {
+        const code = `${first}${second}`;
+        if (first === second && used.has(first)) continue;
+        if (!used.has(code)) {
+          suggestions.push(code);
+        }
+        if (suggestions.length >= 8) return suggestions;
+      }
+    }
+    return suggestions;
+  })();
+
+  const derivedFriendlyName = deriveFriendlyNameFromNotes(load.ge_notes, load.ge_source_status);
+  const derivedFriendlyCode = normalizeFriendlyCode(derivedFriendlyName);
+
+  const hasMetaChanges = (() => {
+    const friendly = friendlyName.trim().toUpperCase();
+    const notesValue = notes.trim();
+    const colorValue = primaryColor.trim();
+    const categoryValue = load.inventory_type === 'ASIS' ? (isSalvage ? 'Salvage' : '') : (load.category || '');
+
+    return (
+      friendly !== (load.friendly_name || '') ||
+      notesValue !== (load.notes || '') ||
+      colorValue !== (load.primary_color || '') ||
+      categoryValue !== (load.category || '')
+    );
+  })();
+
+  const handleSaveMeta = async () => {
+    if (!hasMetaChanges) {
+      setMetaError('No changes to save.');
+      return;
+    }
+    if (friendlyNameError) {
+      setMetaError(friendlyNameError);
+      return;
+    }
+
+    setSavingMeta(true);
+    setMetaError(null);
+
+    const friendly = friendlyName.trim();
+    const notesValue = notes.trim();
+    const colorValue = primaryColor.trim();
+
+    const updates: {
+      friendly_name?: string | null;
+      primary_color?: string | null;
+      notes?: string | null;
+      category?: string | null;
+    } = {
+      friendly_name: friendly ? friendly : null,
+      primary_color: colorValue ? colorValue : null,
+      notes: notesValue ? notesValue : null,
+    };
+
+    if (load.inventory_type === 'ASIS') {
+      updates.category = isSalvage ? 'Salvage' : null;
+    }
+
+    const { success, error } = await updateLoadMetadata(
+      load.inventory_type,
+      load.sub_inventory_name,
+      updates
+    );
+
+    if (!success) {
+      setMetaError(error?.message || 'Unable to save load details.');
+    } else {
+      onMetaUpdated?.(updates);
+      triggerSavePulse();
+      const { error: activityError } = await logActivity({
+        companyId,
+        locationId,
+        user,
+        action: 'load_update',
+        entityType: 'ASIS_LOAD',
+        entityId: load.sub_inventory_name,
+        details: {
+          loadNumber: load.sub_inventory_name,
+          friendlyName: friendly || load.friendly_name || null,
+          fields: Object.keys(updates),
+          updates,
+        },
+      });
+      if (activityError) {
+        console.warn('Failed to log activity (load_update):', activityError.message);
+      }
+    }
+
+    setSavingMeta(false);
+  };
+
+  useEffect(() => {
+    if (!hasMetaChanges || savingMeta || friendlyNameError) return;
+    if (metaSaveTimeoutRef.current) {
+      window.clearTimeout(metaSaveTimeoutRef.current);
+    }
+    setMetaError(friendlyNameError ?? null);
+    metaSaveTimeoutRef.current = window.setTimeout(() => {
+      handleSaveMeta();
+    }, 800);
+
+    return () => {
+      if (metaSaveTimeoutRef.current) {
+        window.clearTimeout(metaSaveTimeoutRef.current);
+      }
+    };
+  }, [friendlyName, notes, primaryColor, isSalvage, hasMetaChanges, savingMeta, friendlyNameError]);
 
   const deriveCsoFromLoadNumber = (value: string) => {
     if (!value) return '';
@@ -168,6 +448,29 @@ export function LoadDetailPanel({
       result = result.slice(4);
     }
     return result;
+  };
+
+  const formatGeSubmitted = (value?: string | null) => {
+    if (!value) return '';
+    const trimmed = value.trim();
+    const date = new Date(trimmed);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString();
+    }
+    return trimmed;
+  };
+
+  const formatGeScanned = (value?: string | null) => {
+    if (!value) return '';
+    const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
+    if (!match) return value;
+    const [, year, month, day, hour, minute, second] = match;
+    return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`).toLocaleString();
+  };
+
+  const isSyntheticSerial = (serial?: string | null) => {
+    if (!serial) return false;
+    return serial.startsWith('ASIS-NS:') || serial.startsWith('ASIS-INV-NS:');
   };
 
   const renderBarcodeSvg = (value: string) => {
@@ -240,15 +543,15 @@ export function LoadDetailPanel({
     });
 
     const tagColor = normalizeHexColor(load.primary_color);
-    const csoValue = deriveCsoFromLoadNumber(load.sub_inventory_name);
+    const csoValue = (load.ge_cso || '').trim() || deriveCsoFromLoadNumber(load.sub_inventory_name);
     const csoHead = csoValue.length > 4 ? csoValue.slice(0, -4) : '';
     const csoTail = csoValue.length > 4 ? csoValue.slice(-4) : csoValue;
 
     const tags = sortedItems.map((item, index) => {
       const model = item.model || '';
-      const serial = item.serial || '';
+      const serial = isSyntheticSerial(item.serial) ? '' : item.serial || '';
       const modelBarcode = renderBarcodeSvg(model);
-      const serialBarcode = renderBarcodeSvg(serial);
+      const serialBarcode = isSyntheticSerial(serial) ? '' : renderBarcodeSvg(serial);
       return {
         index: index + 1,
         model,
@@ -374,14 +677,29 @@ export function LoadDetailPanel({
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <Badge variant="outline">{load.inventory_type}</Badge>
               {isSold && <Badge variant="outline">Prep {prepCount}/2</Badge>}
-              {createdDate && (
-                <span className="text-xs text-muted-foreground">Created {createdDate}</span>
+              {load.ge_submitted_date && (
+                <span className="text-xs text-muted-foreground">GE Submitted {formatGeSubmitted(load.ge_submitted_date)}</span>
               )}
-              <span className="text-xs text-muted-foreground">Load # {load.sub_inventory_name}</span>
+              {load.ge_scanned_at && (
+                <span className="text-xs text-muted-foreground">GE Scanned {formatGeScanned(load.ge_scanned_at)}</span>
+              )}
+              {createdDate && (
+                <span className="text-xs text-muted-foreground">Local Created {createdDate}</span>
+              )}
+              {load.ge_cso ? (
+                <span className="text-xs text-muted-foreground">CSO {load.ge_cso}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Load # {load.sub_inventory_name}</span>
+              )}
               {pickupLabel && (
                 <span className="text-xs text-muted-foreground">{pickupLabel}</span>
               )}
             </div>
+            {load.ge_cso && (
+              <div className="text-xs text-muted-foreground mt-1">
+                Load # {load.sub_inventory_name}
+              </div>
+            )}
             {load.notes && (
               <p className="text-sm text-muted-foreground mt-2">{load.notes}</p>
             )}
@@ -397,6 +715,41 @@ export function LoadDetailPanel({
               <X className="h-4 w-4" />
             </Button>
           )}
+        </div>
+
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm text-muted-foreground">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Inv Org</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_inv_org || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Units</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_units ?? '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE CSO</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_cso || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE CSO Status</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_cso_status || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Pricing</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_pricing || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Status</div>
+              <div className="text-sm font-medium text-foreground">{load.ge_source_status || '—'}</div>
+            </div>
+            {load.ge_notes && (
+              <div className="sm:col-span-2 lg:col-span-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Notes</div>
+                <div className="text-sm font-medium text-foreground break-words">{load.ge_notes}</div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="rounded-lg border bg-muted/20 p-3">
@@ -435,6 +788,108 @@ export function LoadDetailPanel({
             </div>
           </div>
         </div>
+        <div className="rounded-lg border bg-muted/20 p-3 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">Load details</p>
+              <p className="text-xs text-muted-foreground">Local metadata you can edit.</p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleSaveMeta}
+              disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
+              className={savePulse ? 'animate-pulse' : undefined}
+            >
+              {savingMeta && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {savingMeta ? 'Saving...' : savePulse && !savingMeta ? 'Saved' : 'Save changes'}
+            </Button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Friendly name</label>
+              <Input
+                value={friendlyName}
+                onChange={(e) => setFriendlyName(e.target.value.toUpperCase())}
+                placeholder="Optional display name"
+              />
+              {load.inventory_type === 'ASIS' && (
+                <div className="space-y-2 text-xs text-muted-foreground">
+                  {derivedFriendlyCode && !friendlyName.trim() && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 text-primary"
+                      onClick={() => setFriendlyName(derivedFriendlyCode)}
+                    >
+                      Use suggested name {derivedFriendlyCode}
+                    </button>
+                  )}
+                  {suggestedCodes.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestedCodes.map((code) => (
+                        <button
+                          key={code}
+                          type="button"
+                          className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                          onClick={() => setFriendlyName(code)}
+                        >
+                          {code}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p>Allowed: 1–2 letters, not used in the last {recentWindowSize} ASIS loads.</p>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Notes</label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional notes for this load"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Primary color</label>
+              <select
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">No color</option>
+                {COLOR_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label} ({option.value})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {load.inventory_type === 'ASIS' && (
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Salvage</label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={isSalvage} onCheckedChange={(checked) => setIsSalvage(checked === true)} />
+                  Mark this load as salvage
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Unchecked loads are treated as regular.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {metaError && (
+            <div className="text-sm text-destructive">{metaError}</div>
+          )}
+        </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
@@ -444,15 +899,6 @@ export function LoadDetailPanel({
           >
             <Printer className="h-4 w-4" />
             Print tags
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => onRename?.(load)}
-          >
-            <Edit className="h-4 w-4" />
-            Edit Details
           </Button>
           <Button
             type="button"
@@ -535,6 +981,7 @@ export function LoadDetailPanel({
             </div>
           ) : (
             filteredItems.map((item) => {
+              const syntheticSerial = isSyntheticSerial(item.serial);
               const normalizedItem =
                 item.products?.description
                   ? {
@@ -546,21 +993,35 @@ export function LoadDetailPanel({
                     }
                   : item;
 
+              const statusValue = item.ge_availability_status?.trim() || '';
+              const statusBadge = statusValue ? (
+                <Badge className={getItemStatusColor(statusValue)}>
+                  {statusValue}
+                </Badge>
+              ) : null;
+
+              const badges = (
+                <>
+                  {statusBadge}
+                  {syntheticSerial && (
+                    <Badge variant="outline">No serial</Badge>
+                  )}
+                </>
+              );
+
               return (
                 <InventoryItemCard
                   key={item.id}
-                  item={normalizedItem}
+                  item={{
+                    ...normalizedItem,
+                    status: undefined,
+                    ge_availability_status: undefined,
+                  }}
                   showInventoryTypeBadge={false}
                   showRouteBadge={false}
                   showProductMeta
                   showImage={Boolean((normalizedItem.products as any)?.image_url)}
-                  badges={(item.ge_availability_status || item.status)
-                    ? (
-                      <Badge className={getItemStatusColor(item.ge_availability_status ?? item.status ?? '')}>
-                        {item.ge_availability_status ?? item.status}
-                      </Badge>
-                    )
-                    : null}
+                  badges={badges}
                 />
               );
             })

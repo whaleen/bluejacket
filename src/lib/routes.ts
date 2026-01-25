@@ -10,7 +10,7 @@ export type AppView =
   | 'settings-displays-list'
   | 'settings-displays-settings'
   | 'loads'
-  | 'create-load'
+  | 'activity'
   | 'create-session'
   | 'floor-display';
 
@@ -23,7 +23,6 @@ export type RouteState = {
 const baseSessionPath = '/scanning-sessions';
 
 export function getPathForView(view: AppView, sessionId?: string | null, displayId?: string | null): string {
-  if (view === 'create-load') return '/loads/new';
   if (view === 'create-session') {
     if (sessionId) return `${baseSessionPath}/${sessionId}`;
     return baseSessionPath;
@@ -44,6 +43,8 @@ export function getPathForView(view: AppView, sessionId?: string | null, display
       return '/products';
     case 'loads':
       return '/loads';
+    case 'activity':
+      return '/activity';
     case 'settings-locations':
       return '/settings/locations';
     case 'settings-company':
@@ -81,10 +82,9 @@ export function parseRoute(pathname: string): RouteState {
     case 'products':
       return { view: 'products' };
     case 'loads':
-      if (second === 'new') {
-        return { view: 'create-load' };
-      }
       return { view: 'loads' };
+    case 'activity':
+      return { view: 'activity' };
     case 'scanning-sessions':
     case 'sessions':
       return { view: 'create-session', sessionId: second ?? null };

@@ -6,9 +6,9 @@ A mobile-first React PWA for warehouse inventory management, load tracking, and 
 
 This is an internal tool for warehouse operations. The core workflow:
 
-1. **Product data comes from external systems** - Not entered via scanning. Currently using static files in `/public/` as a stand-in for future GE system integration (CSV/XLS sync).
+1. **Product data comes from external systems** - Not entered via scanning. GE ASIS data is synced via a dedicated `ge-sync` service (Playwright + Supabase). Static files in `/public/` are legacy/reference only.
 
-2. **Loads are managed and prepped** - Create loads, assign items, track status through the lifecycle (active → staged → in_transit → delivered). Loads have a prep checklist for pickup readiness.
+2. **Loads are managed and prepped** - Loads are mirrored from GE ASIS and enriched locally (friendly name, color, notes, prep checklist).
 
 3. **Scanning is for verification ("sanity checks")** - When a load is ready for pickup, start a scanning session to verify all items are present. Think of it as a "job": boss says "let's confirm Load Q is all there" → scan each item → get final count → done. This sanity count is part of the prep checklist, typically done day-of pickup as a final stamp of approval.
 
@@ -17,7 +17,7 @@ This is an internal tool for warehouse operations. The core workflow:
 ## Feature Status
 
 ### Done
-- [x] Load management (create, rename, merge, status tracking)
+- [x] Load management (GE-synced; no manual load creation; prep checklist + status tracking)
 - [x] Load prep checklist (tagged, wrapped, pickup date)
 - [x] Barcode scanning (camera + manual entry)
 - [x] Scanning sessions for verification counts
@@ -27,14 +27,15 @@ This is an internal tool for warehouse operations. The core workflow:
 - [x] Supabase Realtime for live updates
 - [x] Multi-tenant (companies + locations)
 - [x] Dark mode + mobile-first PWA
+- [x] GE ASIS sync service (Playwright + Supabase)
+- [x] Activity log (sync, wipe, load edits)
 
 ### In Progress
-- [ ] GE system integration (currently using static files in `/public/`)
 - [ ] Sanity count as explicit prep checklist item
 - [ ] Floor display UI polish
 
 ### Planned
-- [ ] GE API sync for product/inventory data
+- [ ] Expand GE sync beyond ASIS
 - [ ] Enhanced load conflict tracking
 - [ ] Reporting/analytics
 
@@ -70,6 +71,9 @@ VITE_ACTIVE_LOCATION_ID=your_location_uuid
 # Optional for unlocking company/location manager in Settings
 VITE_SUPERADMIN_USERNAME=your_admin_username
 VITE_SUPERADMIN_PASSWORD=your_admin_password
+# Optional for GE sync service
+VITE_GE_SYNC_URL=http://localhost:3001
+VITE_GE_SYNC_API_KEY=your_api_key
 ```
 
 ### 2. Install & Run
@@ -79,15 +83,27 @@ npm install
 npm run dev
 ```
 
+### 2b. GE Sync Service (ASIS)
+
+The GE sync service lives in `services/ge-sync` and runs separately.
+
+```bash
+cd services/ge-sync
+npm install
+npx playwright install chromium
+npm run dev
+```
+
 ### 3. Database Setup
 
 Run the SQL in `migrations/` in order, or use `warehouse.sql` as a reference schema.
 
 **Key tables:**
 - `companies`, `locations`, `settings`
-- `inventory_items`, `products`, `load_metadata`, `inventory_conversions`
+- `inventory_items`, `products`, `load_metadata`
 - `scanning_sessions`, `tracked_parts`, `inventory_counts`, `trucks`, `users`
 - `floor_displays` (with Realtime enabled)
+- `activity_log` (user actions)
 
 ## Project Structure
 
@@ -96,10 +112,10 @@ src/
 ├── components/
 │   ├── ui/                 # shadcn/ui components
 │   ├── Auth/               # Login, avatar upload
+│   ├── Activity/           # Activity log
 │   ├── Dashboard/          # Metrics overview
 │   ├── FloorDisplay/       # TV display + widgets
-│   ├── Inventory/          # Inventory management
-│   ├── Loads/              # Load management
+│   ├── Inventory/          # Inventory + load management
 │   ├── Navigation/         # Header, user menu, location switcher
 │   ├── Products/           # Product search and details
 │   ├── Scanner/            # Barcode scanning
@@ -110,7 +126,7 @@ src/
 ├── lib/
 │   ├── supabase.ts         # Supabase client
 │   ├── displayManager.ts   # Floor display CRUD + Realtime
-│   ├── loadManager.ts      # Load CRUD operations
+│   ├── loadManager.ts      # Load data access + updates
 │   ├── sessionManager.ts   # Session persistence
 │   ├── scanMatcher.ts      # Barcode matching logic
 │   └── utils.ts            # General utilities
@@ -143,15 +159,21 @@ Supported widgets:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  External Systems (GE)                                       │
-│  - CSV/XLS files exported from GE application                │
-│  - Currently: static files in /public/ASIS/, /public/FG/     │
-│  - Future: API sync                                          │
+│  - GE DMS ASIS exports (Report History + per-load CSVs)      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  GE Sync Service (services/ge-sync)                          │
+│  - Playwright SSO + cookie persistence                        │
+│  - Fetches GE ASIS sheets + merges                            │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Supabase (PostgreSQL)                                       │
 │  - products, inventory_items, load_metadata                  │
+│  - ge_changes, activity_log                                  │
 │  - Realtime enabled for floor_displays                       │
 └──────────────────────────┬──────────────────────────────────┘
                            │

@@ -245,7 +245,13 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'accessory'>('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [sortOption, setSortOption] = useState<InventorySort>(getInitialSort);
-  const [subInventoryOptions, setSubInventoryOptions] = useState<string[]>([]);
+  const [subInventoryOptions, setSubInventoryOptions] = useState<Array<{
+    value: string;
+    label: string;
+    color?: string | null;
+    friendlyName?: string | null;
+    cso?: string | null;
+  }>>([]);
   const [brandOptions, setBrandOptions] = useState<string[]>([]);
 
   // State
@@ -437,7 +443,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       const types = resolveInventoryTypes(inventoryTypeFilter);
       const { data, error } = await supabase
         .from('load_metadata')
-        .select('sub_inventory_name')
+        .select('sub_inventory_name, friendly_name, primary_color, ge_cso')
         .eq('location_id', locationId)
         .in('inventory_type', types);
 
@@ -447,10 +453,44 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         return;
       }
 
-      const unique = Array.from(
-        new Set((data ?? []).map(item => item.sub_inventory_name).filter(Boolean))
-      ).sort();
-      setSubInventoryOptions(unique);
+      const optionMap = new Map<string, {
+        value: string;
+        friendlyName?: string | null;
+        color?: string | null;
+        cso?: string | null;
+      }>();
+
+      (data ?? []).forEach((item) => {
+        const value = item.sub_inventory_name?.trim();
+        if (!value) return;
+        const existing = optionMap.get(value);
+        optionMap.set(value, {
+          value,
+          friendlyName: item.friendly_name?.trim() || existing?.friendlyName || null,
+          color: item.primary_color?.trim() || existing?.color || null,
+          cso: item.ge_cso?.trim() || existing?.cso || null,
+        });
+      });
+
+      const isAsis = inventoryTypeFilter === 'ASIS';
+      const options = Array.from(optionMap.values())
+        .map(option => {
+          if (!isAsis) {
+            return {
+              ...option,
+              label: option.value,
+            };
+          }
+          const friendly = option.friendlyName?.trim() || 'Unnamed';
+          const csoOrLoad = option.cso?.trim() || option.value;
+          return {
+            ...option,
+            label: `${friendly} • ${csoOrLoad}`,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      setSubInventoryOptions(options);
     };
 
     fetchSubInventories();
@@ -1091,6 +1131,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     return () => observer.disconnect();
   }, [handleLoadMore]);
 
+  const selectedSubInventoryLabel =
+    subInventoryFilter === 'all'
+      ? 'all'
+      : subInventoryOptions.find(option => option.value === subInventoryFilter)?.label ?? subInventoryFilter;
+
   const activeFilters = [
     searchTerm && {
       key: 'search',
@@ -1107,7 +1152,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     },
     subInventoryFilter !== 'all' && {
       key: 'sub',
-      label: `Load: ${subInventoryFilter}`,
+      label: `Load: ${selectedSubInventoryLabel}`,
       clear: () => setSubInventoryFilter('all'),
     },
     productCategoryFilter !== 'all' && {
@@ -1225,11 +1270,31 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Sub-Inventories</SelectItem>
-                {subInventoryOptions.map(sub => (
-                  <SelectItem key={sub} value={sub}>
-                    {sub}
-                  </SelectItem>
-                ))}
+                {subInventoryOptions.map(option => {
+                  const friendly = option.friendlyName?.trim() || 'Unnamed';
+                  const csoOrLoad = option.cso?.trim() || option.value;
+                  return (
+                    <SelectItem key={option.value} value={option.value} textValue={option.label}>
+                      <div className="flex items-center gap-2">
+                        {option.color && (
+                          <span
+                            className="h-3 w-3 rounded-sm border border-border/60"
+                            style={{ backgroundColor: option.color }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        {inventoryTypeFilter === 'ASIS' ? (
+                          <>
+                            <span className="font-medium">{friendly}</span>
+                            <span className="text-muted-foreground">| {csoOrLoad}</span>
+                          </>
+                        ) : (
+                          <span>{option.value}</span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           )}

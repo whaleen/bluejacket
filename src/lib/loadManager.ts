@@ -20,104 +20,14 @@ function getInventoryTypes(mainType: InventoryType): InventoryType[] {
 }
 
 /**
- * Create a new load (metadata record)
- */
-export async function createLoad(
-  inventoryType: InventoryType,
-  subInventoryName: string,
-  notes?: string,
-  createdBy?: string,
-  category?: string,
-  friendlyName?: string,
-  primaryColor?: string
-): Promise<{ data: LoadMetadata | null; error: any }> {
-  const { locationId, companyId } = getActiveLocationContext();
-  const { data, error } = await supabase
-    .from('load_metadata')
-    .insert({
-      company_id: companyId,
-      location_id: locationId,
-      inventory_type: inventoryType,
-      sub_inventory_name: subInventoryName,
-      friendly_name: friendlyName || null,
-      primary_color: primaryColor || null,
-      prep_tagged: false,
-      prep_wrapped: false,
-      pickup_date: null,
-      pickup_tba: false,
-      status: 'active' as LoadStatus,
-      category,
-      notes,
-      created_by: createdBy
-    })
-    .select()
-    .single();
-
-  return { data, error };
-}
-
-/**
- * Rename a load (updates metadata and all items with that sub_inventory)
- */
-export async function renameLoad(
-  inventoryType: InventoryType,
-  oldName: string,
-  newName: string
-): Promise<{ success: boolean; error?: any }> {
-  const { locationId } = getActiveLocationContext();
-  // Check if new name already exists
-  const { data: existing } = await supabase
-    .from('load_metadata')
-    .select('id')
-    .eq('location_id', locationId)
-    .eq('inventory_type', inventoryType)
-    .eq('sub_inventory_name', newName)
-    .single();
-
-  if (existing) {
-    return { success: false, error: 'Load name already exists for this inventory type' };
-  }
-
-  // Update metadata
-  const { error: metadataError } = await supabase
-    .from('load_metadata')
-    .update({ sub_inventory_name: newName, updated_at: new Date().toISOString() })
-    .eq('location_id', locationId)
-    .eq('inventory_type', inventoryType)
-    .eq('sub_inventory_name', oldName);
-
-  if (metadataError) {
-    return { success: false, error: metadataError };
-  }
-
-  // Update all items with this sub_inventory
-  const { error: itemsError } = await supabase
-    .from('inventory_items')
-    .update({ sub_inventory: newName, updated_at: new Date().toISOString() })
-    .eq('location_id', locationId)
-    .eq('inventory_type', inventoryType)
-    .eq('sub_inventory', oldName);
-
-  return { success: !itemsError, error: itemsError };
-}
-
-/**
  * Merge multiple loads into one (updates items to target, deletes source metadata)
  */
 export async function mergeLoads(
   inventoryType: InventoryType,
   sourceNames: string[],
-  targetName: string,
-  createTarget = false
+  targetName: string
 ): Promise<{ success: boolean; error?: any }> {
   const { locationId } = getActiveLocationContext();
-  // Create target load if needed
-  if (createTarget) {
-    const { error: createError } = await createLoad(inventoryType, targetName);
-    if (createError) {
-      return { success: false, error: createError };
-    }
-  }
 
   // Update all items from source loads to target
   const { error: updateError } = await supabase

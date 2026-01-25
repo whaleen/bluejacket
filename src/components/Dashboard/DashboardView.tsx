@@ -45,6 +45,17 @@ interface DetailedStats {
     scrap: number;
   };
 
+  asisLoads: {
+    total: number;
+    forSale: number;
+    sold: number;
+    forSaleNeedsWrap: number;
+    soldNeedsTag: number;
+    soldNeedsWrap: number;
+    soldNeedsBoth: number;
+    pickupSoonNeedsPrep: number;
+  };
+
   loads: {
     total: number;
     active: number;
@@ -56,6 +67,29 @@ interface DetailedStats {
   };
 }
 
+type AsisActionLoad = {
+  id?: string;
+  sub_inventory_name: string;
+  friendly_name?: string | null;
+  primary_color?: string | null;
+  ge_cso?: string | null;
+  ge_source_status?: string | null;
+  pickup_date?: string | null;
+  prep_tagged?: boolean | null;
+  prep_wrapped?: boolean | null;
+};
+
+type ActivityLogEntry = {
+  id: string;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  details?: Record<string, any> | null;
+  actor_name?: string | null;
+  actor_image?: string | null;
+  created_at: string;
+};
+
 export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps) {
   const { user } = useAuth();
   const { locationId } = getActiveLocationContext();
@@ -64,12 +98,34 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     localStock: { total: 0, unassigned: 0, staged: 0, inbound: 0, routes: 0 },
     fg: { total: 0, regular: 0, backhaul: 0 },
     asis: { total: 0, unassigned: 0, regular: 0, salvage: 0, scrap: 0 },
+    asisLoads: {
+      total: 0,
+      forSale: 0,
+      sold: 0,
+      forSaleNeedsWrap: 0,
+      soldNeedsTag: 0,
+      soldNeedsWrap: 0,
+      soldNeedsBoth: 0,
+      pickupSoonNeedsPrep: 0,
+    },
     loads: { total: 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
   });
   const [loading, setLoading] = useState(true);
   const [selectedChartType, setSelectedChartType] = useState<'overview' | 'LocalStock' | 'FG' | 'ASIS'>('overview');
   const [selectedDrilldown, setSelectedDrilldown] = useState<string | null>(null);
   const [loadDetails, setLoadDetails] = useState<Record<string, { loadName: string; count: number; category?: string }[]>>({});
+  const [asisActionLoads, setAsisActionLoads] = useState<{
+    forSaleNeedsWrap: AsisActionLoad[];
+    soldNeedsPrep: AsisActionLoad[];
+    pickupSoonNeedsPrep: AsisActionLoad[];
+  }>({
+    forSaleNeedsWrap: [],
+    soldNeedsPrep: [],
+    pickupSoonNeedsPrep: [],
+  });
+  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
 
   // Helper to navigate to inventory with filter
   const navigateToInventory = (filterType?: 'LocalStock' | 'FG' | 'ASIS' | 'Parts') => {
@@ -103,6 +159,27 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     onViewChange?.('inventory');
   };
 
+  const navigateToLoad = (loadNumber: string) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('load', loadNumber);
+    params.delete('view');
+    const path = getPathForView('loads');
+    const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
+    window.history.replaceState({}, '', newUrl);
+    window.dispatchEvent(new Event('app:locationchange'));
+    onViewChange?.('loads');
+  };
+
+  const navigateToActivity = () => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete('view');
+    const path = getPathForView('activity');
+    const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
+    window.history.replaceState({}, '', newUrl);
+    window.dispatchEvent(new Event('app:locationchange'));
+    onViewChange?.('activity');
+  };
+
   // Mock user - replace with actual auth later
   const currentUser = {
     name: 'Josh Vaage',
@@ -114,6 +191,15 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   useEffect(() => {
     fetchData();
   }, [locationId]);
+
+  useEffect(() => {
+    const updateLayout = () => {
+      setIsCompact(window.innerWidth < 640);
+    };
+    updateLayout();
+    window.addEventListener('resize', updateLayout);
+    return () => window.removeEventListener('resize', updateLayout);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -152,6 +238,16 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         localStock: { total: 0, unassigned: 0, staged: 0, inbound: 0, routes: 0 },
         fg: { total: 0, regular: 0, backhaul: 0 },
         asis: { total: 0, unassigned: 0, regular: 0, salvage: 0, scrap: 0 },
+        asisLoads: {
+          total: 0,
+          forSale: 0,
+          sold: 0,
+          forSaleNeedsWrap: 0,
+          soldNeedsTag: 0,
+          soldNeedsWrap: 0,
+          soldNeedsBoth: 0,
+          pickupSoonNeedsPrep: 0,
+        },
         loads: { total: loadsData?.length || 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
       };
 
@@ -207,12 +303,22 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
       });
 
       // Count loads by type and collect load details
+      const now = new Date();
+      const pickupSoonThreshold = new Date(now);
+      pickupSoonThreshold.setDate(pickupSoonThreshold.getDate() + 3);
+      const normalizeStatus = (value?: string | null) => value?.toLowerCase().trim() ?? '';
+
       const loadsByCategory: Record<string, { loadName: string; count: number; category?: string }[]> = {
         'LocalStock-routes': [],
         'FG-backhaul': [],
         'ASIS-regular': [],
         'ASIS-salvage': [],
         'ASIS-scrap': [],
+      };
+      const nextAsisActions = {
+        forSaleNeedsWrap: [] as AsisActionLoad[],
+        soldNeedsPrep: [] as AsisActionLoad[],
+        pickupSoonNeedsPrep: [] as AsisActionLoad[],
       };
 
       (loadsData || []).forEach((load) => {
@@ -224,6 +330,39 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
         if (load.inventory_type === 'ASIS') {
           newStats.loads.byType.asis++;
+          newStats.asisLoads.total += 1;
+
+          const status = normalizeStatus(load.ge_source_status);
+          const tagged = Boolean(load.prep_tagged);
+          const wrapped = Boolean(load.prep_wrapped);
+          const needsTag = !tagged;
+          const needsWrap = !wrapped;
+          const needsBoth = needsTag && needsWrap;
+
+          const pickupDateValue = load.pickup_date ? new Date(load.pickup_date) : null;
+          const pickupSoon =
+            pickupDateValue && pickupDateValue <= pickupSoonThreshold && pickupDateValue >= now;
+
+          if (status === 'for sale') {
+            newStats.asisLoads.forSale += 1;
+            if (needsWrap) {
+              newStats.asisLoads.forSaleNeedsWrap += 1;
+              nextAsisActions.forSaleNeedsWrap.push(load as AsisActionLoad);
+            }
+          } else if (status === 'sold') {
+            newStats.asisLoads.sold += 1;
+            if (needsTag) newStats.asisLoads.soldNeedsTag += 1;
+            if (needsWrap) newStats.asisLoads.soldNeedsWrap += 1;
+            if (needsBoth || needsTag || needsWrap) {
+              newStats.asisLoads.soldNeedsBoth += 1;
+              nextAsisActions.soldNeedsPrep.push(load as AsisActionLoad);
+            }
+            if (pickupSoon && (needsTag || needsWrap)) {
+              newStats.asisLoads.pickupSoonNeedsPrep += 1;
+              nextAsisActions.pickupSoonNeedsPrep.push(load as AsisActionLoad);
+            }
+          }
+
           if (load.category === 'Regular') {
             loadsByCategory['ASIS-regular'].push({
               loadName: load.friendly_name || load.sub_inventory_name,
@@ -265,10 +404,27 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
       setStats(newStats);
       setLoadDetails(loadsByCategory);
+      setAsisActionLoads(nextAsisActions);
+
+      setActivityLoading(true);
+      const { data: activityData, error: activityError } = await supabase
+        .from('activity_log')
+        .select('id, action, entity_type, entity_id, details, actor_name, actor_image, created_at')
+        .eq('location_id', locationId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (activityError) {
+        console.error('Failed to load activity log:', activityError);
+        setActivityLogs([]);
+      } else {
+        setActivityLogs(activityData ?? []);
+      }
+      setActivityLoading(false);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
       setLoading(false);
+      setActivityLoading(false);
     }
   };
 
@@ -319,6 +475,115 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     },
   };
 
+  const formatPickupDate = (value?: string | null) => {
+    if (!value) return '';
+    const base = value.slice(0, 10);
+    const [year, month, day] = base.split('-').map(Number);
+    if (!year || !month || !day) return base;
+    return new Date(year, month - 1, day).toLocaleDateString();
+  };
+
+  const renderLoadChips = (loads: AsisActionLoad[], onSelect: (load: AsisActionLoad) => void) => {
+    if (!loads.length) {
+      return (
+        <div className="text-xs text-muted-foreground">
+          All caught up.
+        </div>
+      );
+    }
+
+    const sorted = [...loads].sort((a, b) => {
+      const aDate = a.pickup_date ? Date.parse(a.pickup_date) : 0;
+      const bDate = b.pickup_date ? Date.parse(b.pickup_date) : 0;
+      if (aDate && bDate) return aDate - bDate;
+      if (aDate) return -1;
+      if (bDate) return 1;
+      return a.sub_inventory_name.localeCompare(b.sub_inventory_name);
+    });
+
+    return (
+      <div className="grid gap-2">
+        {sorted.slice(0, 5).map((load) => {
+          const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
+          const csoValue = load.ge_cso?.trim() || '';
+          const hasCso = Boolean(csoValue);
+          const tailValue = hasCso ? csoValue.slice(-4) : load.sub_inventory_name;
+          return (
+            <button
+              key={load.sub_inventory_name}
+              type="button"
+              onClick={() => onSelect(load)}
+              className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-left transition hover:bg-muted/60"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {load.primary_color && (
+                    <span
+                      className="h-3 w-3 rounded-sm border border-border/60"
+                      style={{ backgroundColor: load.primary_color }}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="truncate text-sm font-medium">{friendly}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {hasCso ? 'CSO' : 'Load'}{' '}
+                  <span className="font-semibold underline decoration-dotted underline-offset-2 text-foreground">
+                    {tailValue}
+                  </span>
+                </div>
+              </div>
+              {load.pickup_date && (
+                <div className="text-xs text-muted-foreground">
+                  Pickup {formatPickupDate(load.pickup_date)}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const formatActivityDate = (value: string) =>
+    new Date(value).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+  const formatActivityMessage = (entry: ActivityLogEntry) => {
+    if (entry.action === 'asis_sync') {
+      const total = entry.details?.stats?.totalGEItems ?? entry.details?.stats?.totalItems;
+      return total ? `Synced ASIS (${total} items)` : 'Synced ASIS from GE';
+    }
+    if (entry.action === 'asis_wipe') {
+      return 'Wiped ASIS data';
+    }
+    if (entry.action === 'load_update') {
+      const loadNumber = entry.details?.loadNumber ?? entry.entity_id ?? '';
+      const friendly = entry.details?.friendlyName ?? '';
+      const fields = Array.isArray(entry.details?.fields) ? entry.details?.fields : [];
+      const fieldLabels: Record<string, string> = {
+        friendly_name: 'friendly name',
+        notes: 'notes',
+        primary_color: 'color',
+        category: 'salvage',
+        prep_tagged: 'tagged',
+        prep_wrapped: 'wrapped',
+        pickup_date: 'pickup date',
+        pickup_tba: 'pickup TBA',
+      };
+      const fieldsLabel = fields.length
+        ? ` (${fields.map((field: string) => fieldLabels[field] ?? field).join(', ')})`
+        : '';
+      const label = friendly ? `${friendly} (${loadNumber})` : loadNumber;
+      return `Updated load ${label}${fieldsLabel}`;
+    }
+    return entry.action.replace(/_/g, ' ');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -354,7 +619,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 <div className="min-w-0">
                   <h1 className="text-2xl font-bold break-words">Welcome back, {currentUser.name}</h1>
                   <p className="text-sm text-muted-foreground break-words">
-                    {currentUser.role} • Last active {currentUser.lastActive}
+                    {currentUser.role} • Last active {currentUser.lastActive} • {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
                   </p>
                 </div>
               </div>
@@ -386,6 +651,135 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         {/* Reorder Alerts */}
         <ReorderAlertsCard onViewParts={() => navigateToPartsInventory('reorder')} />
 
+        {/* Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-3">ASIS Floor Actions</h2>
+            <Card className="p-4">
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Wrap For Sale loads</p>
+                      <p className="text-xs text-muted-foreground">For Sale loads missing wrap.</p>
+                    </div>
+                    <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
+                  </div>
+                  {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Tag + wrap Sold loads</p>
+                      <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
+                    </div>
+                    <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
+                  </div>
+                  {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Pickup soon: finish prep</p>
+                      <p className="text-xs text-muted-foreground">Pickup within 3 days.</p>
+                    </div>
+                    <Badge variant="outline">{stats.asisLoads.pickupSoonNeedsPrep}</Badge>
+                  </div>
+                  {renderLoadChips(asisActionLoads.pickupSoonNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+            <Card className="p-4">
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => navigateToInventory()}
+                >
+                  <ScanBarcode className="mr-2 h-4 w-4" />
+                  Start New Scanning Session
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => onViewChange?.('loads')}
+                >
+                  <PackageOpen className="mr-2 h-4 w-4" />
+                  Manage Loads
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => navigateToInventory()}
+                >
+                  <TruckIcon className="mr-2 h-4 w-4" />
+                  View All Inventory
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                  onClick={() => onViewChange?.('products')}
+                >
+                  <Package className="mr-2 h-4 w-4" />
+                  Product Lookup
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+
+        {/* Recent Activity */}
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
+          <Card className="p-4">
+            <div className="max-h-[320px] overflow-y-auto pr-2 space-y-3">
+              {activityLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Package className="h-4 w-4 animate-pulse" />
+                  Loading activity…
+                </div>
+              ) : activityLogs.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No activity yet.</div>
+              ) : (
+                activityLogs.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-3">
+                    <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
+                      {entry.actor_image ? (
+                        <img
+                          src={entry.actor_image}
+                          alt={entry.actor_name ?? 'User'}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span>
+                          {(entry.actor_name ?? 'U').slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{entry.actor_name ?? 'Unknown'}</div>
+                      <div className="text-sm text-foreground">{formatActivityMessage(entry)}</div>
+                      <div className="text-xs text-muted-foreground">{formatActivityDate(entry.created_at)}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="pt-3">
+              <Button variant="ghost" size="sm" onClick={navigateToActivity}>
+                View full activity log
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </div>
+          </Card>
+        </div>
+
         {/* Interactive Donut Chart */}
         <Card className="p-6">
           <div className="space-y-4">
@@ -416,15 +810,15 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               ) : null}
             </div>
 
-            <ChartContainer config={chartConfig} className="h-[300px]">
+            <ChartContainer config={chartConfig} className="h-[240px] sm:h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={chartData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
+                    innerRadius={isCompact ? 45 : 60}
+                    outerRadius={isCompact ? 80 : 100}
                     paddingAngle={2}
                     dataKey="value"
                     onClick={(data) => {
@@ -454,14 +848,16 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                     ))}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend
-                    wrapperStyle={{
-                      fontSize: 12,
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      justifyContent: 'center',
-                    }}
-                  />
+                  {!isCompact && (
+                    <Legend
+                      wrapperStyle={{
+                        fontSize: 12,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'center',
+                      }}
+                    />
+                  )}
                 </PieChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -556,25 +952,29 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   </div>
                   <h3 className="font-semibold">ASIS</h3>
                 </div>
-                <span className="text-2xl font-bold">{stats.asis.total}</span>
+                <span className="text-2xl font-bold">{stats.asisLoads.total}</span>
               </div>
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Unassigned</span>
-                  <span className="font-medium">{stats.asis.unassigned}</span>
+                  <span className="text-muted-foreground">For Sale loads</span>
+                  <span className="font-medium">{stats.asisLoads.forSale}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Regular Loads</span>
-                  <span className="font-medium">{stats.asis.regular}</span>
+                  <span className="text-muted-foreground">For Sale to wrap</span>
+                  <span className="font-medium">{stats.asisLoads.forSaleNeedsWrap}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Salvage</span>
-                  <span className="font-medium">{stats.asis.salvage}</span>
+                  <span className="text-muted-foreground">Sold loads</span>
+                  <span className="font-medium">{stats.asisLoads.sold}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Scrap</span>
-                  <span className="font-medium">{stats.asis.scrap}</span>
+                  <span className="text-muted-foreground">Sold to tag/wrap</span>
+                  <span className="font-medium">{stats.asisLoads.soldNeedsBoth}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Pickup soon (≤3d) needs prep</span>
+                  <span className="font-medium">{stats.asisLoads.pickupSoonNeedsPrep}</span>
                 </div>
               </div>
 
@@ -617,50 +1017,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           </div>
         </div> */}
 
-        {/* Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-
-          <div>
-            <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
-            <Card className="p-4">
-              <div className="space-y-3">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                  onClick={() => navigateToInventory()}
-                >
-                  <ScanBarcode className="mr-2 h-4 w-4" />
-                  Start New Scanning Session
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                  onClick={() => onViewChange?.('loads')}
-                >
-                  <PackageOpen className="mr-2 h-4 w-4" />
-                  Manage Loads
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                  onClick={() => navigateToInventory()}
-                >
-                  <TruckIcon className="mr-2 h-4 w-4" />
-                  View All Inventory
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                  onClick={() => onViewChange?.('products')}
-                >
-                  <Package className="mr-2 h-4 w-4" />
-                  Product Lookup
-                </Button>
-              </div>
-            </Card>
-          </div>
-        </div>
+        {/* Actions moved above */}
       </PageContainer>
     </div>
   );

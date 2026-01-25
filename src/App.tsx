@@ -1,5 +1,4 @@
 import { LoadManagementView } from "@/components/Inventory/LoadManagementView";
-import { CreateLoadView } from "@/components/Inventory/CreateLoadView";
 import { CreateSessionView } from "@/components/Session/CreateSessionView";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
@@ -14,6 +13,7 @@ import { AppSidebar } from "./components/app-sidebar";
 import { getPathForView, parseRoute, isPublicRoute, type AppView } from "@/lib/routes";
 import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { ActivityLogView } from "@/components/Activity/ActivityLogView";
 
 function App() {
   const { user, loading } = useAuth();
@@ -38,7 +38,7 @@ function App() {
         'settings-displays-list',
         'settings-displays-settings',
         'loads',
-        'create-load',
+        'activity',
         'create-session',
       ].includes(legacyView)
     ) {
@@ -145,13 +145,10 @@ function App() {
             )}
             {currentView === "loads" && (
               <LoadManagementView
-                onViewChange={handleViewChange}
               />
             )}
-            {currentView === "create-load" && (
-              <CreateLoadView
-                onViewChange={handleViewChange}
-              />
+            {currentView === "activity" && (
+              <ActivityLogView />
             )}
             {currentView === "create-session" && (
               <CreateSessionView

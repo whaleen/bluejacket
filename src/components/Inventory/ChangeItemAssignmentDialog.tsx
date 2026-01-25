@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
 import type { InventoryType, LoadMetadata } from "@/types/inventory"
-import { createLoad, getAllLoads } from "@/lib/loadManager"
+import { getAllLoads } from "@/lib/loadManager"
 import { convertInventoryType } from "@/lib/inventoryConverter"
 import { useToast } from "@/components/ui/toast"
 
@@ -21,7 +21,7 @@ interface ChangeItemAssignmentDialogProps {
   onSuccess?: () => void
 }
 
-type LoadAssignment = "existing" | "new" | "none"
+type LoadAssignment = "existing" | "none"
 
 const TYPE_OPTIONS: Array<{
   value: InventoryType
@@ -60,8 +60,6 @@ export function ChangeItemAssignmentDialog({
   const [destinationType, setDestinationType] = useState<InventoryType>(currentInventoryType)
   const [loadAssignment, setLoadAssignment] = useState<LoadAssignment>("none")
   const [selectedLoadName, setSelectedLoadName] = useState("")
-  const [newLoadName, setNewLoadName] = useState("")
-  const [category, setCategory] = useState("")
   const [loadSearch, setLoadSearch] = useState("")
   const [loads, setLoads] = useState<LoadMetadata[]>([])
   const [loadingLoads, setLoadingLoads] = useState(false)
@@ -72,8 +70,6 @@ export function ChangeItemAssignmentDialog({
     if (!open) return
     setDestinationType(currentInventoryType)
     setSelectedLoadName(currentSubInventory ?? "")
-    setNewLoadName("")
-    setCategory("")
     setError(null)
     setLoadSearch("")
   }, [open, currentInventoryType, currentSubInventory])
@@ -127,12 +123,12 @@ export function ChangeItemAssignmentDialog({
     const from = currentSubInventory
       ? `${currentInventoryType} / ${currentSubInventory}`
       : `${currentInventoryType}`
-    const toLoad =
-      supportsLoads(destinationType) && loadAssignment !== "none"
-        ? loadAssignment === "existing"
-          ? selectedLoadName || "Select load"
-          : newLoadName || "New load"
+  const toLoad =
+    supportsLoads(destinationType) && loadAssignment !== "none"
+      ? loadAssignment === "existing"
+        ? selectedLoadName || "Select load"
         : "Unassigned"
+      : "Unassigned"
     const to = supportsLoads(destinationType)
       ? `${destinationType} / ${toLoad}`
       : `${destinationType}`
@@ -160,9 +156,6 @@ export function ChangeItemAssignmentDialog({
       if (loadAssignment === "existing") {
         return selectedLoadName && selectedLoadName !== (currentSubInventory ?? "")
       }
-      if (loadAssignment === "new") {
-        return Boolean(newLoadName.trim())
-      }
       return false
     })()
 
@@ -181,7 +174,6 @@ export function ChangeItemAssignmentDialog({
     if (!supportsLoads(destinationType)) return true
     if (loadAssignment === "none") return true
     if (loadAssignment === "existing") return Boolean(selectedLoadName)
-    if (loadAssignment === "new") return Boolean(newLoadName.trim())
     return false
   }, [
     hasChanges,
@@ -191,12 +183,6 @@ export function ChangeItemAssignmentDialog({
     newLoadName,
     itemIds.length,
   ])
-
-  const generateLoadName = () => {
-    const date = new Date().toISOString().slice(0, 10)
-    const suffix = String.fromCharCode(65 + Math.floor(Math.random() * 26))
-    return `LOAD-${date}-${suffix}`
-  }
 
   const handleSubmit = async () => {
     if (!canSubmit || itemIds.length === 0) return
@@ -210,25 +196,8 @@ export function ChangeItemAssignmentDialog({
       if (supportsLoads(destinationType)) {
         if (loadAssignment === "none") {
           targetLoad = ""
-        } else if (loadAssignment === "existing") {
-          targetLoad = selectedLoadName
         } else {
-          const trimmed = newLoadName.trim()
-          const { error: createError } = await createLoad(
-            destinationType,
-            trimmed,
-            undefined,
-            undefined,
-            category && category !== "none" ? category : undefined
-          )
-
-          if (createError) {
-            setError(createError.message || "Failed to create load")
-            setSaving(false)
-            return
-          }
-
-          targetLoad = trimmed
+          targetLoad = selectedLoadName
         }
       } else {
         targetLoad = ""
@@ -259,8 +228,6 @@ export function ChangeItemAssignmentDialog({
       setSaving(false)
     }
   }
-
-  const showCategory = destinationType === "ASIS" || destinationType === "FG"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -307,10 +274,6 @@ export function ChangeItemAssignmentDialog({
                   <Label htmlFor="load-existing">Assign to existing load</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="new" id="load-new" />
-                  <Label htmlFor="load-new">Create new load</Label>
-                </div>
-                <div className="flex items-center space-x-2">
                   <RadioGroupItem value="none" id="load-none" />
                   <Label htmlFor="load-none">Leave unassigned</Label>
                 </div>
@@ -344,50 +307,6 @@ export function ChangeItemAssignmentDialog({
                 </div>
               )}
 
-              {loadAssignment === "new" && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label htmlFor="new-load-name">New Load Name</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setNewLoadName(generateLoadName())}
-                    >
-                      Suggest Name
-                    </Button>
-                  </div>
-                  <Input
-                    id="new-load-name"
-                    value={newLoadName}
-                    onChange={(event) => setNewLoadName(event.target.value)}
-                    placeholder="e.g., LOAD-2026-01-09-A"
-                  />
-
-                  {showCategory && (
-                    <div className="space-y-2">
-                      <Label htmlFor="load-category">Category (Optional)</Label>
-                      <Select value={category} onValueChange={setCategory}>
-                        <SelectTrigger id="load-category">
-                          <SelectValue placeholder="Select category..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {destinationType === "ASIS" && (
-                            <>
-                              <SelectItem value="Regular">Regular</SelectItem>
-                              <SelectItem value="Salvage">Salvage</SelectItem>
-                            </>
-                          )}
-                          {destinationType === "FG" && (
-                            <SelectItem value="Back Haul">Back Haul</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import { getAllLoads, createLoad } from '@/lib/loadManager';
+import { getAllLoads } from '@/lib/loadManager';
 import supabase from '@/lib/supabase';
 import type { InventoryType, LoadMetadata } from '@/types/inventory';
 import { getActiveLocationContext } from '@/lib/tenant';
@@ -29,9 +28,8 @@ export function MoveItemsDialog({
   onSuccess,
 }: MoveItemsDialogProps) {
   const { locationId } = getActiveLocationContext();
-  const [moveType, setMoveType] = useState<'existing' | 'new' | 'remove'>('existing');
+  const [moveType, setMoveType] = useState<'existing' | 'remove'>('existing');
   const [targetLoadName, setTargetLoadName] = useState('');
-  const [newLoadName, setNewLoadName] = useState('');
   const [availableLoads, setAvailableLoads] = useState<LoadMetadata[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +39,6 @@ export function MoveItemsDialog({
       fetchLoads();
       setMoveType('existing');
       setTargetLoadName('');
-      setNewLoadName('');
       setError(null);
     }
   }, [open, inventoryType]);
@@ -65,11 +62,6 @@ export function MoveItemsDialog({
       return;
     }
 
-    if (moveType === 'new' && !newLoadName.trim()) {
-      setError('Please enter a new load name');
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
@@ -79,16 +71,6 @@ export function MoveItemsDialog({
       // Handle remove from load
       if (moveType === 'remove') {
         finalLoadName = null;
-      }
-      // Create new load if needed
-      else if (moveType === 'new') {
-        const { error: createError } = await createLoad(inventoryType, newLoadName.trim());
-        if (createError) {
-          setError(createError.message || 'Failed to create load');
-          setLoading(false);
-          return;
-        }
-        finalLoadName = newLoadName.trim();
       }
 
       // Update items' sub_inventory
@@ -117,12 +99,6 @@ export function MoveItemsDialog({
     }
   };
 
-  const generateLoadName = () => {
-    const date = new Date().toISOString().slice(0, 10);
-    const suffix = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-    return `LOAD-${date}-${suffix}`;
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -131,14 +107,10 @@ export function MoveItemsDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <RadioGroup value={moveType} onValueChange={(v) => setMoveType(v as 'existing' | 'new' | 'remove')}>
+          <RadioGroup value={moveType} onValueChange={(v) => setMoveType(v as 'existing' | 'remove')}>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="existing" id="existing" />
               <Label htmlFor="existing">Move to existing load</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="new" id="new" />
-              <Label htmlFor="new">Create new load</Label>
             </div>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="remove" id="remove" />
@@ -151,7 +123,7 @@ export function MoveItemsDialog({
               <Label htmlFor="target-load">Target Load</Label>
               {availableLoads.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No other loads available. Create a new load instead.
+                  No other loads available. Sync ASIS to pull loads from GE.
                 </p>
               ) : (
                 <Select value={targetLoadName} onValueChange={setTargetLoadName}>
@@ -167,26 +139,6 @@ export function MoveItemsDialog({
                   </SelectContent>
                 </Select>
               )}
-            </div>
-          ) : moveType === 'new' ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="new-load-name">New Load Name</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setNewLoadName(generateLoadName())}
-                >
-                  Suggest Name
-                </Button>
-              </div>
-              <Input
-                id="new-load-name"
-                value={newLoadName}
-                onChange={(e) => setNewLoadName(e.target.value)}
-                placeholder="e.g., LOAD-2026-01-09-A"
-              />
             </div>
           ) : (
             <div className="p-4 bg-muted rounded-lg text-sm">

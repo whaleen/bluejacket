@@ -53,9 +53,3 @@ agent-instructions
 migrations
 IDGAF_About_Auth_Security.md
 warehouse.sql
-
-# GE DMS Research (sensitive/large files)
-research/ge-dms/cookies.txt
-research/ge-dms/output/
-research/ge-dms/docs/ge-dms-docs/
-research/ge-dms/docs/ge-dms-filtered-docs/

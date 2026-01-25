@@ -149,6 +149,11 @@ export const InventoryItemCard = memo(function InventoryItemCard({
   className
 }: InventoryItemCardProps) {
   const productTypeLabel = item.products?.product_type ?? item.product_type;
+  const normalizedType = (productTypeLabel ?? '').toLowerCase().trim();
+  const primaryLabel =
+    normalizedType && normalizedType !== 'unknown'
+      ? productTypeLabel
+      : item.model ?? item.ge_model ?? productTypeLabel ?? 'Unknown';
   const routeDisplay = routeValue ?? item.route_id;
   const resolvedImage = imageUrl ?? item.products?.image_url ?? null;
   const availabilityStatus = item.ge_availability_status ?? item.status;
@@ -185,7 +190,7 @@ export const InventoryItemCard = memo(function InventoryItemCard({
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-semibold text-foreground">{productTypeLabel}</span>
+              <span className="font-semibold text-foreground">{primaryLabel}</span>
               {showInventoryTypeBadge && (
                 <Badge variant="secondary">{item.inventory_type}</Badge>
               )}
@@ -232,7 +237,17 @@ export const InventoryItemCard = memo(function InventoryItemCard({
                 value={item.serial ?? '-'}
                 copyValue={item.serial ?? ''}
               />
-              <CopyField label="CSO" value={item.cso} copyValue={item.cso} />
+              <CopyField
+                label="CSO"
+                value={
+                  item.cso &&
+                  !['ASIS', 'FG', 'STA', 'LOCALSTOCK', 'BACKHAUL', 'STAGED', 'INBOUND', 'WILLCALL']
+                    .includes(item.cso.toUpperCase())
+                    ? item.cso
+                    : ''
+                }
+                copyValue={item.cso ?? ''}
+              />
             </div>
           )}
 

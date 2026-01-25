@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 
@@ -6,6 +7,7 @@ interface ConfirmDialogProps {
   onOpenChange: (open: boolean) => void
   title: string
   description?: string
+  children?: ReactNode
   confirmText?: string
   cancelText?: string
   destructive?: boolean
@@ -17,6 +19,7 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
+  children,
   confirmText = "Confirm",
   cancelText = "Cancel",
   destructive = false,
@@ -34,6 +37,7 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
+        {children && <div className="space-y-2 text-sm">{children}</div>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {cancelText}
