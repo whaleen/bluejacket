@@ -78,8 +78,8 @@ export async function updateLoadMetadata(
   inventoryType: InventoryType,
   subInventoryName: string,
   updates: {
-    category?: string;
-    notes?: string;
+    category?: string | null;
+    notes?: string | null;
     friendly_name?: string | null;
     primary_color?: string | null;
     prep_tagged?: boolean;

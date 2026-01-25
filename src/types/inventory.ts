@@ -111,7 +111,7 @@ export interface LoadMetadata {
   location_id?: string;
   inventory_type: InventoryType;
   sub_inventory_name: string;
-  friendly_name?: string;
+  friendly_name?: string | null;
   // GE-sourced fields
   ge_source_status?: string;
   ge_cso_status?: string;
@@ -123,14 +123,14 @@ export interface LoadMetadata {
   ge_notes?: string;
   ge_scanned_at?: string;
   // Internal fields
-  primary_color?: string;
+  primary_color?: string | null;
   prep_tagged?: boolean;
   prep_wrapped?: boolean;
   pickup_date?: string | null;
   pickup_tba?: boolean;
   status: LoadStatus;
-  category?: string;
-  notes?: string;
+  category?: string | null;
+  notes?: string | null;
   created_at?: string;
   updated_at?: string;
   created_by?: string;

@@ -8,11 +8,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, ExternalLink, ArrowRightLeft } from 'lucide-react';
+import { Loader2, ExternalLink } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
-import { ChangeItemAssignmentDialog } from './ChangeItemAssignmentDialog';
 import { getActiveLocationContext } from '@/lib/tenant';
 
 // interface InventoryItemWithProduct extends InventoryItem {
@@ -51,7 +50,6 @@ export function InventoryItemDetailDialog({
   useState<InventoryItem | null>(null);
 
   const [loading, setLoading] = useState(true);
-  const [changeDialogOpen, setChangeDialogOpen] = useState(false);
 
   useEffect(() => {
     if (open && itemId) {
@@ -139,17 +137,6 @@ export function InventoryItemDetailDialog({
                   Color: {item.products.color}
                 </Badge>
               )}
-            </div>
-
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setChangeDialogOpen(true)}
-              >
-                <ArrowRightLeft className="mr-2 h-4 w-4" />
-                Change Type/Load
-              </Button>
             </div>
 
 {/* Inventory Details */}
@@ -376,16 +363,6 @@ export function InventoryItemDetailDialog({
         </DialogContent>
       </Dialog>
 
-      {item && (
-        <ChangeItemAssignmentDialog
-          open={changeDialogOpen}
-          onOpenChange={setChangeDialogOpen}
-          itemIds={item.id ? [item.id] : []}
-          currentInventoryType={item.inventory_type}
-          currentSubInventory={item.sub_inventory}
-          onSuccess={fetchItemDetails}
-        />
-      )}
     </>
   );
 }
