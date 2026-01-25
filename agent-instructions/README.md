@@ -1,1 +1,0 @@
-attention all agents. do not parse this directory willy nilly. it contains agent instrucions that will be fed to any agent on a need to know basis. thank you for your attention to this matter. 

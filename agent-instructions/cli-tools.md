@@ -66,6 +66,17 @@ source .env && supabase inspect db table-stats --db-url "postgresql://postgres:$
 
 **Note:** `supabase db query` does NOT support `--db-url`. Use psql instead for arbitrary queries.
 
+### Generating TypeScript types
+
+Generate TypeScript types from the database schema:
+
+```bash
+# Generate types to src/types/database.ts (uses --linked, no Docker required)
+supabase gen types typescript --linked --schema public > src/types/database.ts
+```
+
+This creates typed definitions for all tables including `Row`, `Insert`, and `Update` variants plus relationship metadata.
+
 ---
 
 ## psql (PostgreSQL client)
@@ -178,6 +189,7 @@ railway redeploy
 |------|---------|---------------|
 | Database migrations | `supabase migration new` + `supabase db push` | Creating .sql files for manual paste |
 | Check table structure | `supabase inspect db` or `supabase db query` | Asking user to check dashboard |
+| Generate TypeScript types | `supabase gen types typescript --linked` | Manually writing type definitions |
 | Deploy frontend | `netlify deploy --prod` | Asking user to trigger deploy |
 | Check service logs | `railway logs` | Asking user to check Railway dashboard |
 | Set env vars | `railway variables set` / `netlify env:set` | Asking user to set in dashboard |
