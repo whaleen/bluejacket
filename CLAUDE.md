@@ -23,13 +23,21 @@ Do not fall back to curl, REST APIs, or other workarounds. The CLIs are the inte
 
 ### Supabase CLI
 
-For database migrations, use the CLI instead of creating SQL files for manual paste:
+The Supabase CLI requires the database password for remote commands. Use the `--db-url` flag with the password from `.env`:
 
 ```bash
-supabase migration new <name>   # Create migration file
-supabase db push                # Apply migrations
-supabase migration list         # Check migration status
-supabase inspect db             # Inspect database structure
+# First source the env vars
+source .env
+
+# Then use --db-url for any remote database commands
+supabase inspect db table-stats --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
+supabase migration list --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
+supabase db push --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
+```
+
+For creating migrations (local only, no password needed):
+```bash
+supabase migration new <name>   # Creates file in supabase/migrations/
 ```
 
 ### Netlify CLI

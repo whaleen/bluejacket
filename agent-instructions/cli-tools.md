@@ -13,48 +13,56 @@ Once approved for a tool, you can use it freely for that session.
 
 ## Supabase CLI
 
-The project is linked to the Supabase project. Use the CLI for database operations.
+The Supabase CLI requires the database password for remote commands. Always use the `--db-url` flag with credentials from `.env`.
+
+### Setup
+
+First, source the environment variables:
+```bash
+source .env
+```
+
+The database URL pattern is:
+```
+postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres
+```
 
 ### Migrations (preferred workflow)
 
 Instead of creating a `.sql` file and asking the user to paste it in the Supabase dashboard:
 
 ```bash
-# Create a new migration file
+# Create a new migration file (local only, no password needed)
 supabase migration new <migration_name>
 # This creates: supabase/migrations/<timestamp>_<migration_name>.sql
 
-# Edit the migration file, then push it
-supabase db push
+# Edit the migration file, then push it (needs --db-url)
+source .env && supabase db push --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 ```
 
 ### Other useful commands
 
+All remote commands need `source .env &&` prefix and `--db-url` flag:
+
 ```bash
-# Generate migration from schema diff (if you made changes via dashboard)
-supabase db diff -f <migration_name>
-
 # List migrations and their status
-supabase migration list
-
-# Reset local database (destructive)
-supabase db reset
+source .env && supabase migration list --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 
 # Dump current schema
-supabase db dump -f schema.sql
+source .env && supabase db dump -f schema.sql --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 
-# Inspect database (tables, indexes, etc.)
-supabase inspect db
+# Generate migration from schema diff
+source .env && supabase db diff -f <migration_name> --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 ```
 
-### Checking table structure
+### Inspecting the database
 
 ```bash
-# List all tables
-supabase inspect db table-sizes
+# List all tables with sizes
+source .env && supabase inspect db table-stats --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 
-# Get table info
-supabase db query "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'your_table'"
+# Run a query
+source .env && supabase db query "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'your_table'" --db-url "postgresql://postgres.wxfdrdqchfrcdgprdznr:${SUPABASE_DB_PASSWORD}@aws-1-us-west-1.pooler.supabase.com:6543/postgres"
 ```
 
 ---
