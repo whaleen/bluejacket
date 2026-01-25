@@ -8,7 +8,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, ExternalLink } from 'lucide-react';
+import { Loader2, ExternalLink, Copy, Check } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
@@ -100,6 +100,83 @@ export function InventoryItemDetailDialog({
         })}`
       : '—';
 
+  const formatDate = (value?: string) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const copyToClipboard = async (text?: string | null) => {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      // fall back below
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const CopyButton = ({
+    value,
+    label,
+  }: {
+    value?: string | null;
+    label: string;
+  }) => {
+    const [copied, setCopied] = useState(false);
+    const disabled = !value;
+
+    useEffect(() => {
+      if (!copied) return;
+      const timeout = window.setTimeout(() => setCopied(false), 1500);
+      return () => window.clearTimeout(timeout);
+    }, [copied]);
+
+    const handleCopy = async (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (disabled) return;
+      const success = await copyToClipboard(value);
+      if (success) setCopied(true);
+    };
+
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0"
+        onClick={handleCopy}
+        disabled={disabled}
+        aria-label={`Copy ${label}`}
+      >
+        {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+      </Button>
+    );
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,36 +216,44 @@ export function InventoryItemDetailDialog({
               )}
             </div>
 
-{/* Inventory Details */}
-<Card className="p-4 space-y-3">
-              <h3 className="font-semibold">Inventory Details</h3>
+            {/* Our Stock */}
+            <Card className="p-4 space-y-3">
+              <h3 className="font-semibold">Our Stock</h3>
 
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <span className="text-muted-foreground">CSO:</span>{' '}
-                  <span className="font-mono">
-                    {item.cso.length > 4 ? (
-                      <>
-                        {item.cso.slice(0, -4)}
-                        <span className="font-bold underline decoration-dotted underline-offset-2">
-                          {item.cso.slice(-4)}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="font-bold underline decoration-dotted underline-offset-2">
-                        {item.cso}
+                {item.cso && (
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-muted-foreground">CSO:</span>{' '}
+                      <span className="font-mono">
+                        {item.cso.length > 4 ? (
+                          <>
+                            {item.cso.slice(0, -4)}
+                            <span className="font-bold underline decoration-dotted underline-offset-2">
+                              {item.cso.slice(-4)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-bold underline decoration-dotted underline-offset-2">
+                            {item.cso}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </div>
+                    </div>
+                    <CopyButton value={item.cso} label="CSO" />
+                  </div>
+                )}
 
-                <div>
-                  <span className="text-muted-foreground">
-                    Serial:
-                  </span>{' '}
-                  <span className="font-mono">
-                    {item.serial ?? '-'}
-                  </span>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-muted-foreground">
+                      Serial:
+                    </span>{' '}
+                    <span className="font-mono">
+                      {item.serial ?? '-'}
+                    </span>
+                  </div>
+                  {item.serial && <CopyButton value={item.serial} label="Serial" />}
                 </div>
 
                 {item.route_id && (
@@ -197,19 +282,17 @@ export function InventoryItemDetailDialog({
                       Added:
                     </span>{' '}
                     <span className="font-medium">
-                      {new Date(
-                        item.created_at,
-                      ).toLocaleString()}
+                      {formatDate(item.created_at)}
                     </span>
                   </div>
                 )}
               </div>
             </Card>
             
-            {/* Product Information */}
-            {item.products && (
+            {/* Model Data */}
+            {item.products ? (
               <Card className="p-4 space-y-4">
-                <h3 className="font-semibold">Product Information</h3>
+                <h3 className="font-semibold">Model Data</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Image */}
@@ -225,13 +308,16 @@ export function InventoryItemDetailDialog({
 
                   {/* Details */}
                   <div className="md:col-span-2 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">
-                        Model:
-                      </span>{' '}
-                      <span className="font-mono font-medium">
-                        {item.products.model}
-                      </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-muted-foreground">
+                          Model:
+                        </span>{' '}
+                        <span className="font-mono font-medium">
+                          {item.products.model}
+                        </span>
+                      </div>
+                      <CopyButton value={item.products.model} label="Model" />
                     </div>
 
                     {item.products.brand && (
@@ -300,7 +386,7 @@ export function InventoryItemDetailDialog({
                       <div className="col-span-2 pt-2">
                         <Button
                           variant="outline"
-                          size="sm"
+                          size="responsive"
                           asChild
                         >
                           <a
@@ -317,6 +403,13 @@ export function InventoryItemDetailDialog({
                     )}
                   </div>
                 </div>
+              </Card>
+            ) : (
+              <Card className="p-4 space-y-2">
+                <h3 className="font-semibold">Model Data</h3>
+                <p className="text-sm text-muted-foreground">
+                  No product record found for this model yet.
+                </p>
               </Card>
             )}
 

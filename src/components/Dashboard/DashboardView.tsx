@@ -659,15 +659,15 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
             {/* Quick Action Buttons */}
             {/* <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => navigateToInventory()}>
+              <Button size="responsive" onClick={() => navigateToInventory()}>
                 <ScanBarcode className="mr-2 h-4 w-4" />
                 Start Scanning
               </Button>
-              <Button size="sm" variant="outline" onClick={() => onViewChange?.('loads')}>
+              <Button size="responsive" variant="outline" onClick={() => onViewChange?.('loads')}>
                 <PackageOpen className="mr-2 h-4 w-4" />
                 Manage Loads
               </Button>
-              <Button size="sm" variant="outline" onClick={() => navigateToInventory()}>
+              <Button size="responsive" variant="outline" onClick={() => navigateToInventory()}>
                 <TruckIcon className="mr-2 h-4 w-4" />
                 View Inventory
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -800,7 +800,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               )}
             </div>
             <div className="pt-3">
-              <Button variant="ghost" size="sm" onClick={navigateToActivity}>
+              <Button variant="ghost" size="responsive" onClick={navigateToActivity}>
                 View full activity log
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -822,7 +822,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               {selectedDrilldown ? (
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="responsive"
                   onClick={() => setSelectedDrilldown(null)}
                 >
                   ← Back to {selectedChartType}
@@ -830,7 +830,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               ) : selectedChartType !== 'overview' ? (
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="responsive"
                   onClick={() => setSelectedChartType('overview')}
                 >
                   ← Back to Overview
@@ -928,7 +928,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 </div>
               </div>
 
-              <Button size="sm" variant="outline" className="w-full" onClick={() => navigateToInventory('LocalStock')}>
+              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('LocalStock')}>
                 View Local Stock
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -963,7 +963,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 </div>
               </div>
 
-              <Button size="sm" variant="outline" className="w-full" onClick={() => navigateToInventory('FG')}>
+              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('FG')}>
                 View FG
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -1006,7 +1006,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 </div>
               </div>
 
-              <Button size="sm" variant="outline" className="w-full" onClick={() => navigateToInventory('ASIS')}>
+              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('ASIS')}>
                 View ASIS
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>

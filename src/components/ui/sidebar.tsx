@@ -264,14 +264,14 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("size-7", className)}
+      className={cn("size-10 sm:size-7", className)}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
       }}
       {...props}
     >
-      <PanelLeftIcon />
+      <PanelLeftIcon className="size-5 sm:size-4" />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   )
@@ -483,6 +483,7 @@ const sidebarMenuButtonVariants = cva(
       size: {
         default: "h-8 text-sm",
         sm: "h-7 text-xs",
+        responsive: "h-10 text-sm sm:h-8",
         lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
       },
     },

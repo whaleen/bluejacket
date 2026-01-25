@@ -338,7 +338,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
               </p>
             </div>
             {session.status !== 'closed' && (
-              <Button variant="outline" size="sm" onClick={() => setManualDialogOpen(true)}>
+              <Button variant="outline" size="responsive" onClick={() => setManualDialogOpen(true)}>
                 <ListPlus className="h-4 w-4 mr-1" />
                 Manual Mark
               </Button>
@@ -545,10 +545,10 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Button size="sm" variant="outline" onClick={manualSelectAll}>
+              <Button size="responsive" variant="outline" onClick={manualSelectAll}>
                 Select All
               </Button>
-              <Button size="sm" variant="outline" onClick={manualClearAll}>
+              <Button size="responsive" variant="outline" onClick={manualClearAll}>
                 Clear
               </Button>
               <span className="ml-auto">

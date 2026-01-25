@@ -47,7 +47,9 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingThresholdId, setEditingThresholdId] = useState<string | null>(null);
   const [thresholdValue, setThresholdValue] = useState<string>('');
-  const { view, setView, isImageView } = usePartsListView();
+  const { view, setView } = usePartsListView();
+  const effectiveView = view === 'table' ? 'compact' : view;
+  const isImageView = effectiveView === 'images';
 
   const fetchParts = useCallback(async () => {
     setLoading(true);
@@ -364,11 +366,11 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <PartsListViewToggle view={view} onChange={setView} />
+        <PartsListViewToggle view={effectiveView} onChange={setView} />
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
+            size="responsive"
             onClick={handleSnapshotAll}
             disabled={snapshotting || parts.length === 0}
           >
@@ -472,7 +474,7 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
               ) : (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="responsive"
                   onClick={() => handleStartEdit(part)}
                   className="w-20 font-mono text-lg"
                 >
@@ -485,7 +487,7 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
               {needsReorder(part) && (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="responsive"
                   onClick={() => handleMarkReordered(part)}
                   disabled={markingId === part.id}
                   title="Mark as reordered"

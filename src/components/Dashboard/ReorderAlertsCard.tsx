@@ -90,7 +90,7 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
             )}
           </div>
           {onViewParts && (
-            <Button variant="ghost" size="sm" onClick={onViewParts}>
+            <Button variant="ghost" size="responsive" onClick={onViewParts}>
               View All
               <ArrowRight className="ml-1 h-4 w-4" />
             </Button>
@@ -145,7 +145,7 @@ export function ReorderAlertsCard({ onViewParts }: ReorderAlertsCardProps) {
                   )}
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="responsive"
                     onClick={() => handleMarkReordered(alert)}
                     disabled={markingId === alert.tracked_part_id}
                     className="ml-1"

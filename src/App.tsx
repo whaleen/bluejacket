@@ -14,9 +14,13 @@ import { getPathForView, parseRoute, isPublicRoute, type AppView } from "@/lib/r
 import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ActivityLogView } from "@/components/Activity/ActivityLogView";
+import { useUiHandedness } from "@/hooks/useUiHandedness";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 function App() {
   const { user, loading } = useAuth();
+  const uiHandedness = useUiHandedness();
+  const isMobile = useIsMobile();
 
   const getRouteFromLocation = useCallback(() => {
     const route = parseRoute(window.location.pathname);
@@ -124,8 +128,14 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <SidebarProvider>
-        <AppSidebar currentView={currentView} onViewChange={navigate} />
+      <SidebarProvider
+        className={isMobile && uiHandedness === "right" ? "flex-row-reverse" : undefined}
+      >
+        <AppSidebar
+          currentView={currentView}
+          onViewChange={navigate}
+          side={isMobile && uiHandedness === "right" ? "right" : "left"}
+        />
         <SidebarInset className="bg-muted/40">
           <div className="flex min-h-screen flex-col min-w-0">
             {currentView === "dashboard" && (

@@ -204,7 +204,7 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
                 </Label>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="responsive"
                   onClick={handleCreateNew}
                 >
                   <Plus className="h-4 w-4 mr-2" />

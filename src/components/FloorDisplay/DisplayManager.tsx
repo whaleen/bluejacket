@@ -297,7 +297,7 @@ export function DisplayManager({ section = 'all' }: DisplayManagerProps) {
             <h2 className="text-xl font-semibold text-foreground">Displays</h2>
             <p className="text-sm text-muted-foreground">All paired displays for this location.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchDisplays}>
+          <Button variant="outline" size="responsive" onClick={fetchDisplays}>
             Refresh
           </Button>
         </div>
@@ -336,7 +336,7 @@ export function DisplayManager({ section = 'all' }: DisplayManagerProps) {
                     <div className="flex items-center gap-2">
                       {showSettings && (
                         <Button
-                          size="sm"
+                          size="responsive"
                           variant={isSelected ? 'secondary' : 'outline'}
                           onClick={() => setSelectedDisplayId(display.id)}
                         >
@@ -344,7 +344,7 @@ export function DisplayManager({ section = 'all' }: DisplayManagerProps) {
                         </Button>
                       )}
                       <Button
-                        size="sm"
+                        size="responsive"
                         variant="destructive"
                         onClick={() => handleDelete(display.id)}
                         disabled={deletingId === display.id}
@@ -404,7 +404,7 @@ export function DisplayManager({ section = 'all' }: DisplayManagerProps) {
                   }
                 />
                 <Button
-                  size="sm"
+                  size="responsive"
                   onClick={() => handleSaveName(selectedDisplay.id)}
                   disabled={
                     savingId === selectedDisplay.id ||
@@ -504,7 +504,7 @@ export function DisplayManager({ section = 'all' }: DisplayManagerProps) {
 
               <div className="flex justify-end">
                 <Button
-                  size="sm"
+                  size="responsive"
                   onClick={() => handleSaveLoadBoard(selectedDisplay.id)}
                   disabled={savingLoadBoardId === selectedDisplay.id}
                 >

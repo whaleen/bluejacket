@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export type PartsListView = 'compact' | 'images';
+export type PartsListView = 'compact' | 'images' | 'table';
 
 const STORAGE_KEY = 'parts_list_view';
 
@@ -10,7 +10,7 @@ export function usePartsListView() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === 'compact' || stored === 'images') {
+    if (stored === 'compact' || stored === 'images' || stored === 'table') {
       setViewState(stored);
     }
   }, []);

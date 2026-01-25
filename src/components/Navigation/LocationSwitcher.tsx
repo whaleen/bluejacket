@@ -35,7 +35,8 @@ interface LocationSwitcherProps {
 
 export function LocationSwitcher({ onManageLocations }: LocationSwitcherProps) {
   const tenantLogoUrl = "/blue-jacket.png"
-  const { isMobile } = useSidebar()
+  const { isMobile, state } = useSidebar()
+  const isCollapsed = state === "collapsed" && !isMobile
   const [locations, setLocations] = useState<LocationOption[]>([])
   const [activeLocation, setActiveLocation] = useState<LocationOption | null>(null)
   const [loading, setLoading] = useState(true)
@@ -99,14 +100,16 @@ export function LocationSwitcher({ onManageLocations }: LocationSwitcherProps) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" disabled>
+          <SidebarMenuButton size="lg" disabled className={isCollapsed ? "justify-center" : undefined}>
             <div className="bg-sidebar-primary/10 flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
               <img src={tenantLogoUrl} alt="Tenant logo" className="h-full w-full object-cover" />
             </div>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">Loading locations…</span>
-              <span className="truncate text-xs text-muted-foreground">Please wait</span>
-            </div>
+            {!isCollapsed && (
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">Loading locations…</span>
+                <span className="truncate text-xs text-muted-foreground">Please wait</span>
+              </div>
+            )}
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -117,14 +120,16 @@ export function LocationSwitcher({ onManageLocations }: LocationSwitcherProps) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton size="lg" disabled>
+          <SidebarMenuButton size="lg" disabled className={isCollapsed ? "justify-center" : undefined}>
             <div className="bg-sidebar-primary/10 flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
               <img src={tenantLogoUrl} alt="Tenant logo" className="h-full w-full object-cover" />
             </div>
-            <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">No locations</span>
-              <span className="truncate text-xs text-muted-foreground">Add one in settings</span>
-            </div>
+            {!isCollapsed && (
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">No locations</span>
+                <span className="truncate text-xs text-muted-foreground">Add one in settings</span>
+              </div>
+            )}
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -147,11 +152,15 @@ export function LocationSwitcher({ onManageLocations }: LocationSwitcherProps) {
               <div className="bg-sidebar-primary/10 flex aspect-square size-8 items-center justify-center rounded-lg overflow-hidden">
                 <img src={tenantLogoUrl} alt="Tenant logo" className="h-full w-full object-cover" />
               </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{activeLocation.name}</span>
-                <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4" />
+              {!isCollapsed && (
+                <>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">{activeLocation.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4" />
+                </>
+              )}
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent

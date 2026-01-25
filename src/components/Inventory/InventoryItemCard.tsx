@@ -14,6 +14,7 @@ interface InventoryItemCardProps<T extends InventoryItem = InventoryItem> {
   showImage?: boolean;
   imageUrl?: string | null;
   imageAlt?: string;
+  imageSize?: "sm" | "md" | "lg" | "xl";
   showInventoryTypeBadge?: boolean;
   showScannedBadge?: boolean;
   showRouteBadge?: boolean;
@@ -134,6 +135,7 @@ export const InventoryItemCard = memo(function InventoryItemCard({
   showImage = false,
   imageUrl,
   imageAlt,
+  imageSize = "sm",
   showInventoryTypeBadge = true,
   showScannedBadge = false,
   showRouteBadge = true,
@@ -150,14 +152,28 @@ export const InventoryItemCard = memo(function InventoryItemCard({
 }: InventoryItemCardProps) {
   const productTypeLabel = item.products?.product_type ?? item.product_type;
   const normalizedType = (productTypeLabel ?? '').toLowerCase().trim();
-  const primaryLabel =
-    normalizedType && normalizedType !== 'unknown'
+  const primaryTitle =
+    item.model ??
+    item.products?.model ??
+    item.ge_model ??
+    (normalizedType && normalizedType !== 'unknown' ? productTypeLabel : undefined) ??
+    'Unknown';
+  const subtitle =
+    normalizedType && normalizedType !== 'unknown' && productTypeLabel !== primaryTitle
       ? productTypeLabel
-      : item.model ?? item.ge_model ?? productTypeLabel ?? 'Unknown';
+      : null;
   const routeDisplay = routeValue ?? item.route_id;
   const resolvedImage = imageUrl ?? item.products?.image_url ?? null;
   const availabilityStatus = item.ge_availability_status ?? item.status;
   const isGeOrphaned = Boolean(item.ge_orphaned);
+  const imageSizeClass =
+    imageSize === "xl"
+      ? "h-32 w-32"
+      : imageSize === "lg"
+      ? "h-24 w-24"
+      : imageSize === "md"
+      ? "h-16 w-16"
+      : "h-12 w-12";
 
   return (
     <Card
@@ -174,11 +190,16 @@ export const InventoryItemCard = memo(function InventoryItemCard({
       <div className="flex gap-3">
         {leading && <div className="mt-1">{leading}</div>}
         {showImage && (
-          <div className="h-12 w-12 rounded bg-muted flex items-center justify-center overflow-hidden shrink-0">
+          <div
+            className={cn(
+              "rounded bg-muted flex items-center justify-center overflow-hidden shrink-0",
+              imageSizeClass
+            )}
+          >
             {resolvedImage ? (
               <img
                 src={resolvedImage}
-                alt={imageAlt ?? item.model}
+                alt={imageAlt ?? primaryTitle}
                 className="h-full w-full object-contain"
                 loading="lazy"
               />
@@ -190,7 +211,12 @@ export const InventoryItemCard = memo(function InventoryItemCard({
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="font-semibold text-foreground">{primaryLabel}</span>
+              <div className="min-w-0">
+                <span className="block font-semibold text-foreground">{primaryTitle}</span>
+                {subtitle && (
+                  <span className="block text-xs text-muted-foreground">{subtitle}</span>
+                )}
+              </div>
               {showInventoryTypeBadge && (
                 <Badge variant="secondary">{item.inventory_type}</Badge>
               )}

@@ -68,10 +68,10 @@ export function ItemSelectionDialog({
         <div className="space-y-4 py-4">
           {/* Select All / Clear All */}
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={selectAll}>
+            <Button size="responsive" variant="outline" onClick={selectAll}>
               Select All
             </Button>
-            <Button size="sm" variant="outline" onClick={clearAll}>
+            <Button size="responsive" variant="outline" onClick={clearAll}>
               Clear All
             </Button>
             <div className="ml-auto text-sm text-gray-600">

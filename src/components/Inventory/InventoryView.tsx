@@ -11,19 +11,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ProductDetailDialog } from '@/components/Products/ProductDetailDialog';
 import { InventoryItemDetailDialog } from './InventoryItemDetailDialog';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { Loader2, Search, X, FileText, PackageSearch, Download, Trash2, Upload } from 'lucide-react';
+import { InventoryDataTable } from './InventoryDataTable';
+import { useUiHandedness } from '@/hooks/useUiHandedness';
+import {
+  Loader2,
+  Search,
+  X,
+  Eye,
+  Download,
+  Trash2,
+  Upload,
+  SlidersHorizontal,
+  MoreHorizontal,
+  ArrowUpDown,
+} from 'lucide-react';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/toast';
+import { ButtonGroup } from '@/components/ui/button-group';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { fetchAsisXlsRows } from '@/lib/asisImport';
+import { cn } from '@/lib/utils';
 
 type InventoryItemWithProduct = InventoryItem & {
   products: {
@@ -192,6 +213,116 @@ const chunkArray = <T,>(items: T[], size: number) => {
   return chunks;
 };
 
+const buildInventorySelect = (filters: InventoryFilters) => {
+  const productJoin =
+    filters.brand !== 'all' || filters.productCategory !== 'all'
+      ? 'product_fk!inner'
+      : 'product_fk';
+
+  return `
+    id,
+    qty,
+    cso,
+    serial,
+    model,
+    product_type,
+    inventory_type,
+    sub_inventory,
+    route_id,
+    is_scanned,
+    consumer_customer_name,
+    created_at,
+    ge_model,
+    ge_serial,
+    ge_inv_qty,
+    ge_availability_status,
+    ge_availability_message,
+    ge_ordc,
+    ge_orphaned,
+    products:${productJoin} (
+      id,
+      model,
+      product_type,
+      brand,
+      description,
+      image_url,
+      product_url,
+      product_category
+    )
+  `;
+};
+
+const enrichItemsWithProductImages = async (
+  items: InventoryItemWithProduct[]
+): Promise<InventoryItemWithProduct[]> => {
+  const modelSet = new Set<string>();
+  for (const item of items) {
+    const model = item.products?.model ?? item.model;
+    if (!model) continue;
+    if (!item.products?.image_url) {
+      modelSet.add(model);
+    }
+  }
+  const modelsToFetch = Array.from(modelSet);
+
+  if (modelsToFetch.length === 0) {
+    return items;
+  }
+
+  try {
+    const productRows: InventoryItemWithProduct['products'][] = [];
+    const chunks = chunkArray(modelsToFetch, 200);
+
+    for (const chunk of chunks) {
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, model, product_type, brand, description, image_url, product_url, product_category')
+        .in('model', chunk);
+
+      if (error) throw error;
+      if (data) {
+        productRows.push(...data);
+      }
+    }
+
+    if (productRows.length === 0) return items;
+
+    const productByModel = new Map<string, InventoryItemWithProduct['products']>();
+    for (const product of productRows) {
+      if (product?.model) {
+        productByModel.set(product.model, product);
+      }
+    }
+
+    return items.map((item) => {
+      if (item.products?.image_url) return item;
+      const model = item.products?.model ?? item.model;
+      if (!model) return item;
+      const product = productByModel.get(model);
+      if (!product) return item;
+
+      if (item.products) {
+        return {
+          ...item,
+          products: {
+            ...item.products,
+            image_url: item.products.image_url ?? product.image_url,
+            brand: item.products.brand ?? product.brand,
+            description: item.products.description ?? product.description,
+            product_category: item.products.product_category ?? product.product_category,
+            product_url: item.products.product_url ?? product.product_url,
+          },
+        };
+      }
+
+      return { ...item, products: product };
+    });
+  } catch (err) {
+    console.error('Failed to fetch product images:', err);
+    return items;
+  }
+};
+
 interface InventoryViewProps {
   onMenuClick?: () => void;
 }
@@ -247,6 +378,10 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'appliance' | 'accessory'>('all');
   const [brandFilter, setBrandFilter] = useState('all');
   const [sortOption, setSortOption] = useState<InventorySort>(getInitialSort);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const uiHandedness = useUiHandedness();
+  const isMobile = useIsMobile();
+  const alignRight = isMobile && uiHandedness === 'right';
   const [subInventoryOptions, setSubInventoryOptions] = useState<Array<{
     value: string;
     label: string;
@@ -257,21 +392,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const [brandOptions, setBrandOptions] = useState<string[]>([]);
 
   // State
-  const [productDetailOpen, setProductDetailOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('');
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState('');
-  const { view, setView, isImageView } = usePartsListView();
-
-  // GE sync stats (for ASIS)
-  const [geSyncStats, setGeSyncStats] = useState<{
-    totalItems: number;
-    itemsInLoads: number;
-    unassignedItems: number;
-    forSaleLoads: number;
-    pickedLoads: number;
-  } | null>(null);
-  const [loadingGEStats, setLoadingGEStats] = useState(false);
+  const { view, setView } = usePartsListView();
+  const isImageView = view === 'images';
+  const isTableView = view === 'table';
 
   const resolveInventoryTypes = useCallback((type: InventoryTypeFilter) => {
     if (type === 'FG') {
@@ -498,11 +623,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     fetchSubInventories();
   }, [inventoryTypeFilter, resolveInventoryTypes, locationId]);
 
-  const handleViewProduct = (model: string) => {
-    setSelectedModel(model);
-    setProductDetailOpen(true);
-  };
-
   const handleViewItem = (itemId: string) => {
     setSelectedItemId(itemId);
     setItemDetailOpen(true);
@@ -544,39 +664,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       while (true) {
         let query = supabase
           .from('inventory_items')
-          .select(
-            `
-            id,
-            qty,
-            cso,
-            serial,
-            model,
-            product_type,
-            inventory_type,
-            sub_inventory,
-            route_id,
-            is_scanned,
-            consumer_customer_name,
-            created_at,
-            ge_model,
-            ge_serial,
-            ge_inv_qty,
-            ge_availability_status,
-            ge_availability_message,
-            ge_ordc,
-            ge_orphaned,
-            products:product_fk (
-              id,
-              model,
-              product_type,
-              brand,
-              description,
-              image_url,
-              product_url,
-              product_category
-            )
-          `
-          )
+          .select(buildInventorySelect(exportFilters))
           .eq('location_id', locationId)
           .range(from, from + EXPORT_BATCH_SIZE - 1);
 
@@ -674,38 +762,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
 
       let query = supabase
         .from('inventory_items')
-        .select(
-          `
-          id,
-          qty,
-          cso,
-          serial,
-          model,
-          product_type,
-          inventory_type,
-          sub_inventory,
-          route_id,
-          is_scanned,
-          consumer_customer_name,
-          ge_model,
-          ge_serial,
-          ge_inv_qty,
-          ge_availability_status,
-          ge_availability_message,
-          ge_ordc,
-          ge_orphaned,
-          products:product_fk (
-            id,
-            model,
-            product_type,
-            brand,
-            description,
-            image_url,
-            product_category
-          )
-        `,
-          { count: 'exact' }
-        )
+        .select(buildInventorySelect(filters), { count: 'exact' })
         .eq('location_id', locationId)
         .range(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE - 1);
 
@@ -718,7 +775,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       if (error) throw error;
 
       const nextItems = (data ?? []).map(normalizeInventoryItem);
-      setItems(prev => (append ? [...prev, ...nextItems] : nextItems));
+      const hydratedItems = await enrichItemsWithProductImages(nextItems);
+
+      if (requestId !== requestIdRef.current) return;
+
+      setItems(prev => (append ? [...prev, ...hydratedItems] : hydratedItems));
       setPage(pageIndex);
       if (typeof count === 'number') {
         setTotalCount(count);
@@ -1039,87 +1100,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     fetchInventoryPage(page + 1, { append: true });
   }, [fetchInventoryPage, hasMore, loading, loadingMore, page]);
 
-  const fetchGeStats = useCallback(async () => {
-    const [{ count: totalItems }, { count: itemsInLoads }, { count: unassignedItems }] = await Promise.all([
-      supabase
-        .from('inventory_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS'),
-      supabase
-        .from('inventory_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS')
-        .not('sub_inventory', 'is', null),
-      supabase
-        .from('inventory_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS')
-        .is('sub_inventory', null),
-    ]);
-
-    const [{ count: forSaleLoads }, { count: pickedLoads }] = await Promise.all([
-      supabase
-        .from('load_metadata')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS')
-        .ilike('ge_source_status', 'for sale'),
-      supabase
-        .from('load_metadata')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS')
-        .ilike('ge_source_status', 'sold')
-        .ilike('ge_cso_status', 'picked'),
-    ]);
-
-    return {
-      totalItems: totalItems ?? 0,
-      itemsInLoads: itemsInLoads ?? 0,
-      unassignedItems: unassignedItems ?? 0,
-      forSaleLoads: forSaleLoads ?? 0,
-      pickedLoads: pickedLoads ?? 0,
-    };
-  }, [locationId]);
-
   useEffect(() => {
     setSubInventoryFilter('all');
-  }, [inventoryTypeFilter, fetchGeStats]);
-
-  // Fetch GE sync stats when ASIS filter is active
-  useEffect(() => {
-    if (inventoryTypeFilter !== 'ASIS') {
-      setGeSyncStats(null);
-      return;
-    }
-
-    let cancelled = false;
-    setLoadingGEStats(true);
-
-    fetchGeStats()
-      .then((stats) => {
-        if (!cancelled) {
-          setGeSyncStats(stats);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch GE sync stats:', err);
-        if (!cancelled) {
-          setGeSyncStats(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingGEStats(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, [inventoryTypeFilter]);
 
   useEffect(() => {
@@ -1200,6 +1182,17 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   };
 
   const selectedImportSource = resolveProductImportSource(inventoryTypeFilter);
+  const handleNukeClick = () => {
+    if (!selectedImportSource) {
+      toast({
+        variant: 'error',
+        title: 'Missing source',
+        message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+      });
+      return;
+    }
+    setNukeDialogOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -1214,18 +1207,43 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               placeholder="Search CSO, Serial, Model…"
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              className="pl-10"
+              size="responsive"
+              className="pl-10 sm:pl-10"
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div
+            className={cn(
+              'flex items-center sm:hidden',
+              alignRight ? 'justify-end' : 'justify-start'
+            )}
+          >
+            <Button
+              type="button"
+              size="responsive"
+              variant="outline"
+              onClick={() => setFiltersOpen((prev) => !prev)}
+              className="gap-2"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {filtersOpen ? 'Hide filters' : 'Show filters'}
+            </Button>
+          </div>
+
+          <div
+            className={cn(
+              'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4',
+              filtersOpen ? 'grid' : 'hidden',
+              'sm:grid'
+            )}
+          >
             <Select
               value={inventoryTypeFilter}
               onValueChange={v =>
                 setInventoryTypeFilter(v as InventoryTypeFilter)
               }
             >
-            <SelectTrigger className="w-full">
+            <SelectTrigger size="responsive" className="w-full">
               <SelectValue />
             </SelectTrigger>
               <SelectContent>
@@ -1242,7 +1260,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
                 setProductCategoryFilter(v as 'all' | 'appliance' | 'accessory')
               }
             >
-            <SelectTrigger className="w-full">
+            <SelectTrigger size="responsive" className="w-full">
               <SelectValue />
             </SelectTrigger>
               <SelectContent>
@@ -1256,7 +1274,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               value={brandFilter}
               onValueChange={setBrandFilter}
             >
-            <SelectTrigger className="w-full">
+            <SelectTrigger size="responsive" className="w-full">
               <SelectValue />
             </SelectTrigger>
               <SelectContent>
@@ -1269,67 +1287,63 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={sortOption} onValueChange={v => setSortOption(v as InventorySort)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="model-asc">Model A → Z</SelectItem>
-                <SelectItem value="model-desc">Model Z → A</SelectItem>
-                <SelectItem value="created-desc">Newest first</SelectItem>
-                <SelectItem value="created-asc">Oldest first</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           {subInventoryOptions.length > 0 && (
-            <Select
-              value={subInventoryFilter}
-              onValueChange={setSubInventoryFilter}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Sub-Inventories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sub-Inventories</SelectItem>
-                {subInventoryOptions.map(option => {
-                  const friendly = option.friendlyName?.trim() || 'Unnamed';
-                  const csoOrLoad = option.cso?.trim() || option.value;
-                  return (
-                    <SelectItem key={option.value} value={option.value} textValue={option.label}>
-                      <div className="flex items-center gap-2">
-                        {option.color && (
-                          <span
-                            className="h-3 w-3 rounded-sm border border-border/60"
-                            style={{ backgroundColor: option.color }}
-                            aria-hidden="true"
-                          />
-                        )}
-                        {inventoryTypeFilter === 'ASIS' ? (
-                          <>
-                            <span className="font-medium">{friendly}</span>
-                            <span className="text-muted-foreground">| {csoOrLoad}</span>
-                          </>
-                        ) : (
-                          <span>{option.value}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            <div className={cn(filtersOpen ? 'block' : 'hidden', 'sm:block')}>
+              <Select
+                value={subInventoryFilter}
+                onValueChange={setSubInventoryFilter}
+              >
+                <SelectTrigger size="responsive" className="w-full">
+                  <SelectValue placeholder="All Sub-Inventories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sub-Inventories</SelectItem>
+                  {subInventoryOptions.map(option => {
+                    const friendly = option.friendlyName?.trim() || 'Unnamed';
+                    const csoOrLoad = option.cso?.trim() || option.value;
+                    return (
+                      <SelectItem key={option.value} value={option.value} textValue={option.label}>
+                        <div className="flex items-center gap-2">
+                          {option.color && (
+                            <span
+                              className="h-3 w-3 rounded-sm border border-border/60"
+                              style={{ backgroundColor: option.color }}
+                              aria-hidden="true"
+                            />
+                          )}
+                          {inventoryTypeFilter === 'ASIS' ? (
+                            <>
+                              <span className="font-medium">{friendly}</span>
+                              <span className="text-muted-foreground">| {csoOrLoad}</span>
+                            </>
+                          ) : (
+                            <span>{option.value}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
           )}
 
           {/* Filter chips and count */}
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-2 text-sm',
+              alignRight ? 'justify-end' : 'justify-start'
+            )}
+          >
             <span className="text-muted-foreground">
               {totalCount > 0 ? `${items.length} of ${totalCount} items` : `${items.length} items`}
             </span>
             {activeFilters.map((filter) => (
               <Button
                 key={filter.key}
-                size="sm"
+                size="responsive"
                 variant="outline"
                 className="h-7 px-2"
                 onClick={filter.clear}
@@ -1339,40 +1353,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               </Button>
             ))}
             {activeFilters.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={clearAllFilters}>
+              <Button size="responsive" variant="ghost" onClick={clearAllFilters}>
                 Clear all
               </Button>
             )}
           </div>
-
-          {/* GE Sync Stats (ASIS only) */}
-          {inventoryTypeFilter === 'ASIS' && (
-            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-              {loadingGEStats ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading GE data...
-                </div>
-              ) : geSyncStats ? (
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <span className="font-medium">GE Status:</span>
-                  <span>{geSyncStats.totalItems} total</span>
-                  <span className="text-muted-foreground">·</span>
-                  <span>{geSyncStats.itemsInLoads} in loads</span>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="font-medium text-amber-600 dark:text-amber-400">
-                    {geSyncStats.unassignedItems} not in any load
-                  </span>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({geSyncStats.forSaleLoads} FOR SALE, {geSyncStats.pickedLoads} Picked)
-                  </span>
-                </div>
-              ) : (
-                <span className="text-muted-foreground">Unable to load GE stats</span>
-              )}
-            </div>
-          )}
 
           {(exporting || exportError) && (
             <div className="text-xs">
@@ -1388,50 +1373,64 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             </div>
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <PartsListViewToggle view={view} onChange={setView} />
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleImportProducts}
-                disabled={importingProducts}
-              >
-                {importingProducts ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                Import products
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setExportDialogOpen(true)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => {
-                  if (!selectedImportSource) {
-                    toast({
-                      variant: 'error',
-                      title: 'Missing source',
-                      message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
-                    });
-                    return;
-                  }
-                  setNukeDialogOpen(true);
-                }}
-                disabled={nuking}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Nuke products
-              </Button>
-            </div>
+          <div
+            className={cn(
+              'flex w-full items-center gap-2',
+              alignRight ? 'justify-end' : 'justify-start',
+              'sticky top-14 z-10 bg-background/95 backdrop-blur py-2'
+            )}
+          >
+            <ButtonGroup className="w-fit">
+              <PartsListViewToggle
+                view={view}
+                onChange={setView}
+                showTable
+                variant="dropdown"
+                triggerSize="responsive"
+              />
+              <Select value={sortOption} onValueChange={v => setSortOption(v as InventorySort)}>
+                <SelectTrigger size="responsive">
+                  <span className="flex items-center gap-2">
+                    <ArrowUpDown className="h-4 w-4" />
+                    <span className="hidden sm:inline">Sort</span>
+                    <span className="hidden md:inline text-muted-foreground">·</span>
+                    <SelectValue className="hidden md:inline text-muted-foreground" />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="model-asc">Model A → Z</SelectItem>
+                  <SelectItem value="model-desc">Model Z → A</SelectItem>
+                  <SelectItem value="created-desc">Newest first</SelectItem>
+                  <SelectItem value="created-asc">Oldest first</SelectItem>
+                </SelectContent>
+              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="responsive"
+                    variant="outline"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="sr-only">Actions</span>
+                    <span className="hidden sm:inline">Actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleImportProducts} disabled={importingProducts}>
+                    <Upload className="h-4 w-4" />
+                    Import products
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={handleNukeClick} disabled={nuking}>
+                    <Trash2 className="h-4 w-4" />
+                    Nuke products
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
           </div>
         </PageContainer>
       </div>
@@ -1455,53 +1454,43 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             </div>
           )}
 
-          {items.map(item => (
-            <InventoryItemCard
-              key={item.id as string}
-              item={item}
-              onClick={() => handleViewItem(item.id as string)}
-              actions={
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleViewItem(item.id as string);
-                    }}
-                  >
-                    <FileText className="mr-1 h-3 w-3" />
-                    <span>Item</span>
-                    <span className="hidden sm:inline">&nbsp;details</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (item.products?.model || item.model) {
-                        handleViewProduct(item.products?.model ?? item.model);
-                      }
-                    }}
-                    disabled={!item.products?.model && !item.model}
-                  >
-                    <PackageSearch className="mr-1 h-3 w-3" />
-                    <span>Product</span>
-                    <span className="hidden sm:inline">&nbsp;details</span>
-                  </Button>
-                </>
-              }
-              showImage={isImageView}
-              showInventoryTypeBadge
-              showScannedBadge
-              showProductMeta
-              showRouteBadge
+          {isTableView ? (
+            <InventoryDataTable
+              items={items}
+              onViewItem={handleViewItem}
             />
-          ))}
+          ) : (
+            items.map(item => (
+              <InventoryItemCard
+                key={item.id as string}
+                item={item}
+                onClick={() => handleViewItem(item.id as string)}
+                actions={
+                  <>
+                    <Button
+                      type="button"
+                      size="responsive"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleViewItem(item.id as string);
+                      }}
+                    >
+                      <Eye className="mr-1 h-3 w-3 sm:mr-1" />
+                      <span className="hidden sm:inline">View</span>
+                    </Button>
+                  </>
+                }
+                showImage={isImageView}
+                imageSize={isImageView ? "xl" : "sm"}
+                showInventoryTypeBadge
+                showScannedBadge
+                showProductMeta
+                showRouteBadge
+              />
+            ))
+          )}
 
           {loadingMore && (
             <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
@@ -1516,12 +1505,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
             </div>
           )}
         </PageContainer>
-
-      <ProductDetailDialog
-        open={productDetailOpen}
-        onOpenChange={setProductDetailOpen}
-        modelNumber={selectedModel}
-      />
 
       <InventoryItemDetailDialog
         open={itemDetailOpen}
@@ -1552,7 +1535,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{exportColumnKeys.size} columns selected</span>
                 <Button
-                  size="sm"
+                  size="responsive"
                   variant="ghost"
                   type="button"
                   onClick={() => setExportColumnKeys(new Set(exportColumns.map(column => column.key)))}
@@ -1561,7 +1544,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
                   Select all
                 </Button>
                 <Button
-                  size="sm"
+                  size="responsive"
                   variant="ghost"
                   type="button"
                   onClick={() => setExportColumnKeys(new Set())}

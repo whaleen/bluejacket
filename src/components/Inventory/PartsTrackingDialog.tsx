@@ -36,7 +36,9 @@ export function PartsTrackingDialog({
   const [defaultThreshold, setDefaultThreshold] = useState(5);
   const [adding, setAdding] = useState(false);
   const [trackedMatches, setTrackedMatches] = useState<Product[]>([]);
-  const { view, setView, isImageView } = usePartsListView();
+  const { view, setView } = usePartsListView();
+  const effectiveView = view === 'table' ? 'compact' : view;
+  const isImageView = effectiveView === 'images';
 
   useEffect(() => {
     if (open) {
@@ -161,7 +163,7 @@ export function PartsTrackingDialog({
               />
             </div>
             <div className="ml-auto">
-              <PartsListViewToggle view={view} onChange={setView} />
+              <PartsListViewToggle view={effectiveView} onChange={setView} />
             </div>
           </div>
 

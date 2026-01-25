@@ -67,7 +67,7 @@ export function AvatarUploader() {
         onChange={handleFileChange}
       />
       <Button
-        size="sm"
+        size="responsive"
         disabled={uploading}
         onClick={() => document.getElementById("avatar-upload")?.click()}
       >

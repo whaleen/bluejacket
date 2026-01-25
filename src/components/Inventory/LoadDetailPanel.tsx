@@ -796,7 +796,7 @@ export function LoadDetailPanel({
             </div>
             <Button
               type="button"
-              size="sm"
+              size="responsive"
               variant="outline"
               onClick={handleSaveMeta}
               disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
@@ -893,7 +893,7 @@ export function LoadDetailPanel({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            size="sm"
+            size="responsive"
             variant="outline"
             onClick={handlePrintTags}
           >
@@ -902,7 +902,7 @@ export function LoadDetailPanel({
           </Button>
           <Button
             type="button"
-            size="sm"
+            size="responsive"
             variant="destructive"
             onClick={() => onDelete?.(load)}
           >

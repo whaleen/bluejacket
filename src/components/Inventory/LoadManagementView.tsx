@@ -10,7 +10,7 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import supabase from '@/lib/supabase';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { useAuth } from '@/context/AuthContext';
@@ -383,7 +383,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
           actions={
             <div className="flex flex-wrap gap-2">
               <Button
-                size="sm"
+                size="responsive"
                 variant="outline"
                 onClick={() => setSyncConfirmOpen(true)}
                 disabled={importingLoads || wipingAsis}
@@ -396,7 +396,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                 Sync ASIS
               </Button>
               <Button
-                size="sm"
+                size="responsive"
                 variant="destructive"
                 onClick={() => setWipeConfirmOpen(true)}
                 disabled={importingLoads || wipingAsis}
@@ -430,7 +430,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                 return (
                   <Button
                     key={key}
-                    size="sm"
+                    size="responsive"
                     variant={loadFilter === key ? 'default' : 'outline'}
                     onClick={() => setLoadFilter(key)}
                     className="h-8"
@@ -562,7 +562,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                     {/* Back button - mobile only */}
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="responsive"
                       className="lg:hidden -ml-2"
                       onClick={() => setSelectedLoadForDetail(null)}
                     >
@@ -632,10 +632,10 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
         onConfirm={handleSyncAsis}
       >
         <div className="flex items-start gap-3">
-          <Checkbox
+          <Switch
             id="preserve-custom-fields"
             checked={preserveCustomFields}
-            onCheckedChange={(checked) => setPreserveCustomFields(checked === true)}
+            onCheckedChange={setPreserveCustomFields}
             disabled={importingLoads}
           />
           <div className="space-y-1">

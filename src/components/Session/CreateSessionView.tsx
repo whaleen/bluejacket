@@ -306,7 +306,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
             <span>{progress}% complete</span>
             <div className="flex items-center gap-2">
               <Button
-                size="sm"
+                size="responsive"
                 variant="ghost"
                 className="text-destructive"
                 onClick={() => handleRequestDelete(session)}
@@ -314,7 +314,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
                 Delete
               </Button>
               {!isClosed && (
-                <Button size="sm" onClick={() => handleResumeSession(session)}>
+                <Button size="responsive" onClick={() => handleResumeSession(session)}>
                   {session.status === 'draft' ? 'Start' : 'Resume'}
                 </Button>
               )}
@@ -570,7 +570,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
                   </div>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="responsive"
                     onClick={fetchSessions}
                     disabled={sessionsLoading}
                   >

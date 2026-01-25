@@ -259,6 +259,7 @@ export function AppSidebar({ currentView, onViewChange, ...props }: AppSidebarPr
                     <SidebarMenuButton
                       tooltip={item.label}
                       isActive={isActive}
+                      size="responsive"
                       onClick={() => handleNavigate(item)}
                     >
                       <Icon />

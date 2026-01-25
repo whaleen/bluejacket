@@ -168,7 +168,7 @@ export function ActivityLogView() {
             <div className="pt-3">
               <Button
                 variant="outline"
-                size="sm"
+                size="responsive"
                 onClick={() => fetchLogs(Math.floor(logs.length / PAGE_SIZE), true)}
                 disabled={loadingMore}
               >

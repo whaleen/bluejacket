@@ -20,7 +20,7 @@ Project-wide task list. Add new items here.
 
 ## Bugs
 
-<!-- Add bugs here -->
+- [ ] Re-run brand importer to finish remaining missing models (resume after crash; ~44 models still missing). Command: `cd services/ge-sync && npm run import:brand-products`
 
 ## Chores
 

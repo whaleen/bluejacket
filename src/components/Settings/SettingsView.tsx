@@ -19,6 +19,7 @@ import {
 } from "@/lib/tenant"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DisplayManager } from "@/components/FloorDisplay/DisplayManager"
+import { getStoredUiHandedness, setStoredUiHandedness, type UiHandedness } from "@/lib/uiPreferences"
 
 interface SettingsViewProps {
   onMenuClick?: () => void
@@ -110,6 +111,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [locationSlug, setLocationSlug] = useState("")
   const [ssoUsername, setSsoUsername] = useState("")
   const [ssoPassword, setSsoPassword] = useState("")
+  const [uiHandedness, setUiHandedness] = useState<UiHandedness>(() => getStoredUiHandedness())
   const [locations, setLocations] = useState<LocationRow[]>([])
   const [locationsLoading, setLocationsLoading] = useState(true)
   const [locationsError, setLocationsError] = useState<string | null>(null)
@@ -314,7 +316,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
 
       const { data: settings, error: settingsError } = await supabase
         .from("settings")
-        .select("sso_username, sso_password")
+        .select("sso_username, sso_password, ui_handedness")
         .eq("location_id", location.id)
         .maybeSingle()
 
@@ -333,6 +335,12 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         setLocationSlug(location?.slug ?? "")
         setSsoUsername(settings?.sso_username ?? "")
         setSsoPassword(settings?.sso_password ?? "")
+        const resolvedHandedness =
+          settings?.ui_handedness === "left" || settings?.ui_handedness === "right"
+            ? settings.ui_handedness
+            : getStoredUiHandedness()
+        setUiHandedness(resolvedHandedness)
+        setStoredUiHandedness(resolvedHandedness)
         setActiveLocationContext(location.id, location.company_id ?? null)
         setLocationLoading(false)
       }
@@ -396,6 +404,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           company_id: locationCompanyId,
           sso_username: ssoUsername || null,
           sso_password: ssoPassword || null,
+          ui_handedness: uiHandedness,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "location_id" }
@@ -407,6 +416,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
       return
     }
 
+    setStoredUiHandedness(uiHandedness)
     await fetchLocations()
     setLocationSuccess("Location settings saved.")
     setLocationSaving(false)
@@ -764,7 +774,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                       </div>
                     </div>
                     <Button
-                      size="sm"
+                      size="responsive"
                       variant={isActive ? "default" : "outline"}
                       disabled={isActive}
                       onClick={() => handleSetActiveLocation(location)}
@@ -922,6 +932,40 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         </div>
       </Card>
 
+      <Card className="p-6 space-y-6">
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <SettingsIcon className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Interface Preferences</h2>
+            <p className="text-sm text-muted-foreground">
+              Align key controls for left- or right-handed use.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ui-handedness">Handedness</Label>
+          <Select
+            value={uiHandedness}
+            onValueChange={(value) => {
+              const next = value === "left" ? "left" : "right"
+              setUiHandedness(next)
+              setStoredUiHandedness(next)
+            }}
+          >
+            <SelectTrigger id="ui-handedness" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="right">Right-handed</SelectItem>
+              <SelectItem value="left">Left-handed</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </Card>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           {locationError && <span className="text-destructive">{locationError}</span>}
@@ -1046,7 +1090,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Existing Companies</h3>
-              <Button variant="outline" size="sm" onClick={fetchCompanies}>
+              <Button variant="outline" size="responsive" onClick={fetchCompanies}>
                 Refresh
               </Button>
             </div>
@@ -1081,7 +1125,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                       <span>ID: {company.id}</span>
                       <Button
-                        size="sm"
+                        size="responsive"
                         onClick={() => handleSaveCompanyRow(company)}
                         disabled={companySavingId === company.id}
                       >
@@ -1214,7 +1258,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Existing Users</h3>
-            <Button variant="outline" size="sm" onClick={fetchUsers}>
+            <Button variant="outline" size="responsive" onClick={fetchUsers}>
               Refresh
             </Button>
           </div>
@@ -1292,14 +1336,14 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                       <span>ID: {String(rowId)}</span>
                       <div className="flex gap-2">
                         <Button
-                          size="sm"
+                          size="responsive"
                           onClick={() => handleSaveUserRow(row)}
                           disabled={usersSavingId === rowId}
                         >
                           {usersSavingId === rowId ? "Saving…" : "Save"}
                         </Button>
                         <Button
-                          size="sm"
+                          size="responsive"
                           variant="destructive"
                           onClick={() => handleDeleteUserRow(row)}
                           disabled={usersSavingId === rowId}

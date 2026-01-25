@@ -165,6 +165,57 @@ const getProductForModel = (
   return undefined;
 };
 
+async function backfillInventoryProductLinks(
+  db: ReturnType<typeof getSupabase>,
+  companyId: string,
+  locationId: string,
+  productLookup: Map<string, { id: string; product_type: string }>
+) {
+  const { data, error } = await db
+    .from('inventory_items')
+    .select('id, model, product_type')
+    .eq('company_id', companyId)
+    .eq('location_id', locationId)
+    .eq('inventory_type', 'ASIS')
+    .is('product_fk', null);
+
+  if (error) {
+    console.error('Failed to load inventory items for product backfill:', error.message);
+    return 0;
+  }
+
+  const updates: Array<{ id: string; product_fk: string; product_type?: string }> = [];
+
+  for (const item of data ?? []) {
+    if (!item?.id || !item?.model) continue;
+    const product = getProductForModel(item.model, productLookup);
+    if (!product) continue;
+    updates.push({
+      id: item.id,
+      product_fk: product.id,
+      product_type: item.product_type && item.product_type !== 'UNKNOWN'
+        ? item.product_type
+        : product.product_type,
+    });
+  }
+
+  if (updates.length === 0) return 0;
+
+  const chunkSize = 500;
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    const chunk = updates.slice(i, i + chunkSize);
+    const { error: upsertError } = await db
+      .from('inventory_items')
+      .upsert(chunk, { onConflict: 'id' });
+    if (upsertError) {
+      console.error('Failed to backfill inventory product links:', upsertError.message);
+      return i;
+    }
+  }
+
+  return updates.length;
+}
+
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -939,6 +990,16 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
       if (upsertError) {
         throw new Error(`Failed to upsert items: ${upsertError.message}`);
       }
+    }
+
+    const backfilledCount = await backfillInventoryProductLinks(
+      db,
+      config.companyId,
+      locationId,
+      productLookup
+    );
+    if (backfilledCount > 0) {
+      console.log(`Backfilled ${backfilledCount} ASIS items with product links.`);
     }
 
     // Orphans are not a concept for ASIS-only syncs; clear any stale flags.
