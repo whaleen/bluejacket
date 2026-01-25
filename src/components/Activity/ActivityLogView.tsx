@@ -66,6 +66,15 @@ export function ActivityLogView() {
     return entry.action.replace(/_/g, ' ');
   };
 
+  const dedupeById = (entries: ActivityLogEntry[]) => {
+    const seen = new Set<string>();
+    return entries.filter((entry) => {
+      if (seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    });
+  };
+
   const fetchLogs = async (page: number, append = false) => {
     if (loading || loadingMore) return;
     append ? setLoadingMore(true) : setLoading(true);
@@ -82,7 +91,7 @@ export function ActivityLogView() {
     if (error) {
       console.error('Failed to load activity log:', error);
     } else {
-      setLogs(prev => (append ? [...prev, ...(data ?? [])] : data ?? []));
+      setLogs(prev => (append ? dedupeById([...prev, ...(data ?? [])]) : data ?? []));
       setHasMore((data ?? []).length === PAGE_SIZE);
     }
 
@@ -90,7 +99,33 @@ export function ActivityLogView() {
   };
 
   useEffect(() => {
+    setLogs([]);
+    setHasMore(true);
     fetchLogs(0);
+  }, [locationId]);
+
+  useEffect(() => {
+    if (!locationId) return;
+    const channel = supabase
+      .channel(`activity-log-page-${locationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'activity_log',
+          filter: `location_id=eq.${locationId}`,
+        },
+        (payload) => {
+          const entry = payload.new as ActivityLogEntry;
+          setLogs((prev) => dedupeById([entry, ...prev]));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [locationId]);
 
   return (

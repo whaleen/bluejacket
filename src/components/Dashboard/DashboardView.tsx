@@ -201,6 +201,34 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     return () => window.removeEventListener('resize', updateLayout);
   }, []);
 
+  useEffect(() => {
+    if (!locationId) return;
+    const channel = supabase
+      .channel(`activity-log-${locationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'activity_log',
+          filter: `location_id=eq.${locationId}`,
+        },
+        (payload) => {
+          const entry = payload.new as ActivityLogEntry;
+          setActivityLogs((prev) => {
+            if (prev.some((item) => item.id === entry.id)) return prev;
+            const next = [entry, ...prev];
+            return next.slice(0, 20);
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [locationId]);
+
   const fetchData = async () => {
     try {
       // Fetch ALL inventory items in batches
