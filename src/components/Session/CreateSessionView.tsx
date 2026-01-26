@@ -86,6 +86,7 @@ function getInitials(name?: string) {
 
 export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSessionChange }: CreateSessionViewProps) {
   const { user } = useAuth();
+  const userDisplayName = user?.username ?? user?.email ?? null;
   const { locationId, companyId } = getActiveLocationContext();
   const [activeTab, setActiveTab] = useState<'existing' | 'upload'>('existing');
   const [pageTab, setPageTab] = useState<'sessions' | 'new'>('sessions');
@@ -176,15 +177,21 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
       );
 
       if (createdByNames.length > 0) {
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('username, image')
-            .in('username', createdByNames);
+        const { data: usersData, error: usersError } = await supabase
+          .from('profiles')
+          .select('username, email, image')
+          .in('username', createdByNames);
 
-        if (!usersError && usersData) {
+        const { data: usersByEmail, error: emailError } = await supabase
+          .from('profiles')
+          .select('username, email, image')
+          .in('email', createdByNames);
+
+        if (!usersError && !emailError) {
           const nextMap: Record<string, string | null> = {};
-          usersData.forEach(userRecord => {
-            nextMap[userRecord.username] = userRecord.image ?? null;
+          [...(usersData ?? []), ...(usersByEmail ?? [])].forEach((userRecord) => {
+            if (userRecord.username) nextMap[userRecord.username] = userRecord.image ?? null;
+            if (userRecord.email) nextMap[userRecord.email] = userRecord.image ?? null;
           });
           setCreatorAvatars(prev => ({ ...prev, ...nextMap }));
         }
@@ -218,7 +225,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
       const { error: statusError } = await updateSessionStatus({
         sessionId: session.id,
         status: 'active',
-        updatedBy: user?.username
+        updatedBy: userDisplayName ?? undefined
       });
       if (statusError) {
         setSessionsError(statusError.message || 'Failed to start session');
@@ -447,7 +454,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
             name,
             inventoryType,
             items: (insertedItems || []) as InventoryItem[],
-            createdBy: user?.username
+            createdBy: userDisplayName ?? undefined
           });
 
           if (sessionError || !session) {
@@ -509,7 +516,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
         inventoryType,
         subInventory: subInventory !== 'all' ? subInventory : undefined,
         items: data as InventoryItem[],
-        createdBy: user?.username
+        createdBy: userDisplayName ?? undefined
       });
 
       if (sessionError || !session) {

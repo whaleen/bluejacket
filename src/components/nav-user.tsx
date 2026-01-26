@@ -28,7 +28,7 @@ export function NavUser({ onSettingsClick }: { onSettingsClick?: () => void }) {
   const { user, logout } = useAuth()
   const { theme, setTheme } = useTheme()
 
-  const displayName = user?.username ?? "Warehouse User"
+  const displayName = user?.username ?? user?.email ?? "Warehouse User"
   const avatarFallback = displayName
     .split(/\s+/)
     .filter(Boolean)

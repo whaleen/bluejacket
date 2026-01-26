@@ -1,4 +1,9 @@
 export type AppView =
+  | 'landing'
+  | 'pricing'
+  | 'features'
+  | 'login'
+  | 'signup'
   | 'dashboard'
   | 'inventory'
   | 'parts'
@@ -33,8 +38,18 @@ export function getPathForView(view: AppView, sessionId?: string | null, display
   }
 
   switch (view) {
-    case 'dashboard':
+    case 'landing':
       return '/';
+    case 'pricing':
+      return '/pricing';
+    case 'features':
+      return '/features';
+    case 'login':
+      return '/login';
+    case 'signup':
+      return '/signup';
+    case 'dashboard':
+      return '/app';
     case 'inventory':
       return '/inventory';
     case 'parts':
@@ -58,7 +73,7 @@ export function getPathForView(view: AppView, sessionId?: string | null, display
     case 'settings-displays':
       return '/settings/displays';
     default:
-      return '/';
+      return '/app';
   }
 }
 
@@ -67,12 +82,21 @@ export function parseRoute(pathname: string): RouteState {
   const segments = normalized.split('/').filter(Boolean);
 
   if (segments.length === 0) {
-    return { view: 'dashboard' };
+    return { view: 'landing' };
   }
 
   const [first, second ] = segments;
 
   switch (first) {
+    case 'pricing':
+      return { view: 'pricing' };
+    case 'features':
+      return { view: 'features' };
+    case 'login':
+      return { view: 'login' };
+    case 'signup':
+      return { view: 'signup' };
+    case 'app':
     case 'dashboard':
       return { view: 'dashboard' };
     case 'inventory':
@@ -109,10 +133,30 @@ export function parseRoute(pathname: string): RouteState {
     case 'display':
       return { view: 'floor-display', displayId: second ?? null };
     default:
-      return { view: 'dashboard' };
+      return { view: 'landing' };
   }
 }
 
 export function isPublicRoute(pathname: string): boolean {
-  return pathname.startsWith('/display');
+  const normalized = pathname.replace(/\/+$/, '');
+  return (
+    normalized === '' ||
+    normalized === '/' ||
+    normalized.startsWith('/pricing') ||
+    normalized.startsWith('/features') ||
+    normalized.startsWith('/login') ||
+    normalized.startsWith('/signup') ||
+    normalized.startsWith('/display')
+  );
+}
+
+export function isMarketingRoute(pathname: string): boolean {
+  const normalized = pathname.replace(/\/+$/, '');
+  return (
+    normalized === '' ||
+    normalized === '/' ||
+    normalized.startsWith('/pricing') ||
+    normalized.startsWith('/features')
+    || normalized.startsWith('/signup')
+  );
 }

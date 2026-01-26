@@ -81,8 +81,10 @@ export default defineConfig(({ mode }) => {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
+            // Only cache GET requests to Supabase REST/Storage; never cache auth POSTs.
+            urlPattern: /^https:\/\/.*\.supabase\.co\/(rest|storage)\/.*/i,
             handler: 'NetworkFirst',
+            method: 'GET',
             options: {
               cacheName: 'supabase-api-cache',
               expiration: {

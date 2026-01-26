@@ -50,6 +50,7 @@ function matchesItemSearch(item: InventoryItem, query: string) {
 export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const userDisplayName = user?.username ?? user?.email ?? undefined;
   const [session, setSession] = useState<ScanningSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -139,7 +140,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
       const { data: updatedSession, error } = await updateSessionScannedItems({
         sessionId: session.id,
         scannedItemIds: nextScanned,
-        updatedBy: user?.username
+        updatedBy: userDisplayName
       });
 
       if (error || !updatedSession) {
@@ -185,7 +186,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     const { data: updatedSession, error } = await updateSessionScannedItems({
       sessionId: session.id,
       scannedItemIds: nextScanned,
-      updatedBy: user?.username
+      updatedBy: userDisplayName
     });
 
     if (error || !updatedSession) {
@@ -222,7 +223,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     const { error } = await updateSessionStatus({
       sessionId: session.id,
       status: 'closed',
-      updatedBy: user?.username
+      updatedBy: userDisplayName
     });
 
     if (error) {

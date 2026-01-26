@@ -2,7 +2,8 @@ import supabase from '@/lib/supabase';
 
 type ActivityUser = {
   id: string;
-  username: string;
+  username: string | null;
+  email?: string | null;
   image?: string | null;
 };
 
@@ -40,7 +41,7 @@ export async function logActivity({
     company_id: companyId,
     location_id: locationId,
     user_id: user.id,
-    actor_name: user.username,
+    actor_name: user.username ?? user.email ?? 'Unknown',
     actor_image: user.image ?? null,
     action,
     entity_type: entityType ?? null,

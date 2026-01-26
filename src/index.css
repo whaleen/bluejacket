@@ -198,3 +198,58 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+@layer base {
+  .marketing-root {
+    color-scheme: light;
+  }
+}
+
+@keyframes marketing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes marketing-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .marketing-grid {
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+      radial-gradient(circle at 20% 0%, rgba(14, 116, 144, 0.08), transparent 45%),
+      radial-gradient(circle at 90% 10%, rgba(79, 70, 229, 0.10), transparent 40%);
+    background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+    background-position: center, center, center, center;
+  }
+
+  .marketing-fade-up {
+    animation: marketing-fade-up 0.8s ease-out both;
+    animation-delay: var(--marketing-delay, 0ms);
+  }
+
+  .marketing-fade-in {
+    animation: marketing-fade-in 0.6s ease-out both;
+    animation-delay: var(--marketing-delay, 0ms);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-fade-up,
+  .marketing-fade-in {
+    animation: none;
+  }
+}

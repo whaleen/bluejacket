@@ -49,12 +49,13 @@ type CompanyRow = {
 }
 
 type UserRow = {
-  id: string | number
+  id: string
+  email: string | null
   username: string | null
-  password: string | null
   role?: string | null
   image?: string | null
-  company_ids?: string[] | null
+  company_id?: string | null
+  created_at?: string | null
 }
 
 const SUPER_ADMIN_STORAGE_KEY = "super_admin_unlocked"
@@ -76,7 +77,7 @@ const slugify = (value: string) => {
 }
 
 export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
-  const { user, updateUser } = useAuth()
+  const { user, updateUser, updatePassword } = useAuth()
   const resolvedSection: SettingsSection = section ?? "location"
   const sectionTitles: Record<SettingsSection, string> = {
     locations: "Locations",
@@ -126,7 +127,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [locationError, setLocationError] = useState<string | null>(null)
   const [locationSuccess, setLocationSuccess] = useState<string | null>(null)
   const [username, setUsername] = useState(user?.username ?? "")
-  const [password, setPassword] = useState(user?.password ?? "")
+  const [password, setPassword] = useState("")
   const [userSaving, setUserSaving] = useState(false)
   const [userError, setUserError] = useState<string | null>(null)
   const [userSuccess, setUserSuccess] = useState<string | null>(null)
@@ -135,11 +136,6 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [usersError, setUsersError] = useState<string | null>(null)
   const [usersSavingId, setUsersSavingId] = useState<string | number | null>(null)
   const [usersSuccess, setUsersSuccess] = useState<string | null>(null)
-  const [newUserName, setNewUserName] = useState("")
-  const [newUserPassword, setNewUserPassword] = useState("")
-  const [newUserRole, setNewUserRole] = useState<"admin" | "user">("user")
-  const [newUserError, setNewUserError] = useState<string | null>(null)
-  const [newUserSaving, setNewUserSaving] = useState(false)
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [companiesLoading, setCompaniesLoading] = useState(true)
   const [companiesError, setCompaniesError] = useState<string | null>(null)
@@ -170,7 +166,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     ? `Settings / ${sectionTitles[resolvedSection]}${sectionContext ? ` · ${sectionContext}` : ""}`
     : "Settings"
 
-  const roles = ["admin", "user"] as const
+  const roles = ["pending", "member", "admin"] as const
 
   useEffect(() => {
     if (!newLocationSlugTouched) {
@@ -248,8 +244,8 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setUsersLoading(true)
     setUsersError(null)
     const { data, error } = await supabase
-      .from("users")
-      .select("id, username, password, role, image, company_ids")
+      .from("profiles")
+      .select("id, email, username, role, image, company_id, created_at")
       .order("created_at", { ascending: true })
 
     if (error) {
@@ -372,7 +368,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
 
   useEffect(() => {
     setUsername(user?.username ?? "")
-    setPassword(user?.password ?? "")
+    setPassword("")
   }, [user])
 
   const handleLocationSave = async () => {
@@ -627,7 +623,11 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setUserSuccess(null)
 
     try {
-      await updateUser({ username, password })
+      await updateUser({ username })
+      if (password.trim()) {
+        await updatePassword(password.trim())
+        setPassword("")
+      }
       let settingsErrorMessage: string | null = null
       if (locationId && locationCompanyId) {
         const { error: settingsError } = await supabase
@@ -683,11 +683,11 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setUsersSuccess(null)
 
     const { error } = await supabase
-      .from("users")
+      .from("profiles")
       .update({
         username: row.username,
-        password: row.password ?? null,
-        role: row.role ?? "user",
+        role: row.role ?? "member",
+        company_id: row.company_id ?? null,
       })
       .eq("id", row.id)
 
@@ -699,56 +699,6 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
 
     setUsersSavingId(null)
     setUsersSuccess("User updated.")
-    await fetchUsers()
-  }
-
-  const handleDeleteUserRow = async (row: UserRow) => {
-    setUsersSavingId(row.id)
-    setUsersError(null)
-    setUsersSuccess(null)
-
-    const { error } = await supabase
-      .from("users")
-      .delete()
-      .eq("id", row.id)
-
-    if (error) {
-      setUsersError(error.message)
-      setUsersSavingId(null)
-      return
-    }
-
-    setUsersSavingId(null)
-    setUsersSuccess("User deleted.")
-    await fetchUsers()
-  }
-
-  const handleCreateUser = async () => {
-    if (!newUserName.trim()) {
-      setNewUserError("Username is required.")
-      return
-    }
-
-    setNewUserSaving(true)
-    setNewUserError(null)
-
-    const { error } = await supabase.from("users").insert({
-      username: newUserName.trim(),
-      password: newUserPassword.trim() || null,
-      role: newUserRole,
-      company_ids: locationCompanyId ? [locationCompanyId] : [],
-    })
-
-    if (error) {
-      setNewUserError(error.message)
-      setNewUserSaving(false)
-      return
-    }
-
-    setNewUserName("")
-    setNewUserPassword("")
-    setNewUserRole("user")
-    setNewUserSaving(false)
     await fetchUsers()
   }
 
@@ -1037,7 +987,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           </div>
           <div>
             <h2 className="text-xl font-semibold text-foreground">User Settings</h2>
-            <p className="text-sm text-muted-foreground">Update your local login details.</p>
+            <p className="text-sm text-muted-foreground">Update your account details.</p>
           </div>
         </div>
 
@@ -1045,7 +995,12 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           <AvatarUploader />
 
           <div className="space-y-2">
-            <Label htmlFor="user-name">User Name</Label>
+            <Label>Email</Label>
+            <Input value={user?.email ?? ""} disabled />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="user-name">Display Name</Label>
             <Input
               id="user-name"
               value={username}
@@ -1055,13 +1010,14 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="user-password">Password</Label>
+            <Label htmlFor="user-password">New Password</Label>
             <Input
               id="user-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={!user}
+              placeholder="Leave blank to keep current password"
             />
           </div>
         </div>
@@ -1285,56 +1241,14 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           <div>
             <h2 className="text-xl font-semibold text-foreground">Team</h2>
             <p className="text-sm text-muted-foreground">
-              Create and manage users with admin or user roles.
+              Approve access and manage roles for signed-up users.
             </p>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Create User</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="new-user-name">Username</Label>
-              <Input
-                id="new-user-name"
-                value={newUserName}
-                onChange={(e) => setNewUserName(e.target.value)}
-                placeholder="e.g. josh"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-user-role">Role</Label>
-              <Select value={newUserRole} onValueChange={(value) => setNewUserRole(value as "admin" | "user")}>
-                <SelectTrigger id="new-user-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role} value={role}>
-                      {role}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="new-user-password">Password</Label>
-              <Input
-                id="new-user-password"
-                type="password"
-                value={newUserPassword}
-                onChange={(e) => setNewUserPassword(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm">
-              {newUserError && <span className="text-destructive">{newUserError}</span>}
-            </div>
-            <Button onClick={handleCreateUser} disabled={newUserSaving}>
-              {newUserSaving ? "Creating…" : "Create User"}
-            </Button>
-          </div>
+        <div className="rounded-lg border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
+          Team members sign up with their email and password. New accounts start in{" "}
+          <span className="font-semibold">pending</span> status and need approval below.
         </div>
 
         <div className="space-y-4">
@@ -1374,12 +1288,12 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                         <div className="text-sm font-semibold text-foreground">
                           {row.username ?? "User"}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          Role: {row.role ?? "user"}
-                        </div>
+                      <div className="text-xs text-muted-foreground">
+                        {row.email ?? "No email"} • Role: {row.role ?? "member"}
                       </div>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                  </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Username</Label>
                         <Input
@@ -1390,7 +1304,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                       <div className="space-y-2">
                         <Label>Role</Label>
                         <Select
-                          value={(row.role ?? "user") as string}
+                          value={(row.role ?? "pending") as string}
                           onValueChange={(value) => updateUserField(rowId, "role", value)}
                         >
                           <SelectTrigger>
@@ -1405,34 +1319,16 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-2">
-                        <Label>Password</Label>
-                        <Input
-                          type="password"
-                          value={row.password ?? ""}
-                          onChange={(e) => updateUserField(rowId, "password", e.target.value)}
-                        />
-                      </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                       <span>ID: {String(rowId)}</span>
-                      <div className="flex gap-2">
-                        <Button
-                          size="responsive"
-                          onClick={() => handleSaveUserRow(row)}
-                          disabled={usersSavingId === rowId}
-                        >
-                          {usersSavingId === rowId ? "Saving…" : "Save"}
-                        </Button>
-                        <Button
-                          size="responsive"
-                          variant="destructive"
-                          onClick={() => handleDeleteUserRow(row)}
-                          disabled={usersSavingId === rowId}
-                        >
-                          Delete
-                        </Button>
-                      </div>
+                      <Button
+                        size="responsive"
+                        onClick={() => handleSaveUserRow(row)}
+                        disabled={usersSavingId === rowId}
+                      >
+                        {usersSavingId === rowId ? "Saving…" : "Save"}
+                      </Button>
                     </div>
                   </div>
                 )

@@ -17,13 +17,7 @@
   </head>
   <body>
     <div id="root">
-      <!-- Fallback content shown before JS loads -->
-      <div id="loading-fallback" style="min-height:100vh;background:#0f172a;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
-        <div style="text-align:center;color:#fff;">
-          <div style="font-size:2rem;margin-bottom:1rem;">Loading...</div>
-          <div style="color:#64748b;font-size:0.875rem;">If this doesn't change, your browser may not be supported.</div>
-        </div>
-      </div>
+      <!-- Minimal fallback - replaced immediately when React mounts -->
     </div>
     <script type="module" src="/src/main.tsx"></script>
     <noscript>

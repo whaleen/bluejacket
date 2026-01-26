@@ -10,6 +10,7 @@ export function AvatarUploader() {
   const [uploading, setUploading] = useState(false)
 
   if (!user) return null
+  const isPending = user.role === "pending"
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -18,20 +19,21 @@ export function AvatarUploader() {
     setUploading(true)
 
     try {
-      const ext = file.name.split(".").pop()
+      const ext = file.name.split(".").pop() ?? "png"
       const fileName = `${user.id}.${ext}`
+      const filePath = `${user.id}/${fileName}`
 
       // Upload file to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(fileName, file, { upsert: true })
+        .upload(filePath, file, { upsert: true, contentType: file.type })
 
       if (uploadError) throw uploadError
 
       // Get public URL
       const { publicUrl } = supabase.storage
         .from("avatars")
-        .getPublicUrl(fileName).data
+        .getPublicUrl(filePath).data
 
       if (!publicUrl) throw new Error("No public URL")
 
@@ -45,13 +47,15 @@ export function AvatarUploader() {
     }
   }
 
+  const displayName = user.username ?? user.email ?? "User"
+
   return (
     <div className="flex flex-col items-center space-y-2">
       <div className="h-24 w-24 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
         {user.image ? (
           <img
             src={user.image}
-            alt={user.username}
+            alt={displayName}
             className="h-full w-full object-cover"
           />
         ) : (
@@ -68,10 +72,10 @@ export function AvatarUploader() {
       />
       <Button
         size="responsive"
-        disabled={uploading}
+        disabled={uploading || isPending}
         onClick={() => document.getElementById("avatar-upload")?.click()}
       >
-        {uploading ? "Uploading…" : "Change Avatar"}
+        {uploading ? "Uploading…" : isPending ? "Pending Approval" : "Change Avatar"}
       </Button>
     </div>
   )

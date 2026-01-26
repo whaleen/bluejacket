@@ -33,6 +33,7 @@ export function LoadDetailPanel({
   onOpenStandalone,
 }: LoadDetailPanelProps) {
   const { user } = useAuth();
+  const userDisplayName = user?.username ?? user?.email ?? 'Unknown';
   const { locationId, companyId } = getActiveLocationContext();
   const { toast } = useToast();
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -552,14 +553,14 @@ export function LoadDetailPanel({
     const now = new Date().toISOString();
     setSanityCheckRequested(true);
     setSanityRequestedAt(now);
-    setSanityRequestedBy(user.username);
+    setSanityRequestedBy(userDisplayName);
     setSanityCompletedAt(null);
     setSanityCompletedBy(null);
     const success = await persistPrepUpdate(
       {
         sanity_check_requested: true,
         sanity_check_requested_at: now,
-        sanity_check_requested_by: user.username,
+        sanity_check_requested_by: userDisplayName,
         sanity_check_completed_at: null,
         sanity_check_completed_by: null,
       },
@@ -589,12 +590,12 @@ export function LoadDetailPanel({
     const now = new Date().toISOString();
     setSanityCheckRequested(false);
     setSanityCompletedAt(now);
-    setSanityCompletedBy(user.username);
+    setSanityCompletedBy(userDisplayName);
     const success = await persistPrepUpdate(
       {
         sanity_check_requested: false,
         sanity_check_completed_at: now,
-        sanity_check_completed_by: user.username,
+        sanity_check_completed_by: userDisplayName,
       },
       { skipActivityLog: true }
     );

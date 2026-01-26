@@ -5,11 +5,16 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/context/AuthContext"
 import { ThemeProvider } from "../theme-provider"
+import { WarehouseLogo } from "@/components/Brand/WarehouseLogo"
+import supabase from "@/lib/supabase"
 
 export function LoginCard() {
   const { login } = useAuth()
-  const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [resetNotice, setResetNotice] = useState<string | null>(null)
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [resetLoading, setResetLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -17,10 +22,29 @@ export function LoginCard() {
     setLoading(true)
     setError(null)
 
-    const ok = await login(username, password)
-    if (!ok) setError("Invalid username or password")
+    const ok = await login(email, password)
+    if (!ok) setError("Invalid email or password")
 
     setLoading(false)
+  }
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setResetError("Enter your email to reset your password.")
+      return
+    }
+    setResetLoading(true)
+    setResetError(null)
+    setResetNotice(null)
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/login`,
+    })
+    if (error) {
+      setResetError(error.message)
+    } else {
+      setResetNotice("Password reset email sent.")
+    }
+    setResetLoading(false)
   }
 
   return (
@@ -28,13 +52,13 @@ export function LoginCard() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <Card className="w-full max-w-sm p-6 space-y-4">
         <div className="flex flex-col items-center justify-center gap-2 pb-2">
-          <img src="/blue-jacket.png" alt="Blue Jacket" className="h-16 w-16 rounded-full object-cover" />
+          <WarehouseLogo className="h-16 w-16" title="Warehouse" />
           <h1 className="text-2xl font-bold">Warehouse</h1>
         </div>
 
         <div className="space-y-2">
-          <Label>Username</Label>
-          <Input value={username} onChange={e => setUsername(e.target.value)} />
+          <Label>Email</Label>
+          <Input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} />
         </div>
 
         <div className="space-y-2">
@@ -47,9 +71,19 @@ export function LoginCard() {
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+        {resetNotice && <p className="text-sm text-emerald-600">{resetNotice}</p>}
+        {resetError && <p className="text-sm text-destructive">{resetError}</p>}
 
         <Button className="w-full" onClick={handleSubmit} disabled={loading}>
           {loading ? "Signing in…" : "Sign in"}
+        </Button>
+        <Button
+          className="w-full"
+          variant="outline"
+          onClick={handleForgotPassword}
+          disabled={resetLoading}
+        >
+          {resetLoading ? "Sending reset…" : "Forgot password"}
         </Button>
       </Card>
     </div>

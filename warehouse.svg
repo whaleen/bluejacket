@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="500" height="500" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+    <path id="w" fill="none" stroke="hsl(var(--foreground, 0 0% 0%))" stroke-width="16" stroke-linecap="butt" stroke-linejoin="miter" d="M 150 140 L 210 360 L 250 200 L 290 360 L 350 140"/>
+    <path id="box" fill="none" stroke="hsl(var(--foreground, 0 0% 0%))" stroke-width="16" stroke-linecap="butt" stroke-linejoin="miter" d="M 80 80 L 420 80 L 420 420 L 80 420 L 80 80 Z"/>
+</svg>

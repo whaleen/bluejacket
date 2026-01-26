@@ -53,3 +53,5 @@ migrations
 IDGAF_About_Auth_Security.md
 warehouse.sql
 supabase
+# Local Netlify folder
+.netlify

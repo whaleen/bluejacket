@@ -2,7 +2,6 @@ import { LoadManagementView } from "@/components/Inventory/LoadManagementView";
 import { CreateSessionView } from "@/components/Session/CreateSessionView";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
-import { LoginCard } from "@/components/Auth/LoginCard";
 import { useCallback, useEffect, useState } from "react";
 import { ProductEnrichment } from "./components/Products/ProductEnrichment";
 import { InventoryView } from "./components/Inventory/InventoryView";
@@ -10,17 +9,24 @@ import { PartsView } from "./components/Parts/PartsView";
 import { DashboardView } from "./components/Dashboard/DashboardView";
 import { SettingsView } from "./components/Settings/SettingsView";
 import { AppSidebar } from "./components/app-sidebar";
-import { getPathForView, parseRoute, isPublicRoute, type AppView } from "@/lib/routes";
+import { getPathForView, parseRoute, isPublicRoute, isMarketingRoute, type AppView } from "@/lib/routes";
 import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
+import { LandingPage } from "@/components/Marketing/LandingPage";
+import { PricingPage } from "@/components/Marketing/PricingPage";
+import { FeaturesPage } from "@/components/Marketing/FeaturesPage";
+import { LoginPage } from "@/components/Marketing/LoginPage";
+import { SignupPage } from "@/components/Marketing/SignupPage";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ActivityLogView } from "@/components/Activity/ActivityLogView";
 import { useUiHandedness } from "@/hooks/useUiHandedness";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PendingAccess } from "@/components/Auth/PendingAccess";
 
 function App() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const uiHandedness = useUiHandedness();
   const isMobile = useIsMobile();
+  const isPending = user?.role === "pending";
 
   const getRouteFromLocation = useCallback(() => {
     const route = parseRoute(window.location.pathname);
@@ -123,18 +129,97 @@ function App() {
     }
   }, [getRouteFromLocation, navigate]);
 
-  if (loading) return null;
+  const pathname = window.location.pathname;
 
-  // Public route: floor display (no auth required)
-  if (isPublicRoute(window.location.pathname)) {
+  // Handle public routes BEFORE auth loading check
+  // These pages don't need auth state to render
+  if (isPublicRoute(pathname)) {
+    // Marketing routes
+    if (isMarketingRoute(pathname)) {
+      // If auth finished loading and user is logged in, redirect to app
+      if (!loading && user) {
+        if (isPending) {
+          return (
+            <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+              <PendingAccess email={user.email} onLogout={logout} />
+            </ThemeProvider>
+          );
+        }
+        navigate('dashboard', { replace: true });
+        return null;
+      }
+      // Show marketing pages (even while auth is loading)
+      const normalizedPath = pathname.replace(/\/+$/, '');
+      return (
+        <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+          {normalizedPath.startsWith('/pricing') ? (
+            <PricingPage />
+          ) : normalizedPath.startsWith('/features') ? (
+            <FeaturesPage />
+          ) : normalizedPath.startsWith('/signup') ? (
+            <SignupPage />
+          ) : (
+            <LandingPage />
+          )}
+        </ThemeProvider>
+      );
+    }
+
+    // Login route
+    if (pathname.startsWith('/login')) {
+      // If auth finished loading and user is logged in, redirect to app
+      if (!loading && user) {
+        if (isPending) {
+          return (
+            <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+              <PendingAccess email={user.email} onLogout={logout} />
+            </ThemeProvider>
+          );
+        }
+        navigate('dashboard', { replace: true });
+        return null;
+      }
+      // Show login page (even while auth is loading)
+      return (
+        <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+          <LoginPage />
+        </ThemeProvider>
+      );
+    }
+
+    // Floor display route - ONLY for /display paths
+    if (pathname.startsWith('/display')) {
+      return (
+        <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-display">
+          <FloorDisplayView displayId={displayId} />
+        </ThemeProvider>
+      );
+    }
+
+    // Fallback for any other public route - show landing page
     return (
-      <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-display">
-        <FloorDisplayView displayId={displayId} />
+      <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+        <LandingPage />
       </ThemeProvider>
     );
   }
 
-  if (!user) return <LoginCard />;
+  // Protected routes: wait for auth to load
+  if (loading) return null;
+
+  // Redirect to login if not authenticated
+  if (!user) {
+    navigate('login', { replace: true });
+    return null;
+  }
+
+  if (isPending) {
+    return (
+      <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+        <PendingAccess email={user.email} onLogout={logout} />
+      </ThemeProvider>
+    );
+  }
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">

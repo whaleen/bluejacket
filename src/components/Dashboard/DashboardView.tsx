@@ -95,6 +95,7 @@ type ActivityLogEntry = {
 export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps) {
   const { user } = useAuth();
   const { locationId } = getActiveLocationContext();
+  const userDisplayName = user?.username ?? user?.email ?? "User";
   const [stats, setStats] = useState<DetailedStats>({
     totalItems: 0,
     localStock: { total: 0, unassigned: 0, staged: 0, inbound: 0, routes: 0 },
@@ -726,7 +727,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   {user?.image ? (
                     <img
                       src={user.image}
-                      alt={user.username}
+                      alt={userDisplayName}
                       className="h-full w-full object-cover"
                     />
                   ) : (
