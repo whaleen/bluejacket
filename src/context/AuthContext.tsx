@@ -244,6 +244,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (error) throw error
 
+    // Also update profiles table for user management queries
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: user.email,
+        username: updates.username ?? user.username,
+        image: updates.image ?? user.image,
+        role: updates.role ?? user.role,
+        company_id: updates.company_id ?? user.company_id,
+        updated_at: new Date().toISOString(),
+      })
+
+    if (profileError) throw profileError
+
     // Update local state
     if (data.user) {
       setUser({
