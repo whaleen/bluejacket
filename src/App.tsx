@@ -14,7 +14,9 @@ import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
 import { LandingPage } from "@/components/Marketing/LandingPage";
 import { PricingPage } from "@/components/Marketing/PricingPage";
 import { FeaturesPage } from "@/components/Marketing/FeaturesPage";
-import { LoginPage } from "@/components/Marketing/LoginPage";
+import { LoginView } from "@/components/Auth/LoginView";
+import { ResetPasswordView } from "@/components/Auth/ResetPasswordView";
+import { UpdatePasswordView } from "@/components/Auth/UpdatePasswordView";
 import { SignupPage } from "@/components/Marketing/SignupPage";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ActivityLogView } from "@/components/Activity/ActivityLogView";
@@ -182,7 +184,25 @@ function App() {
       // Show login page (even while auth is loading)
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
-          <LoginPage />
+          <LoginView />
+        </ThemeProvider>
+      );
+    }
+
+    // Reset password route
+    if (pathname.startsWith('/reset-password')) {
+      return (
+        <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+          <ResetPasswordView />
+        </ThemeProvider>
+      );
+    }
+
+    // Update password route (handles both recovery link and OTP)
+    if (pathname.startsWith('/update-password')) {
+      return (
+        <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
+          <UpdatePasswordView />
         </ThemeProvider>
       );
     }

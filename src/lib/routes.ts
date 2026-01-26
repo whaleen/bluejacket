@@ -3,6 +3,8 @@ export type AppView =
   | 'pricing'
   | 'features'
   | 'login'
+  | 'reset-password'
+  | 'update-password'
   | 'signup'
   | 'dashboard'
   | 'inventory'
@@ -46,6 +48,10 @@ export function getPathForView(view: AppView, sessionId?: string | null, display
       return '/features';
     case 'login':
       return '/login';
+    case 'reset-password':
+      return '/reset-password';
+    case 'update-password':
+      return '/update-password';
     case 'signup':
       return '/signup';
     case 'dashboard':
@@ -94,6 +100,10 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'features' };
     case 'login':
       return { view: 'login' };
+    case 'reset-password':
+      return { view: 'reset-password' };
+    case 'update-password':
+      return { view: 'update-password' };
     case 'signup':
       return { view: 'signup' };
     case 'app':
@@ -145,6 +155,8 @@ export function isPublicRoute(pathname: string): boolean {
     normalized.startsWith('/pricing') ||
     normalized.startsWith('/features') ||
     normalized.startsWith('/login') ||
+    normalized.startsWith('/reset-password') ||
+    normalized.startsWith('/update-password') ||
     normalized.startsWith('/signup') ||
     normalized.startsWith('/display')
   );
