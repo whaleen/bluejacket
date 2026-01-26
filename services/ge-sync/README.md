@@ -52,11 +52,10 @@ npm install
 # Install Playwright browsers
 npx playwright install chromium
 
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your Supabase credentials
+# Set up Doppler (for environment variables)
+doppler setup
 
-# Run in development mode
+# Run in development mode (secrets injected via Doppler)
 npm run dev
 ```
 
@@ -153,15 +152,19 @@ Operational guidance (beta):
 
 1. Connect your GitHub repo to Railway
 2. Set the root directory to `services/ge-sync`
-3. Add environment variables:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_KEY`
-   - `API_KEY`
+3. Configure environment variables:
+   - **Option A**: Use Doppler integration (recommended)
+     - Install Doppler integration in Railway dashboard
+     - Link to your Doppler project/config
+   - **Option B**: Set variables manually in Railway dashboard:
+     - `SUPABASE_URL`
+     - `SUPABASE_SERVICE_KEY`
+     - `API_KEY`
 4. Deploy
 
 ## Frontend configuration (dev vs prod)
 
-The frontend reads the sync service URL at build time via Vite env vars.
+The frontend reads the sync service URL at build time via Vite env vars (managed through Doppler).
 
 - **Local dev** (frontend):
   - `VITE_GE_SYNC_URL=http://localhost:3001`
@@ -170,9 +173,11 @@ The frontend reads the sync service URL at build time via Vite env vars.
   - `VITE_GE_SYNC_URL=https://<your-railway-service>.up.railway.app`
   - `VITE_GE_SYNC_API_KEY=<same API_KEY as Railway>`
 
-If you change these values, you must rebuild the frontend so Vite can bake them in.
+These are stored in Doppler and injected at build time. If you change these values in Doppler, you must rebuild the frontend so Vite can bake them in.
 
 ## Environment Variables
+
+All environment variables are managed through Doppler. For local development, run `doppler setup` to configure your project.
 
 | Variable | Required | Description |
 |----------|----------|-------------|

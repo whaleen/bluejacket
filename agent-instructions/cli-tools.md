@@ -13,13 +13,13 @@ Once approved for a tool, you can use it freely for that session.
 
 ## Supabase CLI
 
-The Supabase CLI requires the database password for remote commands. Always use the `--db-url` flag with credentials from `.env`.
+The Supabase CLI requires the database password for remote commands. Always use the `--db-url` flag with credentials from Doppler.
 
 ### Setup
 
-First, source the environment variables:
+Environment variables are injected via Doppler:
 ```bash
-source .env
+doppler run -- <command>
 ```
 
 The database URL pattern is:
@@ -37,29 +37,29 @@ supabase migration new <migration_name>
 # This creates: supabase/migrations/<timestamp>_<migration_name>.sql
 
 # Edit the migration file, then push it (needs --db-url)
-source .env && supabase db push --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
+doppler run -- supabase db push --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
 ```
 
 ### Other useful commands
 
-All remote commands need `source .env &&` prefix and `--db-url` flag:
+All remote commands need `doppler run --` prefix and `--db-url` flag:
 
 ```bash
 # List migrations and their status
-source .env && supabase migration list --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
+doppler run -- supabase migration list --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
 
 # Dump current schema
-source .env && supabase db dump -f schema.sql --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
+doppler run -- supabase db dump -f schema.sql --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
 
 # Generate migration from schema diff
-source .env && supabase db diff -f <migration_name> --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
+doppler run -- supabase db diff -f <migration_name> --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
 ```
 
 ### Inspecting the database
 
 ```bash
 # List all tables with sizes
-source .env && supabase inspect db table-stats --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
+doppler run -- supabase inspect db table-stats --db-url "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres"
 
 # Other inspect commands: vacuum-stats, index-stats, bloat, etc.
 ```
@@ -85,16 +85,16 @@ For running arbitrary SQL queries against the database. Use this instead of `sup
 
 ```bash
 # Connection pattern
-source .env && psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "YOUR QUERY"
+doppler run -- psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "YOUR QUERY"
 
 # List all tables
-source .env && psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "\dt public.*"
+doppler run -- psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "\dt public.*"
 
 # Describe a table (columns, indexes, constraints)
-source .env && psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "\d table_name"
+doppler run -- psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "\d table_name"
 
 # Run a query
-source .env && psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "SELECT * FROM users LIMIT 5"
+doppler run -- psql "postgresql://postgres:${SUPABASE_DB_PASSWORD}@db.wxfdrdqchfrcdgprdznr.supabase.co:5432/postgres" -c "SELECT * FROM users LIMIT 5"
 ```
 
 ---
@@ -180,6 +180,71 @@ railway up
 # Redeploy the service
 railway redeploy
 ```
+
+---
+
+## Doppler CLI
+
+Doppler manages all environment variables and secrets for the project. Instead of using `.env` files, secrets are centralized in Doppler.
+
+### Local Development
+
+All npm scripts automatically inject secrets via `doppler run`:
+
+```bash
+# Scripts already configured with doppler run
+npm run dev        # doppler run -- vite
+npm run build      # doppler run -- tsc -b && vite build
+npm run seed       # doppler run -- tsx src/scripts/seed.ts
+```
+
+### Manual Commands
+
+For one-off commands that need env vars:
+
+```bash
+# Run any command with Doppler secrets injected
+doppler run -- <command>
+
+# Examples
+doppler run -- node script.js
+doppler run -- tsx src/scripts/custom.ts
+```
+
+### Viewing & Managing Secrets
+
+```bash
+# List all secrets for current project/environment
+doppler secrets
+
+# Get a specific secret value
+doppler secrets get KEY_NAME
+
+# Set a secret (usually done in dashboard)
+doppler secrets set KEY_NAME=value
+
+# Upload a .env file (initial setup)
+doppler secrets upload .env
+```
+
+### Configuration
+
+```bash
+# View current project/environment configuration
+doppler setup --no-interactive
+
+# Login (if needed)
+doppler login
+
+# Change project or environment
+doppler setup
+```
+
+### Integration Notes
+
+- **Frontend & ge-sync**: Both projects now use Doppler for local development
+- **Railway/Netlify**: Need to integrate Doppler via their dashboards for deployments
+- **All CLI tools**: Use `doppler run --` prefix to inject secrets (Supabase, psql, etc.)
 
 ---
 

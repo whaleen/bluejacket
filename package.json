@@ -4,13 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "seed": "tsx src/scripts/seed.ts",
-    "seed:parts-history": "tsx src/scripts/seedPartsHistory.ts",
-    "scrape:ge": "tsx src/scripts/scrapeGEProducts.ts"
+    "dev": "doppler run -- vite",
+    "build": "doppler run -- tsc -b && vite build",
+    "preview": "doppler run -- vite preview",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
