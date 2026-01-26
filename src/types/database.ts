@@ -784,6 +784,11 @@ export type Database = {
           pickup_tba: boolean | null
           prep_tagged: boolean | null
           prep_wrapped: boolean | null
+          sanity_check_requested: boolean | null
+          sanity_check_requested_at: string | null
+          sanity_check_requested_by: string | null
+          sanity_check_completed_at: string | null
+          sanity_check_completed_by: string | null
           primary_color: string | null
           status: string
           sub_inventory_name: string
@@ -812,6 +817,11 @@ export type Database = {
           pickup_tba?: boolean | null
           prep_tagged?: boolean | null
           prep_wrapped?: boolean | null
+          sanity_check_requested?: boolean | null
+          sanity_check_requested_at?: string | null
+          sanity_check_requested_by?: string | null
+          sanity_check_completed_at?: string | null
+          sanity_check_completed_by?: string | null
           primary_color?: string | null
           status?: string
           sub_inventory_name: string
@@ -840,6 +850,11 @@ export type Database = {
           pickup_tba?: boolean | null
           prep_tagged?: boolean | null
           prep_wrapped?: boolean | null
+          sanity_check_requested?: boolean | null
+          sanity_check_requested_at?: string | null
+          sanity_check_requested_by?: string | null
+          sanity_check_completed_at?: string | null
+          sanity_check_completed_by?: string | null
           primary_color?: string | null
           status?: string
           sub_inventory_name?: string

@@ -126,6 +126,11 @@ export interface LoadMetadata {
   primary_color?: string | null;
   prep_tagged?: boolean;
   prep_wrapped?: boolean;
+  sanity_check_requested?: boolean | null;
+  sanity_check_requested_at?: string | null;
+  sanity_check_requested_by?: string | null;
+  sanity_check_completed_at?: string | null;
+  sanity_check_completed_by?: string | null;
   pickup_date?: string | null;
   pickup_tba?: boolean;
   status: LoadStatus;

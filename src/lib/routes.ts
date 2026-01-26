@@ -4,11 +4,11 @@ export type AppView =
   | 'parts'
   | 'products'
   | 'settings-locations'
+  | 'settings-location'
   | 'settings-company'
   | 'settings-users'
-  | 'settings-displays-setup'
-  | 'settings-displays-list'
-  | 'settings-displays-settings'
+  | 'settings-profile'
+  | 'settings-displays'
   | 'loads'
   | 'activity'
   | 'create-session'
@@ -47,16 +47,16 @@ export function getPathForView(view: AppView, sessionId?: string | null, display
       return '/activity';
     case 'settings-locations':
       return '/settings/locations';
+    case 'settings-location':
+      return '/settings/location';
     case 'settings-company':
       return '/settings/company';
     case 'settings-users':
       return '/settings/users';
-    case 'settings-displays-setup':
-      return '/settings/displays/setup';
-    case 'settings-displays-list':
-      return '/settings/displays/list';
-    case 'settings-displays-settings':
-      return '/settings/displays/settings';
+    case 'settings-profile':
+      return '/settings/profile';
+    case 'settings-displays':
+      return '/settings/displays';
     default:
       return '/';
   }
@@ -70,7 +70,7 @@ export function parseRoute(pathname: string): RouteState {
     return { view: 'dashboard' };
   }
 
-  const [first, second, third] = segments;
+  const [first, second ] = segments;
 
   switch (first) {
     case 'dashboard':
@@ -90,22 +90,16 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'create-session', sessionId: second ?? null };
     case 'settings':
       switch (second) {
+        case 'location':
+          return { view: 'settings-location' };
         case 'company':
           return { view: 'settings-company' };
         case 'users':
           return { view: 'settings-users' };
+        case 'profile':
+          return { view: 'settings-profile' };
         case 'displays':
-          switch (third) {
-            case 'setup':
-              return { view: 'settings-displays-setup' };
-            case 'settings':
-              return { view: 'settings-displays-settings' };
-            case 'list':
-            case undefined:
-              return { view: 'settings-displays-list' };
-            default:
-              return { view: 'settings-displays-list' };
-          }
+          return { view: 'settings-displays' };
         case 'locations':
         case undefined:
           return { view: 'settings-locations' };

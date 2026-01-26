@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Upload, ArrowLeft, Trash2 } from 'lucide-react';
+import { Loader2, Upload, ArrowLeft, Trash2, Check, AlertTriangle } from 'lucide-react';
 import { getAllLoads, getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
 import type { LoadMetadata } from '@/types/inventory';
 import { LoadDetailPanel } from './LoadDetailPanel';
@@ -15,6 +15,7 @@ import supabase from '@/lib/supabase';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { useAuth } from '@/context/AuthContext';
 import { logActivity } from '@/lib/activityLog';
+import { getPathForView } from '@/lib/routes';
 
 interface LoadWithCount extends LoadMetadata {
   item_count: number;
@@ -40,7 +41,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const [wipeConfirmOpen, setWipeConfirmOpen] = useState(false);
   const [wipingAsis, setWipingAsis] = useState(false);
   const [preserveCustomFields, setPreserveCustomFields] = useState(true);
+  const [showAway, setShowAway] = useState(false);
   const [pendingLoadSelection, setPendingLoadSelection] = useState<string | null>(null);
+  const [isStandaloneDetail, setIsStandaloneDetail] = useState(false);
+  const detailScrollRef = useRef<HTMLDivElement | null>(null);
+  const standaloneScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Filter state
   type LoadFilter = 'all' | 'for_sale' | 'picked' | 'shipped' | 'delivered';
@@ -48,6 +53,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
 
   // Dialog states
   const [selectedLoadForDetail, setSelectedLoadForDetail] = useState<LoadMetadata | null>(null);
+  const [loadDetailSource, setLoadDetailSource] = useState<'loads' | 'dashboard' | 'external'>('external');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState<LoadMetadata | null>(null);
 
@@ -108,7 +114,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     const { data, error } = await supabase
       .from('load_metadata')
       .select(
-        'sub_inventory_name, friendly_name, notes, primary_color, category, prep_tagged, prep_wrapped, pickup_date, pickup_tba'
+        'sub_inventory_name, friendly_name, notes, primary_color, category, prep_tagged, prep_wrapped, sanity_check_requested, sanity_check_requested_at, sanity_check_requested_by, sanity_check_completed_at, sanity_check_completed_by, pickup_date, pickup_tba'
       )
       .eq('location_id', locationId)
       .eq('inventory_type', 'ASIS');
@@ -122,6 +128,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
       category: string | null;
       prep_tagged: boolean | null;
       prep_wrapped: boolean | null;
+      sanity_check_requested: boolean | null;
+      sanity_check_requested_at: string | null;
+      sanity_check_requested_by: string | null;
+      sanity_check_completed_at: string | null;
+      sanity_check_completed_by: string | null;
       pickup_date: string | null;
       pickup_tba: boolean | null;
     }>();
@@ -134,6 +145,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
         category: row.category ?? null,
         prep_tagged: row.prep_tagged ?? null,
         prep_wrapped: row.prep_wrapped ?? null,
+        sanity_check_requested: row.sanity_check_requested ?? null,
+        sanity_check_requested_at: row.sanity_check_requested_at ?? null,
+        sanity_check_requested_by: row.sanity_check_requested_by ?? null,
+        sanity_check_completed_at: row.sanity_check_completed_at ?? null,
+        sanity_check_completed_by: row.sanity_check_completed_by ?? null,
         pickup_date: row.pickup_date ?? null,
         pickup_tba: row.pickup_tba ?? null,
       });
@@ -149,6 +165,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     category: string | null;
     prep_tagged: boolean | null;
     prep_wrapped: boolean | null;
+    sanity_check_requested: boolean | null;
+    sanity_check_requested_at: string | null;
+    sanity_check_requested_by: string | null;
+    sanity_check_completed_at: string | null;
+    sanity_check_completed_by: string | null;
     pickup_date: string | null;
     pickup_tba: boolean | null;
   }>) => {
@@ -285,12 +306,34 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     fetchLoads();
   }, []);
 
-  useEffect(() => {
+  const syncLocationFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
-    const loadParam = params.get('load');
+    const path = window.location.pathname.replace(/\/+$/, '');
+    const segments = path.split('/').filter(Boolean);
+    const pathLoad = segments[0] === 'loads' && segments[1] ? decodeURIComponent(segments[1]) : null;
+    const loadParam = pathLoad || params.get('load');
     if (loadParam) {
+      const from = params.get('from');
       setPendingLoadSelection(loadParam);
+      setLoadDetailSource(from === 'loads' ? 'loads' : from === 'dashboard' ? 'dashboard' : 'external');
+      setIsStandaloneDetail(params.get('from') !== 'loads');
+    } else {
+      setPendingLoadSelection(null);
+      setSelectedLoadForDetail(null);
+      setLoadDetailSource('external');
+      setIsStandaloneDetail(false);
     }
+  };
+
+  useEffect(() => {
+    syncLocationFromUrl();
+    const handleLocationChange = () => syncLocationFromUrl();
+    window.addEventListener('app:locationchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
+    return () => {
+      window.removeEventListener('app:locationchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -314,6 +357,12 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     }
   }, [loads, selectedLoadForDetail]);
 
+  useEffect(() => {
+    if (!selectedLoadForDetail) return;
+    detailScrollRef.current?.scrollTo({ top: 0 });
+    standaloneScrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedLoadForDetail?.id]);
+
   const normalizeGeStatus = (status?: string | null) => status?.toLowerCase().trim() ?? '';
   const isSoldStatus = (status?: string | null) => {
     const normalized = normalizeGeStatus(status);
@@ -328,7 +377,45 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   };
 
   const handleLoadClick = (load: LoadMetadata) => {
-    setSelectedLoadForDetail((prev) => (prev?.id === load.id ? null : load));
+    setSelectedLoadForDetail((prev) => {
+      const next = prev?.id === load.id ? null : load;
+      const params = new URLSearchParams(window.location.search);
+      params.delete('load');
+      if (next) {
+        params.set('from', 'loads');
+        setLoadDetailSource('loads');
+        const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
+        const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
+        window.history.replaceState({}, '', nextUrl);
+      } else {
+        params.delete('from');
+        const nextUrl = params.toString() ? `/loads?${params.toString()}` : '/loads';
+        window.history.replaceState({}, '', nextUrl);
+      }
+      window.dispatchEvent(new Event('app:locationchange'));
+      return next;
+    });
+  };
+
+  const openStandaloneDetail = (load: LoadMetadata) => {
+    const params = new URLSearchParams(window.location.search);
+    params.delete('from');
+    params.delete('load');
+    const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
+    const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
+    window.history.replaceState({}, '', nextUrl);
+    window.dispatchEvent(new Event('app:locationchange'));
+  };
+
+  const handleStandaloneClose = () => {
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get('from');
+    params.delete('from');
+    params.delete('load');
+    const target = from === 'dashboard' ? getPathForView('dashboard') : getPathForView('loads');
+    const nextUrl = params.toString() ? `${target}?${params.toString()}` : target;
+    window.history.replaceState({}, '', nextUrl);
+    window.dispatchEvent(new Event('app:locationchange'));
   };
 
 
@@ -368,234 +455,380 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const getPrepCount = (load: LoadMetadata) =>
     (load.prep_tagged ? 1 : 0) + (load.prep_wrapped ? 1 : 0);
 
+  const isAwayStatus = (status?: string | null) => {
+    const normalized = normalizeGeStatus(status);
+    return normalized === 'shipped' || normalized === 'delivered';
+  };
+
+  const isVisibleLoad = (load: LoadMetadata) => {
+    const source = normalizeGeStatus(load.ge_source_status);
+    if (source !== 'for sale' && source !== 'sold') return false;
+    if (!showAway && isAwayStatus(load.ge_cso_status)) return false;
+    return true;
+  };
+
   const isReadyForPickup = (load: LoadMetadata) =>
     isSoldStatus(load.ge_source_status) &&
     Boolean(load.prep_tagged) &&
     Boolean(load.prep_wrapped) &&
     (Boolean(load.pickup_date) || Boolean(load.pickup_tba));
 
+  useEffect(() => {
+    if (!showAway && (loadFilter === 'shipped' || loadFilter === 'delivered')) {
+      setLoadFilter('all');
+    }
+  }, [showAway, loadFilter]);
+
   return (
     <>
-      <div className="min-h-screen bg-background">
+      <div className="h-screen bg-background flex flex-col">
         <AppHeader
-          title="Load Management"
+          title={
+            isStandaloneDetail
+              ? `Load ${selectedLoadForDetail?.friendly_name || selectedLoadForDetail?.sub_inventory_name || ''}`.trim()
+              : "Load Management"
+          }
           onMenuClick={onMenuClick}
           actions={
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="responsive"
-                variant="outline"
-                onClick={() => setSyncConfirmOpen(true)}
-                disabled={importingLoads || wipingAsis}
-              >
-                {importingLoads ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                Sync ASIS
-              </Button>
-              <Button
-                size="responsive"
-                variant="destructive"
-                onClick={() => setWipeConfirmOpen(true)}
-                disabled={importingLoads || wipingAsis}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Wipe ASIS
-              </Button>
-            </div>
+            isStandaloneDetail ? null : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="responsive"
+                  variant="outline"
+                  onClick={() => setSyncConfirmOpen(true)}
+                  disabled={importingLoads || wipingAsis}
+                >
+                  {importingLoads ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Sync ASIS
+                </Button>
+                <Button
+                  size="responsive"
+                  variant="destructive"
+                  onClick={() => setWipeConfirmOpen(true)}
+                  disabled={importingLoads || wipingAsis}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Wipe ASIS
+                </Button>
+              </div>
+            )
           }
         />
 
-        <PageContainer className="py-4 space-y-4 pb-24">
-          {/* Filter Tabs */}
-          {!loading && loads.length > 0 && (
-            <div className={`flex flex-wrap gap-2 ${selectedLoadForDetail ? 'hidden lg:flex' : ''}`}>
-              {([
-                { key: 'all', label: 'All' },
-                { key: 'for_sale', label: 'For Sale' },
-                { key: 'picked', label: 'Picked' },
-                { key: 'shipped', label: 'Shipped' },
-                { key: 'delivered', label: 'Delivered' },
-              ] as const).map(({ key, label }) => {
-                const count = loads.filter((load) => {
-                  if (key === 'all') return true;
-                  if (key === 'for_sale') return normalizeGeStatus(load.ge_source_status) === 'for sale';
-                  return (
-                    normalizeGeStatus(load.ge_source_status) === 'sold' &&
-                    normalizeGeStatus(load.ge_cso_status) === key
-                  );
-                }).length;
-                return (
-                  <Button
-                    key={key}
-                    size="responsive"
-                    variant={loadFilter === key ? 'default' : 'outline'}
-                    onClick={() => setLoadFilter(key)}
-                    className="h-8"
-                  >
-                    {label}
-                    <Badge variant="secondary" className="ml-2 h-5 px-1.5">
-                      {count}
-                    </Badge>
-                  </Button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Load List */}
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : loads.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
-              <p>No loads found</p>
-              <p className="text-sm mt-2">Sync ASIS to pull loads from GE.</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
-              {/* Load List - hidden on mobile when a load is selected */}
-              <div className={`space-y-2 ${selectedLoadForDetail ? 'hidden lg:block' : ''}`}>
-                {loads
-                  .filter((load) => {
-                    if (loadFilter === 'all') return true;
-                    if (loadFilter === 'for_sale') return normalizeGeStatus(load.ge_source_status) === 'for sale';
+        <PageContainer className="py-4 pb-24 flex-1 min-h-0 overflow-hidden">
+          <div className="flex min-h-0 flex-col gap-4 h-full">
+            {/* Filter Tabs */}
+            {!isStandaloneDetail && !loading && loads.length > 0 && (
+              <div
+                className={`sticky top-0 z-10 -mx-2 px-2 py-2 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 ${
+                  selectedLoadForDetail ? 'hidden lg:flex' : 'flex'
+                } flex-wrap gap-2`}
+              >
+                {([
+                  { key: 'all', label: 'All' },
+                  { key: 'for_sale', label: 'For Sale' },
+                  { key: 'picked', label: 'Picked' },
+                  { key: 'shipped', label: 'Shipped' },
+                  { key: 'delivered', label: 'Delivered' },
+                ] as const).map(({ key, label }) => {
+                  if (!showAway && (key === 'shipped' || key === 'delivered')) {
+                    return null;
+                  }
+                  const count = loads.filter((load) => {
+                    if (!isVisibleLoad(load)) return false;
+                    if (key === 'all') return true;
+                    if (key === 'for_sale') return normalizeGeStatus(load.ge_source_status) === 'for sale';
                     return (
                       normalizeGeStatus(load.ge_source_status) === 'sold' &&
-                      normalizeGeStatus(load.ge_cso_status) === loadFilter
+                      normalizeGeStatus(load.ge_cso_status) === key
                     );
-                  })
-                  .map((load) => {
-                  const isSold = isSoldStatus(load.ge_source_status);
-                  const prepCount = getPrepCount(load);
-                  const readyForPickup = isReadyForPickup(load);
-                  const pickupLabel = load.pickup_tba
-                    ? 'Pickup: TBA'
-                    : load.pickup_date
-                      ? `Pickup: ${formatPickupDate(load.pickup_date)}`
-                      : '';
-                  const csoValue = load.ge_cso?.trim() || '';
-                  const csoHead = csoValue.length > 4 ? csoValue.slice(0, -4) : '';
-                  const csoTail = csoValue.length > 4 ? csoValue.slice(-4) : csoValue;
-                  const listTitle = load.friendly_name || load.sub_inventory_name;
-                  const notesValue = load.notes?.trim() ? { label: null, value: load.notes } : null;
-
+                  }).length;
                   return (
-                  <Card
-                    key={load.id}
-                    className={`p-4 transition cursor-pointer ${
-                      selectedLoadForDetail?.id === load.id
-                        ? 'border-primary/50 bg-primary/5'
-                        : 'hover:bg-accent/30'
+                    <Button
+                      key={key}
+                      size="responsive"
+                      variant={loadFilter === key ? 'default' : 'outline'}
+                      onClick={() => setLoadFilter(key)}
+                      className="h-8"
+                    >
+                      {label}
+                      <Badge variant="secondary" className="ml-2 h-5 px-1.5">
+                        {count}
+                      </Badge>
+                    </Button>
+                  );
+                })}
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="text-xs text-muted-foreground">Show away</span>
+                  <Switch checked={showAway} onCheckedChange={setShowAway} />
+                </div>
+              </div>
+            )}
+
+            {/* Load List */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : loads.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <p>No loads found</p>
+                  <p className="text-sm mt-2">Sync ASIS to pull loads from GE.</p>
+                </div>
+              ) : isStandaloneDetail ? (
+                <div className="flex h-full min-h-0 flex-col gap-4">
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="responsive"
+                      onClick={() => {
+                        const params = new URLSearchParams(window.location.search);
+                        params.delete('from');
+                        params.delete('load');
+                        const nextUrl = params.toString() ? `/loads?${params.toString()}` : '/loads';
+                        window.history.replaceState({}, '', nextUrl);
+                        window.dispatchEvent(new Event('app:locationchange'));
+                      }}
+                    >
+                      View all loads
+                    </Button>
+                  </div>
+                  <div ref={standaloneScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+                    {selectedLoadForDetail ? (
+                      <LoadDetailPanel
+                        load={selectedLoadForDetail}
+                        allLoads={loads}
+                        onClose={handleStandaloneClose}
+                        onDelete={handleDeleteClick}
+                        onMetaUpdated={(updates) => {
+                          setLoads((prev) =>
+                            prev.map((entry) =>
+                              entry.id === selectedLoadForDetail.id
+                                ? { ...entry, ...updates }
+                                : entry
+                            )
+                          );
+                          setSelectedLoadForDetail((prev) =>
+                            prev ? { ...prev, ...updates } : prev
+                          );
+                        }}
+                      />
+                    ) : (
+                      <Card className="p-6 text-sm text-muted-foreground">
+                        Select a load to view details.
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+                  {/* Load List - hidden on mobile when a load is selected */}
+                  <div
+                    className={`min-h-0 overflow-y-auto space-y-2 ${
+                      selectedLoadForDetail ? (isStandaloneDetail ? 'hidden' : 'hidden lg:block') : ''
                     }`}
-                    onClick={() => handleLoadClick(load)}
-                    role="button"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-start gap-2 flex-wrap">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                              {load.primary_color && (
-                                <span
-                                  className="h-4 w-4 rounded-sm border border-border/60"
-                                  style={{ backgroundColor: load.primary_color }}
-                                  aria-hidden="true"
-                                />
-                              )}
-                              <h3 className="font-semibold">{listTitle}</h3>
-                            </div>
-                            {csoValue && (
-                              <div className="text-sm font-medium text-foreground">
-                                <span className="text-muted-foreground">CSO </span>
-                                {csoHead && <span className="font-light text-muted-foreground">{csoHead}</span>}
-                                <span className="font-semibold underline decoration-dotted underline-offset-2">
-                                  {csoTail}
-                                </span>
+                    {loads
+                      .filter((load) => isVisibleLoad(load))
+                      .filter((load) => {
+                        if (loadFilter === 'all') return true;
+                        if (loadFilter === 'for_sale') return normalizeGeStatus(load.ge_source_status) === 'for sale';
+                        return (
+                          normalizeGeStatus(load.ge_source_status) === 'sold' &&
+                          normalizeGeStatus(load.ge_cso_status) === loadFilter
+                        );
+                      })
+                      .map((load) => {
+                      const isSold = isSoldStatus(load.ge_source_status);
+                      const prepCount = getPrepCount(load);
+                      const readyForPickup = isReadyForPickup(load);
+                      const pickupLabel = load.pickup_tba
+                        ? 'Pickup: TBA'
+                        : load.pickup_date
+                          ? `Pickup: ${formatPickupDate(load.pickup_date)}`
+                          : '';
+                      const csoValue = load.ge_cso?.trim() || '';
+                      const csoHead = csoValue.length > 4 ? csoValue.slice(0, -4) : '';
+                      const csoTail = csoValue.length > 4 ? csoValue.slice(-4) : csoValue;
+                      const listTitle = load.friendly_name || load.sub_inventory_name;
+                      const notesValue = load.notes?.trim() ? { label: null, value: load.notes } : null;
+
+                      return (
+                      <Card
+                        key={load.id}
+                        className={`p-4 transition cursor-pointer ${
+                          selectedLoadForDetail?.id === load.id
+                            ? 'border-primary/50 bg-primary/5'
+                            : 'hover:bg-accent/30'
+                        }`}
+                        onClick={() => handleLoadClick(load)}
+                        role="button"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  {load.primary_color && (
+                                    <span
+                                      className="h-4 w-4 rounded-sm border border-border/60"
+                                      style={{ backgroundColor: load.primary_color }}
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <h3 className="font-semibold">{listTitle}</h3>
+                                </div>
+                                {csoValue && (
+                                  <div className="text-sm font-medium text-foreground">
+                                    <span className="text-muted-foreground">CSO </span>
+                                    {csoHead && <span className="font-light text-muted-foreground">{csoHead}</span>}
+                                    <span className="font-semibold underline decoration-dotted underline-offset-2">
+                                      {csoTail}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
+                              <Badge variant="outline">{load.inventory_type}</Badge>
+                              {load.category && (
+                                <Badge variant="secondary">{load.category}</Badge>
+                              )}
+                              {load.ge_source_status && (
+                                <Badge variant="outline">GE: {load.ge_source_status}</Badge>
+                              )}
+                              {isSold && (
+                                <Badge variant="outline">Prep {prepCount}/2</Badge>
+                              )}
+                              {readyForPickup && (
+                                <Badge className="bg-green-500 text-white">Ready for pickup</Badge>
+                              )}
+                              {load.conflict_count > 0 && (
+                                <Badge variant="destructive">
+                                  {load.conflict_count} conflict{load.conflict_count === 1 ? '' : 's'}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                              <span>{load.item_count} items</span>
+                              <span>Load # {load.sub_inventory_name}</span>
+                              <span>Created {new Date(load.created_at!).toLocaleDateString()}</span>
+                              {pickupLabel && <span>{pickupLabel}</span>}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                                    load.prep_wrapped
+                                      ? 'border-foreground/30 text-foreground'
+                                      : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                                  }`}
+                                >
+                                  {load.prep_wrapped && <Check className="h-2.5 w-2.5" />}
+                                </span>
+                                <span className={load.prep_wrapped ? '' : 'opacity-60'}>Wrapped</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span
+                                  className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                                    load.prep_tagged
+                                      ? 'border-foreground/30 text-foreground'
+                                      : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                                  }`}
+                                >
+                                  {load.prep_tagged && <Check className="h-2.5 w-2.5" />}
+                                </span>
+                                <span className={load.prep_tagged ? '' : 'opacity-60'}>Tagged</span>
+                              </div>
+                              {!load.sanity_check_requested && (
+                                <div className="flex items-center gap-1">
+                                  <span
+                                    className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                                      load.conflict_count === 0
+                                        ? 'border-foreground/30 text-foreground'
+                                        : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                                    }`}
+                                  >
+                                    {load.conflict_count === 0 && <Check className="h-2.5 w-2.5" />}
+                                  </span>
+                                  <span className={load.conflict_count === 0 ? '' : 'opacity-60'}>
+                                    Sanity check
+                                  </span>
+                                </div>
+                              )}
+                          {load.sanity_check_requested && (
+                            <div className="flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3 text-amber-500" />
+                              <span>Sanity requested</span>
+                            </div>
+                          )}
+                        </div>
+                            {notesValue && (
+                              <p className="text-sm text-muted-foreground mt-1">
+                                {notesValue.value}
+                              </p>
                             )}
                           </div>
-                          <Badge variant="outline">{load.inventory_type}</Badge>
-                          {load.category && (
-                            <Badge variant="secondary">{load.category}</Badge>
-                          )}
-                          {load.ge_source_status && (
-                            <Badge variant="outline">GE: {load.ge_source_status}</Badge>
-                          )}
-                          {isSold && (
-                            <Badge variant="outline">Prep {prepCount}/2</Badge>
-                          )}
-                          {readyForPickup && (
-                            <Badge className="bg-green-500 text-white">Ready for pickup</Badge>
-                          )}
-                          {load.conflict_count > 0 && (
-                            <Badge variant="destructive">
-                              {load.conflict_count} conflict{load.conflict_count === 1 ? '' : 's'}
-                            </Badge>
-                          )}
                         </div>
-                        <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                          <span>{load.item_count} items</span>
-                          <span>Load # {load.sub_inventory_name}</span>
-                          <span>Created {new Date(load.created_at!).toLocaleDateString()}</span>
-                          {pickupLabel && <span>{pickupLabel}</span>}
-                        </div>
-                        {notesValue && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            {notesValue.value}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                );
-                })}
-              </div>
-
-              {/* Load Detail Panel - on mobile, shown with back button when selected */}
-              <div className={`min-h-[200px] ${selectedLoadForDetail ? '' : 'hidden lg:block'}`}>
-                {selectedLoadForDetail ? (
-                  <div className="space-y-3">
-                    {/* Back button - mobile only */}
-                    <Button
-                      variant="ghost"
-                      size="responsive"
-                      className="lg:hidden -ml-2"
-                      onClick={() => setSelectedLoadForDetail(null)}
-                    >
-                      <ArrowLeft className="mr-2 h-4 w-4" />
-                      Back to loads
-                    </Button>
-                    <LoadDetailPanel
-                      load={selectedLoadForDetail}
-                      allLoads={loads}
-                      onClose={() => setSelectedLoadForDetail(null)}
-                      onDelete={handleDeleteClick}
-                      onMetaUpdated={(updates) => {
-                        setLoads((prev) =>
-                          prev.map((entry) =>
-                            entry.id === selectedLoadForDetail.id
-                              ? { ...entry, ...updates }
-                              : entry
-                          )
-                        );
-                        setSelectedLoadForDetail((prev) =>
-                          prev ? { ...prev, ...updates } : prev
-                        );
-                      }}
-                    />
+                      </Card>
+                    );
+                    })}
                   </div>
-                ) : (
-                  <Card className="p-6 text-sm text-muted-foreground">
-                    Select a load to view details.
-                  </Card>
-                )}
-              </div>
+
+                  {/* Load Detail Panel - on mobile, shown with back button when selected */}
+                  <div
+                    ref={detailScrollRef}
+                    className={`min-h-0 overflow-y-auto ${
+                      selectedLoadForDetail ? '' : isStandaloneDetail ? 'hidden' : 'hidden lg:block'
+                    }`}
+                  >
+                    {selectedLoadForDetail ? (
+                      <div className="space-y-3">
+                        {/* Back button - mobile only */}
+                        {loadDetailSource === 'loads' && (
+                          <Button
+                            variant="ghost"
+                            size="responsive"
+                            className="lg:hidden -ml-2"
+                            onClick={() => handleLoadClick(selectedLoadForDetail)}
+                          >
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Back to loads
+                          </Button>
+                        )}
+                        <LoadDetailPanel
+                          load={selectedLoadForDetail}
+                          allLoads={loads}
+                          onClose={() => setSelectedLoadForDetail(null)}
+                          onDelete={handleDeleteClick}
+                          onOpenStandalone={() => openStandaloneDetail(selectedLoadForDetail)}
+                          onMetaUpdated={(updates) => {
+                            setLoads((prev) =>
+                              prev.map((entry) =>
+                                entry.id === selectedLoadForDetail.id
+                                  ? { ...entry, ...updates }
+                                  : entry
+                              )
+                            );
+                            setSelectedLoadForDetail((prev) =>
+                              prev ? { ...prev, ...updates } : prev
+                            );
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <Card className="p-6 text-sm text-muted-foreground">
+                        Select a load to view details.
+                      </Card>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </PageContainer>
       </div>
 

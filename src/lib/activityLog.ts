@@ -6,7 +6,12 @@ type ActivityUser = {
   image?: string | null;
 };
 
-export type ActivityAction = 'asis_sync' | 'asis_wipe' | 'load_update';
+export type ActivityAction =
+  | 'asis_sync'
+  | 'asis_wipe'
+  | 'load_update'
+  | 'sanity_check_requested'
+  | 'sanity_check_completed';
 
 export type ActivityLogInput = {
   companyId: string;

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, Search, X, Trash2, Printer } from 'lucide-react';
+import { Loader2, Search, X, Trash2, Printer, ChevronDown, Maximize2 } from 'lucide-react';
 import { getLoadWithItems, getLoadConflicts, updateLoadMetadata } from '@/lib/loadManager';
 import type { LoadMetadata, InventoryItem, LoadConflict } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
@@ -10,6 +10,7 @@ import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { useToast } from '@/components/ui/toast';
 import JsBarcode from 'jsbarcode';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { logActivity } from '@/lib/activityLog';
@@ -20,6 +21,7 @@ interface LoadDetailPanelProps {
   onClose?: () => void;
   onDelete?: (load: LoadMetadata) => void;
   onMetaUpdated?: (updates: Partial<LoadMetadata>) => void;
+  onOpenStandalone?: () => void;
 }
 
 export function LoadDetailPanel({
@@ -28,6 +30,7 @@ export function LoadDetailPanel({
   onClose,
   onDelete,
   onMetaUpdated,
+  onOpenStandalone,
 }: LoadDetailPanelProps) {
   const { user } = useAuth();
   const { locationId, companyId } = getActiveLocationContext();
@@ -38,6 +41,13 @@ export function LoadDetailPanel({
   const [searchTerm, setSearchTerm] = useState('');
   const [prepTagged, setPrepTagged] = useState(false);
   const [prepWrapped, setPrepWrapped] = useState(false);
+  const [sanityCheckRequested, setSanityCheckRequested] = useState(false);
+  const [sanityRequestedAt, setSanityRequestedAt] = useState<string | null>(null);
+  const [sanityRequestedBy, setSanityRequestedBy] = useState<string | null>(null);
+  const [sanityCompletedAt, setSanityCompletedAt] = useState<string | null>(null);
+  const [sanityCompletedBy, setSanityCompletedBy] = useState<string | null>(null);
+  const [sanityRequestConfirmOpen, setSanityRequestConfirmOpen] = useState(false);
+  const [sanityCompleteConfirmOpen, setSanityCompleteConfirmOpen] = useState(false);
   const [pickupDate, setPickupDate] = useState('');
   const [pickupTba, setPickupTba] = useState(false);
   const [savingPrep, setSavingPrep] = useState(false);
@@ -48,9 +58,8 @@ export function LoadDetailPanel({
   const [savingMeta, setSavingMeta] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [savePulse, setSavePulse] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const metaSaveTimeoutRef = useRef<number | null>(null);
-  const recentWindowSize = 20;
-
   const COLOR_OPTIONS = [
     { label: 'Red', value: '#E53935' },
     { label: 'Red-Orange', value: '#F4511E' },
@@ -65,6 +74,10 @@ export function LoadDetailPanel({
     { label: 'Violet', value: '#8E24AA' },
     { label: 'Red-Violet', value: '#D81B60' },
   ];
+  const recentWindowSize = 20;
+  const colorLabel = primaryColor
+    ? COLOR_OPTIONS.find((option) => option.value === primaryColor)?.label ?? primaryColor
+    : 'No color';
 
   const fetchItems = async () => {
     setLoading(true);
@@ -80,11 +93,17 @@ export function LoadDetailPanel({
   useEffect(() => {
     fetchItems();
     setSearchTerm('');
+    setDetailsOpen(false);
   }, [load.inventory_type, load.sub_inventory_name]);
 
   useEffect(() => {
     setPrepTagged(Boolean(load.prep_tagged));
     setPrepWrapped(Boolean(load.prep_wrapped));
+    setSanityCheckRequested(Boolean(load.sanity_check_requested));
+    setSanityRequestedAt(load.sanity_check_requested_at ?? null);
+    setSanityRequestedBy(load.sanity_check_requested_by ?? null);
+    setSanityCompletedAt(load.sanity_check_completed_at ?? null);
+    setSanityCompletedBy(load.sanity_check_completed_by ?? null);
     setPickupDate(load.pickup_date ? load.pickup_date.slice(0, 10) : '');
     setPickupTba(Boolean(load.pickup_tba));
     setFriendlyName(load.friendly_name || '');
@@ -95,6 +114,11 @@ export function LoadDetailPanel({
   }, [
     load.prep_tagged,
     load.prep_wrapped,
+    load.sanity_check_requested,
+    load.sanity_check_requested_at,
+    load.sanity_check_requested_by,
+    load.sanity_check_completed_at,
+    load.sanity_check_completed_by,
     load.pickup_date,
     load.pickup_tba,
     load.friendly_name,
@@ -114,7 +138,6 @@ export function LoadDetailPanel({
     );
   });
 
-  const uniqueCSOs = new Set(items.map((i) => i.cso).filter(Boolean)).size;
   const productTypeBreakdown = items.reduce((acc, item) => {
     acc[item.product_type] = (acc[item.product_type] || 0) + 1;
     return acc;
@@ -147,6 +170,16 @@ export function LoadDetailPanel({
     return new Date(year, month - 1, day).toLocaleDateString();
   };
 
+  const formatSanityTimestamp = (value?: string | null) => {
+    if (!value) return '';
+    return new Date(value).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
   const createdDate = load.created_at ? new Date(load.created_at).toLocaleDateString() : null;
   const displayName = load.friendly_name || load.sub_inventory_name;
   const normalizedGeStatus = load.ge_source_status?.toLowerCase().trim() ?? '';
@@ -177,12 +210,20 @@ export function LoadDetailPanel({
     return null;
   };
 
-  const persistPrepUpdate = async (updates: {
-    prep_tagged?: boolean;
-    prep_wrapped?: boolean;
-    pickup_date?: string | null;
-    pickup_tba?: boolean;
-  }) => {
+  const persistPrepUpdate = async (
+    updates: {
+      prep_tagged?: boolean;
+      prep_wrapped?: boolean;
+      sanity_check_requested?: boolean;
+      sanity_check_requested_at?: string | null;
+      sanity_check_requested_by?: string | null;
+      sanity_check_completed_at?: string | null;
+      sanity_check_completed_by?: string | null;
+      pickup_date?: string | null;
+      pickup_tba?: boolean;
+    },
+    options?: { skipActivityLog?: boolean }
+  ) => {
     setSavingPrep(true);
     const { success, error } = await updateLoadMetadata(
       load.inventory_type,
@@ -198,25 +239,28 @@ export function LoadDetailPanel({
     } else {
       onMetaUpdated?.(updates);
       triggerSavePulse();
-      const { error: activityError } = await logActivity({
-        companyId,
-        locationId,
-        user,
-        action: 'load_update',
-        entityType: 'ASIS_LOAD',
-        entityId: load.sub_inventory_name,
-        details: {
-          loadNumber: load.sub_inventory_name,
-          friendlyName: load.friendly_name ?? null,
-          fields: Object.keys(updates),
-          updates,
-        },
-      });
-      if (activityError) {
-        console.warn('Failed to log activity (load_update):', activityError.message);
+      if (!options?.skipActivityLog) {
+        const { error: activityError } = await logActivity({
+          companyId,
+          locationId,
+          user,
+          action: 'load_update',
+          entityType: 'ASIS_LOAD',
+          entityId: load.sub_inventory_name,
+          details: {
+            loadNumber: load.sub_inventory_name,
+            friendlyName: load.friendly_name ?? null,
+            fields: Object.keys(updates),
+            updates,
+          },
+        });
+        if (activityError) {
+          console.warn('Failed to log activity (load_update):', activityError.message);
+        }
       }
     }
     setSavingPrep(false);
+    return success;
   };
 
   const triggerSavePulse = () => {
@@ -503,6 +547,76 @@ export function LoadDetailPanel({
     persistPrepUpdate({ prep_wrapped: nextValue });
   };
 
+  const requestSanityCheck = async () => {
+    if (!user) return;
+    const now = new Date().toISOString();
+    setSanityCheckRequested(true);
+    setSanityRequestedAt(now);
+    setSanityRequestedBy(user.username);
+    setSanityCompletedAt(null);
+    setSanityCompletedBy(null);
+    const success = await persistPrepUpdate(
+      {
+        sanity_check_requested: true,
+        sanity_check_requested_at: now,
+        sanity_check_requested_by: user.username,
+        sanity_check_completed_at: null,
+        sanity_check_completed_by: null,
+      },
+      { skipActivityLog: true }
+    );
+    if (success) {
+      const { error: activityError } = await logActivity({
+        companyId,
+        locationId,
+        user,
+        action: 'sanity_check_requested',
+        entityType: 'ASIS_LOAD',
+        entityId: load.sub_inventory_name,
+        details: {
+          loadNumber: load.sub_inventory_name,
+          friendlyName: load.friendly_name ?? null,
+        },
+      });
+      if (activityError) {
+        console.warn('Failed to log activity (sanity_check_requested):', activityError.message);
+      }
+    }
+  };
+
+  const completeSanityCheck = async () => {
+    if (!user) return;
+    const now = new Date().toISOString();
+    setSanityCheckRequested(false);
+    setSanityCompletedAt(now);
+    setSanityCompletedBy(user.username);
+    const success = await persistPrepUpdate(
+      {
+        sanity_check_requested: false,
+        sanity_check_completed_at: now,
+        sanity_check_completed_by: user.username,
+      },
+      { skipActivityLog: true }
+    );
+    if (success) {
+      const { error: activityError } = await logActivity({
+        companyId,
+        locationId,
+        user,
+        action: 'sanity_check_completed',
+        entityType: 'ASIS_LOAD',
+        entityId: load.sub_inventory_name,
+        details: {
+          loadNumber: load.sub_inventory_name,
+          friendlyName: load.friendly_name ?? null,
+        },
+      });
+      if (activityError) {
+        console.warn('Failed to log activity (sanity_check_completed):', activityError.message);
+      }
+    }
+  };
+
   const handlePickupDateChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value;
     setPickupDate(nextValue);
@@ -704,16 +818,31 @@ export function LoadDetailPanel({
               <p className="text-sm text-muted-foreground mt-2">{load.notes}</p>
             )}
           </div>
-          {onClose && (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={onClose}
-              aria-label="Close load details"
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          {(onClose || onOpenStandalone) && (
+            <div className="flex items-center gap-2">
+              {onOpenStandalone && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={onOpenStandalone}
+                  aria-label="Open standalone load view"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              )}
+              {onClose && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={onClose}
+                  aria-label="Close load details"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           )}
         </div>
 
@@ -756,7 +885,7 @@ export function LoadDetailPanel({
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-sm font-medium">Prep checklist</p>
-              <p className="text-xs text-muted-foreground">Tagged and wrapped for pickup.</p>
+              <p className="text-xs text-muted-foreground">Tagged, wrapped, and sanity check requests.</p>
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               {savingPrep && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -772,6 +901,38 @@ export function LoadDetailPanel({
               <Checkbox checked={prepWrapped} onCheckedChange={handleWrappedChange} disabled={savingPrep} />
               Wrapped
             </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">Sanity check</span>
+                {sanityCheckRequested ? (
+                  <span className="text-xs text-muted-foreground">
+                    Requested
+                    {sanityRequestedBy ? ` by ${sanityRequestedBy}` : ''}
+                    {sanityRequestedAt ? ` • ${formatSanityTimestamp(sanityRequestedAt)}` : ''}
+                  </span>
+                ) : sanityCompletedAt ? (
+                  <span className="text-xs text-muted-foreground">
+                    Last completed
+                    {sanityCompletedBy ? ` by ${sanityCompletedBy}` : ''}
+                    {sanityCompletedAt ? ` • ${formatSanityTimestamp(sanityCompletedAt)}` : ''}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Not requested</span>
+                )}
+              </div>
+              <Button
+                size="responsive"
+                variant={sanityCheckRequested ? 'outline' : 'default'}
+                onClick={() =>
+                  sanityCheckRequested
+                    ? setSanityCompleteConfirmOpen(true)
+                    : setSanityRequestConfirmOpen(true)
+                }
+                disabled={savingPrep}
+              >
+                {sanityCheckRequested ? 'Complete sanity check' : 'Request sanity check'}
+              </Button>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-muted-foreground">Pickup</span>
               <Input
@@ -789,104 +950,123 @@ export function LoadDetailPanel({
           </div>
         </div>
         <div className="rounded-lg border bg-muted/20 p-3 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-medium">Load details</p>
-              <p className="text-xs text-muted-foreground">Local metadata you can edit.</p>
-            </div>
-            <Button
+          <div className="flex items-start justify-between gap-2">
+            <button
               type="button"
-              size="responsive"
-              variant="outline"
-              onClick={handleSaveMeta}
-              disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
-              className={savePulse ? 'animate-pulse' : undefined}
+              className="flex items-start gap-2 text-left"
+              onClick={() => setDetailsOpen((prev) => !prev)}
             >
-              {savingMeta && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {savingMeta ? 'Saving...' : savePulse && !savingMeta ? 'Saved' : 'Save changes'}
-            </Button>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Friendly name</label>
-              <Input
-                value={friendlyName}
-                onChange={(e) => setFriendlyName(e.target.value.toUpperCase())}
-                placeholder="Optional display name"
-              />
-              {load.inventory_type === 'ASIS' && (
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  {derivedFriendlyCode && !friendlyName.trim() && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-2 text-primary"
-                      onClick={() => setFriendlyName(derivedFriendlyCode)}
-                    >
-                      Use suggested name {derivedFriendlyCode}
-                    </button>
-                  )}
-                  {suggestedCodes.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {suggestedCodes.map((code) => (
-                        <button
-                          key={code}
-                          type="button"
-                          className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
-                          onClick={() => setFriendlyName(code)}
-                        >
-                          {code}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <p>Allowed: 1–2 letters, not used in the last {recentWindowSize} ASIS loads.</p>
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Notes</label>
-              <Input
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional notes for this load"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Primary color</label>
-              <select
-                value={primaryColor}
-                onChange={(e) => setPrimaryColor(e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              >
-                <option value="">No color</option>
-                {COLOR_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label} ({option.value})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {load.inventory_type === 'ASIS' && (
-              <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Salvage</label>
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={isSalvage} onCheckedChange={(checked) => setIsSalvage(checked === true)} />
-                  Mark this load as salvage
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Unchecked loads are treated as regular.
-                </p>
+              <ChevronDown className={`mt-0.5 h-4 w-4 transition-transform ${detailsOpen ? '' : '-rotate-90'}`} />
+              <div>
+                <p className="text-sm font-medium">Load details</p>
+                <p className="text-xs text-muted-foreground">Local metadata you can edit.</p>
+                {!detailsOpen && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Name: {friendlyName.trim() || '—'} • Color: {colorLabel}
+                    {isSalvage ? ' • Salvage' : ''}
+                  </p>
+                )}
               </div>
+            </button>
+            {detailsOpen && (
+              <Button
+                type="button"
+                size="responsive"
+                variant="outline"
+                onClick={handleSaveMeta}
+                disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
+                className={savePulse ? 'animate-pulse' : undefined}
+              >
+                {savingMeta && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {savingMeta ? 'Saving...' : savePulse && !savingMeta ? 'Saved' : 'Save changes'}
+              </Button>
             )}
           </div>
 
-          {metaError && (
-            <div className="text-sm text-destructive">{metaError}</div>
+          {detailsOpen && (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Friendly name</label>
+                  <Input
+                    value={friendlyName}
+                    onChange={(e) => setFriendlyName(e.target.value.toUpperCase())}
+                    placeholder="Optional display name"
+                  />
+                  {load.inventory_type === 'ASIS' && (
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      {derivedFriendlyCode && !friendlyName.trim() && (
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 text-primary"
+                          onClick={() => setFriendlyName(derivedFriendlyCode)}
+                        >
+                          Use suggested name {derivedFriendlyCode}
+                        </button>
+                      )}
+                      {suggestedCodes.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {suggestedCodes.map((code) => (
+                            <button
+                              key={code}
+                              type="button"
+                              className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                              onClick={() => setFriendlyName(code)}
+                            >
+                              {code}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <p>Allowed: 1–2 letters, not used in the last {recentWindowSize} ASIS loads.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Notes</label>
+                  <Input
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Optional notes for this load"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Primary color</label>
+                  <select
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">No color</option>
+                    {COLOR_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} ({option.value})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {load.inventory_type === 'ASIS' && (
+                  <div className="space-y-2">
+                    <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Salvage</label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox checked={isSalvage} onCheckedChange={(checked) => setIsSalvage(checked === true)} />
+                      Mark this load as salvage
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Unchecked loads are treated as regular.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {metaError && (
+                <div className="text-sm text-destructive">{metaError}</div>
+              )}
+            </>
           )}
         </div>
 
@@ -912,14 +1092,10 @@ export function LoadDetailPanel({
         </div>
 
         {/* Summary */}
-        <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-2">
           <div>
             <div className="text-sm text-muted-foreground">Total Items</div>
             <div className="text-2xl font-bold">{items.length}</div>
-          </div>
-          <div>
-            <div className="text-sm text-muted-foreground">Unique CSOs</div>
-            <div className="text-2xl font-bold">{uniqueCSOs}</div>
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Product Types</div>
@@ -1028,6 +1204,32 @@ export function LoadDetailPanel({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={sanityRequestConfirmOpen}
+        onOpenChange={setSanityRequestConfirmOpen}
+        title="Request sanity check?"
+        description="This marks the load as needing a sanity check."
+        confirmText="Request sanity check"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setSanityRequestConfirmOpen(false);
+          requestSanityCheck();
+        }}
+      />
+
+      <ConfirmDialog
+        open={sanityCompleteConfirmOpen}
+        onOpenChange={setSanityCompleteConfirmOpen}
+        title="Complete sanity check?"
+        description="This marks the sanity check as complete."
+        confirmText="Complete sanity check"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setSanityCompleteConfirmOpen(false);
+          completeSanityCheck();
+        }}
+      />
     </>
   );
 }

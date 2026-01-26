@@ -35,21 +35,27 @@ function App() {
         'products',
         'settings',
         'settings-locations',
+        'settings-location',
         'settings-company',
         'settings-users',
         'settings-displays',
         'settings-displays-setup',
         'settings-displays-list',
         'settings-displays-settings',
+        'settings-profile',
         'loads',
         'activity',
         'create-session',
       ].includes(legacyView)
     ) {
       const mappedView = legacyView === 'settings'
-        ? 'settings-locations'
+        ? 'settings-location'
         : legacyView === 'settings-displays'
-        ? 'settings-displays-list'
+        ? 'settings-displays'
+        : legacyView === 'settings-displays-setup' ||
+          legacyView === 'settings-displays-list' ||
+          legacyView === 'settings-displays-settings'
+        ? 'settings-displays'
         : legacyView;
       return { view: mappedView as AppView, sessionId: null };
     }
@@ -102,7 +108,11 @@ function App() {
       setDisplayId(route.displayId ?? null);
     };
     window.addEventListener('popstate', syncRoute);
-    return () => window.removeEventListener('popstate', syncRoute);
+    window.addEventListener('app:locationchange', syncRoute);
+    return () => {
+      window.removeEventListener('popstate', syncRoute);
+      window.removeEventListener('app:locationchange', syncRoute);
+    };
   }, [getRouteFromLocation]);
 
   useEffect(() => {
@@ -170,20 +180,20 @@ function App() {
             {currentView === "settings-locations" && (
               <SettingsView section="locations" />
             )}
+            {currentView === "settings-location" && (
+              <SettingsView section="location" />
+            )}
             {currentView === "settings-company" && (
               <SettingsView section="company" />
             )}
             {currentView === "settings-users" && (
               <SettingsView section="users" />
             )}
-            {currentView === "settings-displays-setup" && (
-              <SettingsView section="displays-setup" />
+            {currentView === "settings-profile" && (
+              <SettingsView section="profile" />
             )}
-            {currentView === "settings-displays-list" && (
-              <SettingsView section="displays-list" />
-            )}
-            {currentView === "settings-displays-settings" && (
-              <SettingsView section="displays-settings" />
+            {currentView === "settings-displays" && (
+              <SettingsView section="displays" />
             )}
           </div>
         </SidebarInset>

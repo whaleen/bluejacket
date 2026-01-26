@@ -86,7 +86,7 @@ export function NavUser({ onSettingsClick }: { onSettingsClick?: () => void }) {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onSettingsClick}>
                 <Settings />
-                Settings
+                User Settings
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Package, TruckIcon, PackageOpen, User, Activity, ScanBarcode, ArrowRight } from 'lucide-react';
+import { Package, TruckIcon, PackageOpen, User, Activity, ScanBarcode, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import supabase from '@/lib/supabase';
@@ -77,6 +77,8 @@ type AsisActionLoad = {
   pickup_date?: string | null;
   prep_tagged?: boolean | null;
   prep_wrapped?: boolean | null;
+  sanity_check_requested?: boolean | null;
+  conflict_count?: number | null;
 };
 
 type ActivityLogEntry = {
@@ -117,10 +119,12 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   const [asisActionLoads, setAsisActionLoads] = useState<{
     forSaleNeedsWrap: AsisActionLoad[];
     soldNeedsPrep: AsisActionLoad[];
+    sanityCheckRequested: AsisActionLoad[];
     pickupSoonNeedsPrep: AsisActionLoad[];
   }>({
     forSaleNeedsWrap: [],
     soldNeedsPrep: [],
+    sanityCheckRequested: [],
     pickupSoonNeedsPrep: [],
   });
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
@@ -161,13 +165,13 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
   const navigateToLoad = (loadNumber: string) => {
     const params = new URLSearchParams(window.location.search);
-    params.set('load', loadNumber);
     params.delete('view');
-    const path = getPathForView('loads');
+    params.delete('load');
+    params.set('from', 'dashboard');
+    const path = `${getPathForView('loads')}/${encodeURIComponent(loadNumber)}`;
     const newUrl = params.toString() ? `${path}?${params.toString()}` : path;
     window.history.replaceState({}, '', newUrl);
     window.dispatchEvent(new Event('app:locationchange'));
-    onViewChange?.('loads');
   };
 
   const navigateToActivity = () => {
@@ -259,6 +263,22 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
       // Fetch all loads
       const { data: loadsData } = await getAllLoads();
+      const { data: conflictsData } = await supabase
+        .from('load_conflicts')
+        .select('load_number')
+        .eq('location_id', locationId)
+        .eq('status', 'open');
+
+      const conflictCountMap = new Map<string, number>();
+      (conflictsData ?? []).forEach((row) => {
+        if (!row?.load_number) return;
+        conflictCountMap.set(row.load_number, (conflictCountMap.get(row.load_number) ?? 0) + 1);
+      });
+
+      const loads = (loadsData ?? []).map((load) => ({
+        ...load,
+        conflict_count: conflictCountMap.get(load.sub_inventory_name) ?? 0,
+      }));
 
       // Calculate detailed stats
       const newStats: DetailedStats = {
@@ -276,12 +296,12 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           soldNeedsBoth: 0,
           pickupSoonNeedsPrep: 0,
         },
-        loads: { total: loadsData?.length || 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
+        loads: { total: loads.length || 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
       };
 
       // Build a map of load categories for quick lookup
       const loadCategoryMap = new Map<string, string>();
-      (loadsData || []).forEach(load => {
+      loads.forEach(load => {
         if (load.category && load.sub_inventory_name) {
           loadCategoryMap.set(load.sub_inventory_name, load.category);
         }
@@ -346,10 +366,11 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
       const nextAsisActions = {
         forSaleNeedsWrap: [] as AsisActionLoad[],
         soldNeedsPrep: [] as AsisActionLoad[],
+        sanityCheckRequested: [] as AsisActionLoad[],
         pickupSoonNeedsPrep: [] as AsisActionLoad[],
       };
 
-      (loadsData || []).forEach((load) => {
+      loads.forEach((load) => {
         if (load.status === 'active') newStats.loads.active++;
 
         const itemsInLoad = (itemsData || []).filter(
@@ -371,6 +392,13 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           const pickupSoon =
             pickupDateValue && pickupDateValue <= pickupSoonThreshold && pickupDateValue >= now;
 
+          const csoStatus = normalizeStatus(load.ge_cso_status);
+          const isShippedOrDelivered = csoStatus === 'delivered' || csoStatus === 'shipped';
+
+          if (load.sanity_check_requested && !isShippedOrDelivered) {
+            nextAsisActions.sanityCheckRequested.push(load as AsisActionLoad);
+          }
+
           if (status === 'for sale') {
             newStats.asisLoads.forSale += 1;
             if (needsWrap) {
@@ -378,16 +406,18 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               nextAsisActions.forSaleNeedsWrap.push(load as AsisActionLoad);
             }
           } else if (status === 'sold') {
-            newStats.asisLoads.sold += 1;
-            if (needsTag) newStats.asisLoads.soldNeedsTag += 1;
-            if (needsWrap) newStats.asisLoads.soldNeedsWrap += 1;
-            if (needsBoth || needsTag || needsWrap) {
-              newStats.asisLoads.soldNeedsBoth += 1;
-              nextAsisActions.soldNeedsPrep.push(load as AsisActionLoad);
-            }
-            if (pickupSoon && (needsTag || needsWrap)) {
-              newStats.asisLoads.pickupSoonNeedsPrep += 1;
-              nextAsisActions.pickupSoonNeedsPrep.push(load as AsisActionLoad);
+            if (!isShippedOrDelivered) {
+              newStats.asisLoads.sold += 1;
+              if (needsTag) newStats.asisLoads.soldNeedsTag += 1;
+              if (needsWrap) newStats.asisLoads.soldNeedsWrap += 1;
+              if (needsBoth || needsTag || needsWrap) {
+                newStats.asisLoads.soldNeedsBoth += 1;
+                nextAsisActions.soldNeedsPrep.push(load as AsisActionLoad);
+              }
+              if (pickupSoon && (needsTag || needsWrap)) {
+                newStats.asisLoads.pickupSoonNeedsPrep += 1;
+                nextAsisActions.pickupSoonNeedsPrep.push(load as AsisActionLoad);
+              }
             }
           }
 
@@ -536,6 +566,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           const csoValue = load.ge_cso?.trim() || '';
           const hasCso = Boolean(csoValue);
           const tailValue = hasCso ? csoValue.slice(-4) : load.sub_inventory_name;
+          const wrapped = Boolean(load.prep_wrapped);
+          const tagged = Boolean(load.prep_tagged);
+          const sanityOk = (load.conflict_count ?? 0) === 0;
+          const sanityRequested = Boolean(load.sanity_check_requested);
           return (
             <button
               key={load.sub_inventory_name}
@@ -559,6 +593,52 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   <span className="font-semibold underline decoration-dotted underline-offset-2 text-foreground">
                     {tailValue}
                   </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                        wrapped
+                          ? 'border-foreground/30 text-foreground'
+                          : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                      }`}
+                    >
+                      {wrapped && <Check className="h-2.5 w-2.5" />}
+                    </span>
+                    <span className={wrapped ? '' : 'opacity-60'}>Wrapped</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                        tagged
+                          ? 'border-foreground/30 text-foreground'
+                          : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                      }`}
+                    >
+                      {tagged && <Check className="h-2.5 w-2.5" />}
+                    </span>
+                    <span className={tagged ? '' : 'opacity-60'}>Tagged</span>
+                  </div>
+                  {!sanityRequested && (
+                    <div className="flex items-center gap-1">
+                      <span
+                        className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
+                          sanityOk
+                            ? 'border-foreground/30 text-foreground'
+                            : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
+                        }`}
+                      >
+                        {sanityOk && <Check className="h-2.5 w-2.5" />}
+                      </span>
+                      <span className={sanityOk ? '' : 'opacity-60'}>Sanity check</span>
+                    </div>
+                  )}
+                  {sanityRequested && (
+                    <div className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 text-amber-500" />
+                      <span>Sanity requested</span>
+                    </div>
+                  )}
                 </div>
               </div>
               {load.pickup_date && (
@@ -589,6 +669,14 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     if (entry.action === 'asis_wipe') {
       return 'Wiped ASIS data';
     }
+    if (entry.action === 'sanity_check_requested' || entry.action === 'sanity_check_completed') {
+      const loadNumber = entry.details?.loadNumber ?? entry.entity_id ?? '';
+      const friendly = entry.details?.friendlyName ?? '';
+      const label = friendly ? `${friendly} (${loadNumber})` : loadNumber;
+      return entry.action === 'sanity_check_requested'
+        ? `Requested sanity check for load ${label}`
+        : `Completed sanity check for load ${label}`;
+    }
     if (entry.action === 'load_update') {
       const loadNumber = entry.details?.loadNumber ?? entry.entity_id ?? '';
       const friendly = entry.details?.friendlyName ?? '';
@@ -600,6 +688,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         category: 'salvage',
         prep_tagged: 'tagged',
         prep_wrapped: 'wrapped',
+        sanity_check_requested: 'sanity check requested',
         pickup_date: 'pickup date',
         pickup_tba: 'pickup TBA',
       };
@@ -682,43 +771,45 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         {/* Actions */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div>
-            <h2 className="text-lg font-semibold mb-3">ASIS Floor Actions</h2>
-            <Card className="p-4">
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Wrap For Sale loads</p>
-                      <p className="text-xs text-muted-foreground">For Sale loads missing wrap.</p>
-                    </div>
-                    <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
+            <h2 className="text-lg font-semibold mb-3">Floor Actions</h2>
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Sanity check ASIS load</p>
+                    <p className="text-xs text-muted-foreground">Loads requesting a sanity check.</p>
                   </div>
-                  {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
+                  <Badge variant="outline">{asisActionLoads.sanityCheckRequested.length}</Badge>
                 </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Tag + wrap Sold loads</p>
-                      <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
-                    </div>
-                    <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
-                  </div>
-                  {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Pickup soon: finish prep</p>
-                      <p className="text-xs text-muted-foreground">Pickup within 3 days.</p>
-                    </div>
-                    <Badge variant="outline">{stats.asisLoads.pickupSoonNeedsPrep}</Badge>
-                  </div>
-                  {renderLoadChips(asisActionLoads.pickupSoonNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
-                </div>
+                {renderLoadChips(asisActionLoads.sanityCheckRequested, (load) => navigateToLoad(load.sub_inventory_name))}
               </div>
-            </Card>
+
+              <div className="border-t border-border/60" />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Prep ASIS load</p>
+                    <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
+                  </div>
+                  <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
+                </div>
+                {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
+              </div>
+
+              <div className="border-t border-border/60" />
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Prep ASIS load</p>
+                    <p className="text-xs text-muted-foreground">For Sale loads missing prep.</p>
+                  </div>
+                  <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
+                </div>
+                {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
+              </div>
+            </div>
           </div>
 
           <div>
@@ -989,7 +1080,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   <span className="font-medium">{stats.asisLoads.forSale}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">For Sale to wrap</span>
+                  <span className="text-muted-foreground">For Sale to prep</span>
                   <span className="font-medium">{stats.asisLoads.forSaleNeedsWrap}</span>
                 </div>
                 <div className="flex justify-between">
@@ -997,7 +1088,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   <span className="font-medium">{stats.asisLoads.sold}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sold to tag/wrap</span>
+                  <span className="text-muted-foreground">Sold to prep</span>
                   <span className="font-medium">{stats.asisLoads.soldNeedsBoth}</span>
                 </div>
                 <div className="flex justify-between">

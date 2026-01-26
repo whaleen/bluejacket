@@ -61,11 +61,11 @@ const SUPER_ADMIN_STORAGE_KEY = "super_admin_unlocked"
 
 type SettingsSection =
   | "locations"
+  | "location"
   | "company"
   | "users"
-  | "displays-setup"
-  | "displays-list"
-  | "displays-settings"
+  | "profile"
+  | "displays"
 
 const slugify = (value: string) => {
   return value
@@ -77,16 +77,15 @@ const slugify = (value: string) => {
 
 export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const { user, updateUser } = useAuth()
-  const resolvedSection: SettingsSection = section ?? "locations"
+  const resolvedSection: SettingsSection = section ?? "location"
   const sectionTitles: Record<SettingsSection, string> = {
     locations: "Locations",
-    company: "Company",
-    users: "Users",
-    "displays-setup": "Display Setup",
-    "displays-list": "Displays",
-    "displays-settings": "Display Settings",
+    location: "Location Settings",
+    company: "Company Profile",
+    users: "Team",
+    profile: "User Settings",
+    displays: "Displays",
   }
-  const pageTitle = section ? `Settings / ${sectionTitles[resolvedSection]}` : "Settings"
   const [activeLocationKey, setActiveLocationKey] = useState<string | null>(() => {
     return (
       getStoredActiveLocationId() ??
@@ -159,6 +158,18 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [superAdminPassword, setSuperAdminPassword] = useState("")
   const [superAdminError, setSuperAdminError] = useState<string | null>(null)
 
+  const companyLabel = companies.find((company) => company.id === locationCompanyId)?.name ?? ""
+  const locationLabel = locationName || ""
+  const sectionContext =
+    resolvedSection === "company" || resolvedSection === "locations"
+      ? companyLabel
+      : resolvedSection === "location" || resolvedSection === "users" || resolvedSection === "displays"
+      ? locationLabel
+      : ""
+  const pageTitle = section
+    ? `Settings / ${sectionTitles[resolvedSection]}${sectionContext ? ` · ${sectionContext}` : ""}`
+    : "Settings"
+
   const roles = ["admin", "user"] as const
 
   useEffect(() => {
@@ -166,6 +177,12 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
       setNewLocationSlug(slugify(newLocationName))
     }
   }, [newLocationName, newLocationSlugTouched])
+
+  useEffect(() => {
+    if (locationCompanyId) {
+      setNewLocationCompanyId(locationCompanyId)
+    }
+  }, [locationCompanyId])
 
   useEffect(() => {
     if (!newCompanySlugTouched) {
@@ -460,6 +477,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setActiveLocationSource("local")
     setLocationManagerError(null)
     setLocationManagerSuccess("Active location updated.")
+    window.dispatchEvent(new Event("app:locationchange"))
   }
 
   const handleCreateLocation = async () => {
@@ -477,7 +495,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     }
 
     if (!newLocationCompanyId) {
-      setLocationManagerError("Select a company for this location.")
+      setLocationManagerError("Missing company for this location.")
       return
     }
 
@@ -610,7 +628,29 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
 
     try {
       await updateUser({ username, password })
-      setUserSuccess("User settings saved.")
+      let settingsErrorMessage: string | null = null
+      if (locationId && locationCompanyId) {
+        const { error: settingsError } = await supabase
+          .from("settings")
+          .upsert(
+            {
+              location_id: locationId,
+              company_id: locationCompanyId,
+              ui_handedness: uiHandedness,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "location_id" }
+          )
+        if (settingsError) {
+          settingsErrorMessage = settingsError.message
+        }
+      }
+      setStoredUiHandedness(uiHandedness)
+      if (settingsErrorMessage) {
+        setUserError(`Saved profile, but failed to update handedness: ${settingsErrorMessage}`)
+      } else {
+        setUserSuccess("User settings saved.")
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to save user settings."
       setUserError(message)
@@ -712,7 +752,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     await fetchUsers()
   }
 
-  const renderLocationSection = () => (
+  const renderLocationManagerSection = () => (
     <>
       <Card className="p-6 space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
@@ -791,74 +831,53 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           )}
         </div>
 
-        {superAdminUnlocked ? (
-          <>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-location-company">Company</Label>
-                {companiesLoading ? (
-                  <div className="text-sm text-muted-foreground">Loading companies…</div>
-                ) : companies.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">
-                    Create a company first to add locations.
-                  </div>
-                ) : (
-                  <Select value={newLocationCompanyId} onValueChange={setNewLocationCompanyId}>
-                    <SelectTrigger id="new-location-company">
-                      <SelectValue placeholder="Select company" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {companies.map((company) => (
-                        <SelectItem key={company.id} value={company.id}>
-                          {company.name} ({company.slug})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-location-name">New Location Name</Label>
-                <Input
-                  id="new-location-name"
-                  value={newLocationName}
-                  onChange={(e) => setNewLocationName(e.target.value)}
-                  placeholder="e.g. Sacramento Warehouse"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-location-slug">New Location Slug</Label>
-                <Input
-                  id="new-location-slug"
-                  value={newLocationSlug}
-                  onChange={(e) => {
-                    setNewLocationSlugTouched(true)
-                    setNewLocationSlug(e.target.value)
-                  }}
-                  placeholder="e.g. sacramento-01"
-                />
-              </div>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Company</Label>
+            <div className="rounded-md border border-input bg-background px-3 py-2 text-sm text-muted-foreground">
+              {companyLabel || "Unknown company"}
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm">
-                {locationManagerError && <span className="text-destructive">{locationManagerError}</span>}
-                {!locationManagerError && locationManagerSuccess && (
-                  <span className="text-emerald-600">{locationManagerSuccess}</span>
-                )}
-              </div>
-              <Button onClick={handleCreateLocation} disabled={locationManagerSaving || companies.length === 0}>
-                {locationManagerSaving ? "Creating…" : "Create Location"}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className="text-sm text-muted-foreground">
-            Unlock super admin in Company settings to create or edit locations.
           </div>
-        )}
-      </Card>
+          <div className="space-y-2">
+            <Label htmlFor="new-location-name">New Location Name</Label>
+            <Input
+              id="new-location-name"
+              value={newLocationName}
+              onChange={(e) => setNewLocationName(e.target.value)}
+              placeholder="e.g. Sacramento Warehouse"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-location-slug">New Location Slug</Label>
+            <Input
+              id="new-location-slug"
+              value={newLocationSlug}
+              onChange={(e) => {
+                setNewLocationSlugTouched(true)
+                setNewLocationSlug(e.target.value)
+              }}
+              placeholder="e.g. sacramento-01"
+            />
+          </div>
+        </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            {locationManagerError && <span className="text-destructive">{locationManagerError}</span>}
+            {!locationManagerError && locationManagerSuccess && (
+              <span className="text-emerald-600">{locationManagerSuccess}</span>
+            )}
+          </div>
+          <Button onClick={handleCreateLocation} disabled={locationManagerSaving || !locationCompanyId}>
+            {locationManagerSaving ? "Creating…" : "Create Location"}
+          </Button>
+        </div>
+      </Card>
+    </>
+  )
+
+  const renderLocationSettingsSection = () => (
+    <>
       <Card className="p-6 space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -932,6 +951,132 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         </div>
       </Card>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm">
+          {locationError && <span className="text-destructive">{locationError}</span>}
+          {!locationError && locationSuccess && (
+            <span className="text-emerald-600">{locationSuccess}</span>
+          )}
+        </div>
+        <Button onClick={handleLocationSave} disabled={locationSaving || locationLoading || !locationId}>
+          {locationSaving ? "Saving…" : "Save Location Settings"}
+        </Button>
+      </div>
+    </>
+  )
+
+  const renderCompanySection = () => {
+    const activeCompany = companies.find((company) => company.id === locationCompanyId)
+
+    return (
+      <>
+        <Card className="p-6 space-y-6">
+          <div className="flex items-center gap-3 pb-4 border-b border-border">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <SettingsIcon className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">Company Profile</h2>
+              <p className="text-sm text-muted-foreground">
+                Update details for your current company.
+              </p>
+            </div>
+          </div>
+
+          {companiesLoading ? (
+            <div className="text-sm text-muted-foreground">Loading company…</div>
+          ) : !activeCompany ? (
+            <div className="text-sm text-muted-foreground">
+              No company found for the current location.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <Input
+                    value={activeCompany.name}
+                    onChange={(e) => updateCompanyField(activeCompany.id, "name", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Slug</Label>
+                  <Input
+                    value={activeCompany.slug}
+                    onChange={(e) => updateCompanyField(activeCompany.id, "slug", e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>ID: {activeCompany.id}</span>
+                <Button
+                  size="responsive"
+                  onClick={() => handleSaveCompanyRow(activeCompany)}
+                  disabled={companySavingId === activeCompany.id}
+                >
+                  {companySavingId === activeCompany.id ? "Saving…" : "Save Company"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {companiesError && (
+            <div className="text-sm text-destructive">{companiesError}</div>
+          )}
+        </Card>
+      </>
+    )
+  }
+
+  const renderProfileSection = () => (
+    <>
+      <Card className="p-6 space-y-6">
+        <div className="flex items-center gap-3 pb-4 border-b border-border">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <SettingsIcon className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">User Settings</h2>
+            <p className="text-sm text-muted-foreground">Update your local login details.</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <AvatarUploader />
+
+          <div className="space-y-2">
+            <Label htmlFor="user-name">User Name</Label>
+            <Input
+              id="user-name"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={!user}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="user-password">Password</Label>
+            <Input
+              id="user-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={!user}
+            />
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm">
+          {userError && <span className="text-destructive">{userError}</span>}
+          {!userError && userSuccess && <span className="text-emerald-600">{userSuccess}</span>}
+        </div>
+        <Button onClick={handleUserSave} disabled={userSaving || !user}>
+          {userSaving ? "Saving…" : "Save Profile"}
+        </Button>
+      </div>
+
       <Card className="p-6 space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -966,22 +1111,6 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         </div>
       </Card>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm">
-          {locationError && <span className="text-destructive">{locationError}</span>}
-          {!locationError && locationSuccess && (
-            <span className="text-emerald-600">{locationSuccess}</span>
-          )}
-        </div>
-        <Button onClick={handleLocationSave} disabled={locationSaving || locationLoading || !locationId}>
-          {locationSaving ? "Saving…" : "Save Location Settings"}
-        </Button>
-      </div>
-    </>
-  )
-
-  const renderCompanySection = () => (
-    <>
       <Card className="p-6 space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -1146,7 +1275,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     </>
   )
 
-  const renderUsersSection = () => (
+  const renderTeamSection = () => (
     <>
       <Card className="p-6 space-y-6">
         <div className="flex items-center gap-3 pb-4 border-b border-border">
@@ -1154,54 +1283,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
             <SettingsIcon className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-foreground">User Settings</h2>
-            <p className="text-sm text-muted-foreground">Update your local login details.</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <AvatarUploader />
-
-          <div className="space-y-2">
-            <Label htmlFor="user-name">User Name</Label>
-            <Input
-              id="user-name"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={!user}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="user-password">Password</Label>
-            <Input
-              id="user-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={!user}
-            />
-          </div>
-        </div>
-      </Card>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm">
-          {userError && <span className="text-destructive">{userError}</span>}
-          {!userError && userSuccess && <span className="text-emerald-600">{userSuccess}</span>}
-        </div>
-        <Button onClick={handleUserSave} disabled={userSaving || !user}>
-          {userSaving ? "Saving…" : "Save User Settings"}
-        </Button>
-      </div>
-
-      <Card className="p-6 space-y-6">
-        <div className="flex items-center gap-3 pb-4 border-b border-border">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <SettingsIcon className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">User Manager</h2>
+            <h2 className="text-xl font-semibold text-foreground">Team</h2>
             <p className="text-sm text-muted-foreground">
               Create and manage users with admin or user roles.
             </p>
@@ -1367,25 +1449,24 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     </>
   )
 
-  const renderDisplaySetupSection = () => <DisplayManager section="setup" />
-  const renderDisplayListSection = () => <DisplayManager section="list" />
-  const renderDisplaySettingsSection = () => <DisplayManager section="settings" />
+  const renderDisplaysSection = () => <DisplayManager section="all" />
 
   const renderSection = (value: SettingsSection) => {
     switch (value) {
       case "company":
         return renderCompanySection()
+      case "profile":
+        return renderProfileSection()
       case "users":
-        return renderUsersSection()
-      case "displays-setup":
-        return renderDisplaySetupSection()
-      case "displays-list":
-        return renderDisplayListSection()
-      case "displays-settings":
-        return renderDisplaySettingsSection()
+        return renderTeamSection()
+      case "displays":
+        return renderDisplaysSection()
       case "locations":
+        return renderLocationManagerSection()
+      case "location":
+        return renderLocationSettingsSection()
       default:
-        return renderLocationSection()
+        return renderLocationSettingsSection()
     }
   }
 
@@ -1398,15 +1479,16 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           {section ? (
             renderSection(resolvedSection)
           ) : (
-            <Tabs defaultValue="locations">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="locations">Locations</TabsTrigger>
+            <Tabs defaultValue="location">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="location">Location</TabsTrigger>
                 <TabsTrigger value="company">Company</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
+                <TabsTrigger value="users">Team</TabsTrigger>
+                <TabsTrigger value="displays">Displays</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="locations" className="space-y-6 mt-6">
-                {renderLocationSection()}
+              <TabsContent value="location" className="space-y-6 mt-6">
+                {renderLocationSettingsSection()}
               </TabsContent>
 
               <TabsContent value="company" className="space-y-6 mt-6">
@@ -1414,7 +1496,11 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
               </TabsContent>
 
               <TabsContent value="users" className="space-y-6 mt-6">
-                {renderUsersSection()}
+                {renderTeamSection()}
+              </TabsContent>
+
+              <TabsContent value="displays" className="space-y-6 mt-6">
+                {renderDisplaysSection()}
               </TabsContent>
             </Tabs>
           )}

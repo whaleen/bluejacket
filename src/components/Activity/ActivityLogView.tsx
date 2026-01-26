@@ -43,6 +43,14 @@ export function ActivityLogView() {
     if (entry.action === 'asis_wipe') {
       return 'Wiped ASIS data';
     }
+    if (entry.action === 'sanity_check_requested' || entry.action === 'sanity_check_completed') {
+      const loadNumber = entry.details?.loadNumber ?? entry.entity_id ?? '';
+      const friendly = entry.details?.friendlyName ?? '';
+      const label = friendly ? `${friendly} (${loadNumber})` : loadNumber;
+      return entry.action === 'sanity_check_requested'
+        ? `Requested sanity check for load ${label}`
+        : `Completed sanity check for load ${label}`;
+    }
     if (entry.action === 'load_update') {
       const loadNumber = entry.details?.loadNumber ?? entry.entity_id ?? '';
       const friendly = entry.details?.friendlyName ?? '';
@@ -54,6 +62,7 @@ export function ActivityLogView() {
         category: 'salvage',
         prep_tagged: 'tagged',
         prep_wrapped: 'wrapped',
+        sanity_check_requested: 'sanity check requested',
         pickup_date: 'pickup date',
         pickup_tba: 'pickup TBA',
       };
