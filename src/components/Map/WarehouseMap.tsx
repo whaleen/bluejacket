@@ -11,6 +11,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { ProductLocationForMap, GenesisPoint } from '@/types/map';
 import { useTheme } from '@/components/theme-provider';
+import { Button } from '@/components/ui/button';
+import { Minus, Plus } from 'lucide-react';
 
 interface WarehouseMapProps {
   locations: ProductLocationForMap[];
@@ -19,11 +21,15 @@ interface WarehouseMapProps {
 
 export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
   const { theme } = useTheme();
+  const MAX_ZOOM = 12;
+  const MIN_ZOOM = -2;
+  const mapKey = `map-${MAX_ZOOM}`;
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const gridOverlayRef = useRef<L.ImageOverlay | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [zoomState, setZoomState] = useState<{ zoom: number; min: number; max: number } | null>(null);
 
   // Detect if we're in dark mode
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -61,11 +67,18 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
       crs: L.CRS.Simple,
       center: [0, 0],
       zoom: 1,
-      minZoom: -2,
-      maxZoom: 4,
-      zoomControl: true,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
+      zoomSnap: 1,
+      zoomDelta: 1,
+      zoomControl: false,
       attributionControl: false,
     });
+
+    const markerPane = map.getPane('markerPane');
+    if (markerPane) markerPane.style.zIndex = '400';
+    const popupPane = map.getPane('popupPane');
+    if (popupPane) popupPane.style.zIndex = '1000';
 
     // Add scale control (shows distance, auto-adjusts to zoom)
     L.control.scale({
@@ -86,14 +99,32 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
 
     mapInstance.current = map;
     setMapReady(true);
+    const syncZoomState = () => {
+      setZoomState({ zoom: map.getZoom(), min: map.getMinZoom(), max: map.getMaxZoom() });
+    };
+    syncZoomState();
+    map.on('zoomend zoomlevelschange', syncZoomState);
 
     return () => {
+      map.off('zoomend zoomlevelschange', syncZoomState);
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
       }
     };
   }, []);
+
+  // Keep zoom constraints in sync (helps during fast refresh)
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    mapInstance.current.options.maxZoom = MAX_ZOOM;
+    mapInstance.current.options.minZoom = MIN_ZOOM;
+    mapInstance.current.setMaxZoom(MAX_ZOOM);
+    mapInstance.current.setMinZoom(MIN_ZOOM);
+    (mapInstance.current as any)._updateZoomLevels?.();
+    mapInstance.current.fire('zoomlevelschange');
+    mapInstance.current.invalidateSize({ animate: false });
+  }, [MAX_ZOOM, MIN_ZOOM]);
 
   // Update grid when theme changes
   useEffect(() => {
@@ -118,34 +149,32 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
     // Add genesis marker (origin point)
     const borderColor = isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.95)'; // background color
 
-    const genesisIcon = L.divIcon({
-      html: `
+      const genesisIcon = L.divIcon({
+        html: `
         <div style="
           width: 16px;
           height: 16px;
           background: ${borderColor};
           border: 3px solid #3b82f6;
           border-radius: 50%;
-          box-shadow: 0 2px 8px rgba(59, 130, 246, ${isDark ? '0.4' : '0.6'});
+          box-shadow: none;
         "></div>
       `,
-      className: 'genesis-marker',
-      iconSize: [16, 16],
+        className: 'genesis-marker',
+        iconSize: [16, 16],
       iconAnchor: [8, 8],
     });
 
-    const textColor = isDark ? '#e2e8f0' : '#1e293b'; // slate-200 / slate-900
-    const mutedColor = isDark ? '#94a3b8' : '#64748b'; // slate-400 / slate-600
-
     L.marker([0, 0], { icon: genesisIcon })
       .bindPopup(
-        `<div style="text-align: center;">
-          <strong style="color: ${textColor};">Genesis Point</strong><br/>
-          <span style="font-size: 11px; color: ${mutedColor};">Origin (0, 0)</span><br/>
-          <span style="font-size: 11px; color: ${mutedColor};">
+        `<div class="map-popup-content map-popup-center">
+          <div class="map-popup-title">Genesis Point</div>
+          <div class="map-popup-sub">Origin (0, 0)</div>
+          <div class="map-popup-sub map-popup-mono">
             ${genesis.genesis_lat.toFixed(6)}, ${genesis.genesis_lng.toFixed(6)}
-          </span>
-        </div>`
+          </div>
+        </div>`,
+        { className: 'map-popup-shell' }
       )
       .addTo(markersLayer);
 
@@ -161,9 +190,9 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
             width: 12px;
             height: 12px;
             background: ${location.load_color};
-            border: 2px solid ${borderColor};
-            border-radius: 50%;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, ${isDark ? '0.5' : '0.3'});
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
           "></div>
         `,
         className: 'product-marker',
@@ -174,37 +203,42 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
       const marker = L.marker(latLng, { icon: markerIcon });
 
       // Create popup content
-      const textColor = isDark ? '#e2e8f0' : '#1e293b'; // slate-200 / slate-900
-      const mutedColor = isDark ? '#94a3b8' : '#64748b'; // slate-400 / slate-600
-
       // Convert meters to feet for display
       const xFeet = (location.position_x * 3.28084).toFixed(1);
       const yFeet = (location.position_y * 3.28084).toFixed(1);
       const accuracyFeet = location.accuracy ? Math.round(location.accuracy * 3.28084) : null;
 
+      const title = location.model || location.product_type || 'Unknown';
+      const serialValue = location.serial || '—';
+      const loadLabel = location.load_friendly_name || location.sub_inventory || 'No Load';
+      const scannedAt = location.created_at
+        ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+            new Date(location.created_at)
+          )
+        : '—';
+
       const popupContent = `
-        <div style="min-width: 150px;">
-          <div style="font-weight: 600; margin-bottom: 4px; color: ${textColor};">
-            ${location.product_type || 'Unknown'}
+        <div class="map-popup-content">
+          <div class="map-popup-title">${title}</div>
+          <div class="map-popup-sub">Serial: ${serialValue}</div>
+          <div class="map-popup-sub map-popup-load">
+            <span class="map-popup-color" style="background: ${location.load_color};"></span>
+            ${loadLabel}
           </div>
-          <div style="font-size: 11px; color: ${mutedColor}; margin-bottom: 4px;">
-            ${location.sub_inventory || 'No Load'}
-          </div>
-          <div style="font-size: 11px; color: ${mutedColor}; font-family: monospace;">
+          <div class="map-popup-sub map-popup-sub-sm">Last scanned: ${scannedAt}</div>
+          <div class="map-popup-sub map-popup-mono">
             x: ${xFeet}ft<br/>
             y: ${yFeet}ft
           </div>
           ${
             accuracyFeet
-              ? `<div style="font-size: 10px; color: ${mutedColor}; margin-top: 4px;">
-                  GPS ±${accuracyFeet}ft
-                </div>`
+              ? `<div class="map-popup-sub map-popup-sub-sm">GPS ±${accuracyFeet}ft</div>`
               : ''
           }
         </div>
       `;
 
-      marker.bindPopup(popupContent);
+      marker.bindPopup(popupContent, { className: 'map-popup-shell' });
       marker.addTo(markersLayer);
     });
 
@@ -214,7 +248,7 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
       allPoints.push([0, 0]); // Include genesis
 
       const bounds = L.latLngBounds(allPoints);
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 2 });
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: MAX_ZOOM });
     }
   }, [locations, genesis, mapReady, isDark]);
 
@@ -222,9 +256,34 @@ export function WarehouseMap({ locations, genesis }: WarehouseMapProps) {
     <div className="relative w-full z-0">
       <div
         ref={mapContainer}
+        key={mapKey}
         className="w-full bg-background relative z-0"
         style={{ height: 'clamp(450px, 70vh, 600px)' }}
       />
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 z-[100] flex flex-col gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 bg-card/95 backdrop-blur"
+          onClick={() => mapInstance.current?.zoomIn()}
+          disabled={zoomState ? zoomState.zoom >= zoomState.max : false}
+          aria-label="Zoom in"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-8 w-8 bg-card/95 backdrop-blur"
+          onClick={() => mapInstance.current?.zoomOut()}
+          disabled={zoomState ? zoomState.zoom <= zoomState.min : false}
+          aria-label="Zoom out"
+        >
+          <Minus className="h-4 w-4" />
+        </Button>
+      </div>
       <div className="absolute bottom-2 left-2 sm:bottom-4 sm:left-4 z-[100] bg-card/95 backdrop-blur border border-border p-1.5 sm:p-3 rounded text-[9px] sm:text-xs shadow-lg">
         <div className="flex items-center gap-1 sm:gap-2 mb-0.5 sm:mb-1.5">
           <div className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-blue-500 border border-background" />

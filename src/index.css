@@ -38,7 +38,7 @@
   --sidebar-ring: oklch(0.4891 0 0);
   --font-sans: Montserrat, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Fira Code, monospace;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --radius: 0.35rem;
   --shadow-x: 0px;
   --shadow-y: 2px;
@@ -96,7 +96,7 @@
   --sidebar-ring: oklch(0.7058 0 0);
   --font-sans: Inter, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Fira Code, monospace;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --radius: 0.35rem;
   --shadow-x: 0px;
   --shadow-y: 2px;
@@ -153,7 +153,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans: Inter, sans-serif;
-  --font-mono: Fira Code, monospace;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-serif: Georgia, serif;
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -272,40 +272,40 @@
 
   /* Constrain Leaflet panes to stay below UI elements */
   .leaflet-pane {
-    z-index: 1 !important;
+    z-index: 10 !important;
   }
 
   .leaflet-map-pane {
-    z-index: 1 !important;
+    z-index: 10 !important;
   }
 
   .leaflet-tile-pane {
-    z-index: 1 !important;
+    z-index: 10 !important;
   }
 
   .leaflet-overlay-pane {
-    z-index: 2 !important;
+    z-index: 20 !important;
   }
 
   .leaflet-shadow-pane {
-    z-index: 3 !important;
+    z-index: 30 !important;
   }
 
   .leaflet-marker-pane {
-    z-index: 4 !important;
+    z-index: 400 !important;
   }
 
   .leaflet-tooltip-pane {
-    z-index: 5 !important;
+    z-index: 50 !important;
   }
 
   .leaflet-popup-pane {
-    z-index: 6 !important;
+    z-index: 1000 !important;
   }
 
   /* Leaflet zoom controls */
   .leaflet-control-zoom {
-    z-index: 20 !important;
+    z-index: 80 !important;
   }
 
   .leaflet-control-zoom a {
@@ -321,7 +321,7 @@
 
   /* Leaflet popups - light & dark mode */
   .leaflet-popup {
-    z-index: 101 !important;
+    z-index: 1100 !important;
   }
 
   .leaflet-popup-content-wrapper {
@@ -358,6 +358,64 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   }
 
+  /* Shadcn-styled map popup */
+  .map-popup-shell .leaflet-popup-content-wrapper {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+    border-radius: calc(var(--radius) + 2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .map-popup-shell .leaflet-popup-tip {
+    background-color: hsl(var(--popover)) !important;
+    border: 1px solid hsl(var(--border)) !important;
+  }
+
+  .map-popup-content {
+    min-width: 170px;
+  }
+
+  .map-popup-center {
+    text-align: center;
+  }
+
+  .map-popup-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: hsl(var(--foreground));
+  }
+
+  .map-popup-sub {
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
+    margin-bottom: 4px;
+  }
+
+  .map-popup-load {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .map-popup-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex: 0 0 auto;
+  }
+
+  .map-popup-sub-sm {
+    font-size: 10px;
+    margin-top: 4px;
+    margin-bottom: 0;
+  }
+
+  .map-popup-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Leaflet scale control - theme aware */
   .leaflet-control-scale {
     z-index: 20 !important;
@@ -368,6 +426,10 @@
     font-size: 11px;
     border-radius: calc(var(--radius));
     padding: 2px 6px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "liga" 0, "calt" 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
   }
 
   .leaflet-control-scale-line {
@@ -380,6 +442,10 @@
     border-right-width: 2px;
     line-height: 1.1;
     padding: 2px 5px 1px;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "liga" 0, "calt" 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
   }
 
   /* Dark mode adjustments */

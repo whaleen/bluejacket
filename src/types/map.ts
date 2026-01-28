@@ -64,7 +64,10 @@ export interface ProductLocationForMap {
   position_x: number;
   position_y: number;
   product_type: string | null;
+  model?: string | null;
+  serial?: string | null;
   sub_inventory: string | null;
+  load_friendly_name?: string | null;
   load_color: string;
   created_at: string;
   accuracy: number | null;

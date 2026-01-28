@@ -251,12 +251,48 @@ export async function getProductLocations(): Promise<{
 
   const { data, error } = await supabase
     .from('product_location_history')
-    .select('id, position_x, position_y, accuracy, created_at, product_type, sub_inventory')
+    .select('id, position_x, position_y, accuracy, created_at, product_type, sub_inventory, inventory_item_id, product_id')
     .eq('location_id', locationId)
     .order('created_at', { ascending: false });
 
   if (error) {
     return { data: [], error };
+  }
+
+  const inventoryItemIds = Array.from(
+    new Set((data as ProductLocationHistory[]).map((item) => item.inventory_item_id).filter(Boolean))
+  ) as string[];
+
+  const productIds = Array.from(
+    new Set((data as ProductLocationHistory[]).map((item) => item.product_id).filter(Boolean))
+  ) as string[];
+
+  const inventoryItemById = new Map<string, { model: string | null; serial: string | null; product_type: string | null }>();
+  if (inventoryItemIds.length > 0) {
+    const { data: inventoryItems, error: inventoryError } = await supabase
+      .from('inventory_items')
+      .select('id, model, serial, product_type')
+      .in('id', inventoryItemIds);
+
+    if (!inventoryError && inventoryItems) {
+      for (const item of inventoryItems as { id: string; model: string | null; serial: string | null; product_type: string | null }[]) {
+        inventoryItemById.set(item.id, item);
+      }
+    }
+  }
+
+  const productById = new Map<string, { model: string | null; product_type: string | null }>();
+  if (productIds.length > 0) {
+    const { data: products, error: productError } = await supabase
+      .from('products')
+      .select('id, model, product_type')
+      .in('id', productIds);
+
+    if (!productError && products) {
+      for (const product of products as { id: string; model: string | null; product_type: string | null }[]) {
+        productById.set(product.id, product);
+      }
+    }
   }
 
   // Get all unique load names for color mapping
@@ -268,16 +304,42 @@ export async function getProductLocations(): Promise<{
     )
   );
 
+  const loadMetadataByName = new Map<string, { friendly_name: string | null }>();
+  if (loadNames.length > 0) {
+    const { data: loadMetadata, error: loadError } = await supabase
+      .from('load_metadata')
+      .select('sub_inventory_name, friendly_name')
+      .eq('location_id', locationId)
+      .in('sub_inventory_name', loadNames);
+
+    if (!loadError && loadMetadata) {
+      for (const load of loadMetadata as { sub_inventory_name: string; friendly_name: string | null }[]) {
+        loadMetadataByName.set(load.sub_inventory_name, { friendly_name: load.friendly_name });
+      }
+    }
+  }
+
   // Map locations with colors
   const locationsWithColors: ProductLocationForMap[] = (data as ProductLocationHistory[]).map((item) => {
     const loadColor = getLoadColorByName(loadNames, item.sub_inventory);
+    const loadFriendlyName = item.sub_inventory
+      ? loadMetadataByName.get(item.sub_inventory)?.friendly_name ?? null
+      : null;
+    const inventoryItem = item.inventory_item_id ? inventoryItemById.get(item.inventory_item_id) : undefined;
+    const product = item.product_id ? productById.get(item.product_id) : undefined;
+    const model = inventoryItem?.model ?? product?.model ?? null;
+    const serial = inventoryItem?.serial ?? null;
+    const productType = item.product_type ?? inventoryItem?.product_type ?? product?.product_type ?? null;
 
     return {
       id: item.id,
       position_x: item.position_x,
       position_y: item.position_y,
-      product_type: item.product_type,
+      product_type: productType,
+      model,
+      serial,
       sub_inventory: item.sub_inventory,
+      load_friendly_name: loadFriendlyName,
       load_color: loadColor,
       created_at: item.created_at,
       accuracy: item.accuracy,
