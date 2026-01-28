@@ -55,7 +55,7 @@ This is an internal tool for warehouse operations. The core workflow:
 ### Prerequisites
 
 - Node.js 18+
-- npm
+- pnpm (`npm install -g pnpm`)
 - Supabase account
 
 ### 1. Environment Setup
@@ -84,8 +84,8 @@ VITE_GE_SYNC_API_KEY=your_api_key
 ### 2. Install & Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ### 2b. GE Sync Service (ASIS)
@@ -94,9 +94,9 @@ The GE sync service lives in `services/ge-sync` and runs separately.
 
 ```bash
 cd services/ge-sync
-npm install
-npx playwright install chromium
-npm run dev
+pnpm install
+pnpm exec playwright install chromium
+pnpm run dev
 ```
 
 Scaling notes (beta+):
@@ -214,10 +214,10 @@ Supported widgets:
 ## Available Scripts
 
 ```bash
-npm run dev      # Start development server
-npm run build    # Production build (TypeScript + Vite)
-npm run lint     # ESLint validation
-npm run preview  # Preview production build
+pnpm run dev      # Start development server
+pnpm run build    # Production build (TypeScript + Vite)
+pnpm run lint     # ESLint validation
+pnpm run preview  # Preview production build
 ```
 
 ## Production Deployment (Floor Display)
@@ -225,8 +225,8 @@ npm run preview  # Preview production build
 For Samsung TV or other legacy browsers:
 
 ```bash
-npm run build
-npx serve dist -s   # -s flag for SPA routing
+pnpm run build
+pnpm exec serve dist -s   # -s flag for SPA routing
 ```
 
 The build includes legacy browser support via `@vitejs/plugin-legacy`.

@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
-import { ScanBarcode, ArrowLeft, CheckCircle2, Circle, Loader2, Search, ListPlus } from 'lucide-react';
+import { ScanBarcode, ArrowLeft, CheckCircle2, Circle, Loader2, Search, ListPlus, MapPin } from 'lucide-react';
 import type { InventoryItem } from '@/types/inventory';
 import type { ScanningSession } from '@/types/session';
 import { getSession, updateSessionScannedItems, updateSessionStatus } from '@/lib/sessionManager';
@@ -27,6 +27,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/context/AuthContext';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
+import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
 
 interface ScanningSessionViewProps {
   sessionId: string;
@@ -45,6 +46,59 @@ function matchesItemSearch(item: InventoryItem, query: string) {
     item.sub_inventory?.toLowerCase().includes(q) ||
     item.consumer_customer_name?.toLowerCase().includes(q)
   );
+}
+
+/**
+ * Capture GPS position for a scan and log to map system
+ * Non-blocking - runs async without blocking scan success
+ *
+ * Note: inventoryItemId is optional since session items are snapshots
+ * and may not have valid references in the inventory_items table.
+ * We snapshot product_type and sub_inventory for map visualization.
+ */
+async function capturePositionForScan(
+  productId: string | undefined,
+  inventoryItemId: string | undefined,
+  sessionId: string,
+  scannedBy: string | undefined,
+  productType: string | undefined,
+  subInventory: string | undefined
+) {
+  try {
+    const position = await getCurrentPosition();
+
+    if (!position) {
+      console.warn('Position capture failed - GPS unavailable or denied');
+      return;
+    }
+
+    // Log position to map system
+    const { success, error, isGenesisScan } = await logProductLocation({
+      product_id: productId,
+      inventory_item_id: inventoryItemId,
+      scanning_session_id: sessionId,
+      raw_lat: position.latitude,
+      raw_lng: position.longitude,
+      accuracy: position.accuracy,
+      scanned_by: scannedBy,
+      product_type: productType,
+      sub_inventory: subInventory,
+    });
+
+    if (success) {
+      if (isGenesisScan) {
+        console.log('Genesis scan established - coordinate origin (0,0) set');
+      } else {
+        console.log(
+          `Position captured: (${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}) ±${Math.round(position.accuracy)}m`
+        );
+      }
+    } else {
+      console.error('Failed to log position:', error);
+    }
+  } catch (err) {
+    console.error('Position capture error:', err);
+  }
 }
 
 export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewProps) {
@@ -153,6 +207,17 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
       }
 
       setSession(updatedSession);
+
+      // Capture position for fog of war map (non-blocking)
+      capturePositionForScan(
+        result.items[0].products?.id,
+        itemId, // May not exist in inventory_items table (session snapshot)
+        session.id,
+        userDisplayName,
+        result.items[0].product_type,
+        result.items[0].sub_inventory ?? undefined
+      );
+
       setAlert({
         type: 'success',
         message: `Scanned: ${result.items[0].product_type} (${result.matchedField?.toUpperCase()})`
@@ -199,6 +264,20 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     }
 
     setSession(updatedSession);
+
+    // Capture position for all selected items (they're at the same location)
+    const selectedItems = session.items.filter(item => item.id && uniqueIds.includes(item.id));
+    for (const item of selectedItems) {
+      capturePositionForScan(
+        item.products?.id,
+        item.id, // May not exist in inventory_items table (session snapshot)
+        session.id,
+        userDisplayName,
+        item.product_type,
+        item.sub_inventory ?? undefined
+      );
+    }
+
     setAlert({
       type: 'success',
       message: `Marked ${uniqueIds.length} items as scanned`
@@ -332,6 +411,12 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-semibold truncate">{session.name}</h1>
                 <Badge variant={statusVariant}>{statusLabel}</Badge>
+                {session.status !== 'closed' && navigator.geolocation && (
+                  <Badge variant="outline" className="gap-1">
+                    <MapPin className="h-3 w-3" />
+                    GPS
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 {session.inventoryType}

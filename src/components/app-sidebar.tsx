@@ -7,6 +7,7 @@ import {
   Database,
   History,
   LayoutDashboard,
+  Map,
   MapPin,
   Monitor,
   Package,
@@ -96,6 +97,13 @@ const baseNavSections: NavSection[] = [
         view: "loads",
         applyParams: clearPartsParams,
         isActive: (currentView) => currentView === "loads",
+      },
+      {
+        label: "Warehouse Map",
+        icon: Map,
+        view: "map",
+        applyParams: clearPartsParams,
+        isActive: (currentView) => currentView === "map",
       },
       {
         label: "Scanning Sessions",

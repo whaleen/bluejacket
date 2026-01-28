@@ -1,5 +1,5 @@
 #!/bin/bash
-npm install
+pnpm install
 
 # CLI linking (requires being logged in: netlify login, supabase login, railway login, doppler login)
 [ ! -f .netlify/state.json ] && netlify link --id a3c80907-c0fb-4902-9fd7-0789114decba

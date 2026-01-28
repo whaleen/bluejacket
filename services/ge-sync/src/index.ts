@@ -21,7 +21,7 @@ app.options('*', (_req, res) => {
 
 app.use(express.json());
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 const API_KEY = process.env.API_KEY;
 
 // Simple API key auth middleware
@@ -132,7 +132,7 @@ app.post('/sync/asis', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`GE Sync Service running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

@@ -16,7 +16,7 @@ export function AppHeader({ title, actions, onMenuClick }: AppHeaderProps) {
   const alignRight = isMobile && uiHandedness === 'right';
 
   return (
-    <div className="sticky top-0 z-10 border-b border-border bg-background">
+    <div className="sticky top-0 z-50 border-b border-border bg-background">
       <PageContainer className="py-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-3 min-w-0">

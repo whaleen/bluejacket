@@ -1,23 +1,26 @@
 # Use Playwright's official image which includes browsers
 FROM mcr.microsoft.com/playwright:v1.58.0-jammy
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files and pnpm lockfile
+COPY package.json pnpm-lock.yaml ./
 
 # Install all dependencies (including dev for build)
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 
 # Copy TypeScript config and source
 COPY tsconfig.json ./
 COPY src ./src
 
 # Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
 # Remove dev dependencies after build
-RUN npm prune --production
+RUN pnpm prune --production
 
 # Expose port
 EXPOSE 3001
@@ -26,4 +29,4 @@ EXPOSE 3001
 ENV NODE_ENV=production
 
 # Run the service
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]

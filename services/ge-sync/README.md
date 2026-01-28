@@ -47,16 +47,16 @@ Frontend (Netlify)
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Install Playwright browsers
-npx playwright install chromium
+pnpm exec playwright install chromium
 
 # Set up Doppler (for environment variables)
 doppler setup
 
 # Run in development mode (secrets injected via Doppler)
-npm run dev
+pnpm run dev
 ```
 
 ## API Endpoints
