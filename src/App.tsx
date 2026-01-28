@@ -1,29 +1,35 @@
-import { LoadManagementView } from "@/components/Inventory/LoadManagementView";
-import { CreateSessionView } from "@/components/Session/CreateSessionView";
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
-import { useCallback, useEffect, useState } from "react";
-import { ProductEnrichment } from "./components/Products/ProductEnrichment";
-import { InventoryView } from "./components/Inventory/InventoryView";
-import { PartsView } from "./components/Parts/PartsView";
-import { DashboardView } from "./components/Dashboard/DashboardView";
-import { SettingsView } from "./components/Settings/SettingsView";
+import { useCallback, useEffect, useState, lazy, Suspense } from "react";
 import { AppSidebar } from "./components/app-sidebar";
 import { getPathForView, parseRoute, isPublicRoute, isMarketingRoute, type AppView } from "@/lib/routes";
-import { FloorDisplayView } from "@/components/FloorDisplay/FloorDisplayView";
-import { LandingPage } from "@/components/Marketing/LandingPage";
-import { PricingPage } from "@/components/Marketing/PricingPage";
-import { FeaturesPage } from "@/components/Marketing/FeaturesPage";
-import { LoginView } from "@/components/Auth/LoginView";
-import { ResetPasswordView } from "@/components/Auth/ResetPasswordView";
-import { UpdatePasswordView } from "@/components/Auth/UpdatePasswordView";
-import { SignupPage } from "@/components/Marketing/SignupPage";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { ActivityLogView } from "@/components/Activity/ActivityLogView";
 import { useUiHandedness } from "@/hooks/useUiHandedness";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PendingAccess } from "@/components/Auth/PendingAccess";
-import { MapView } from "@/components/Map/MapView";
+import { PageTransition } from "@/components/ui/page-transition";
+import { ViewLoader } from "@/components/ui/view-loader";
+
+// Lazy load heavy components for code splitting
+const LoadManagementView = lazy(() => import("@/components/Inventory/LoadManagementView").then(m => ({ default: m.LoadManagementView })));
+const CreateSessionView = lazy(() => import("@/components/Session/CreateSessionView").then(m => ({ default: m.CreateSessionView })));
+const ProductEnrichment = lazy(() => import("./components/Products/ProductEnrichment").then(m => ({ default: m.ProductEnrichment })));
+const InventoryView = lazy(() => import("./components/Inventory/InventoryView").then(m => ({ default: m.InventoryView })));
+const PartsView = lazy(() => import("./components/Parts/PartsView").then(m => ({ default: m.PartsView })));
+const DashboardView = lazy(() => import("./components/Dashboard/DashboardView").then(m => ({ default: m.DashboardView })));
+const SettingsView = lazy(() => import("./components/Settings/SettingsView").then(m => ({ default: m.SettingsView })));
+const FloorDisplayView = lazy(() => import("@/components/FloorDisplay/FloorDisplayView").then(m => ({ default: m.FloorDisplayView })));
+const LandingPage = lazy(() => import("@/components/Marketing/LandingPage").then(m => ({ default: m.LandingPage })));
+const PricingPage = lazy(() => import("@/components/Marketing/PricingPage").then(m => ({ default: m.PricingPage })));
+const FeaturesPage = lazy(() => import("@/components/Marketing/FeaturesPage").then(m => ({ default: m.FeaturesPage })));
+const LoginView = lazy(() => import("@/components/Auth/LoginView").then(m => ({ default: m.LoginView })));
+const ResetPasswordView = lazy(() => import("@/components/Auth/ResetPasswordView").then(m => ({ default: m.ResetPasswordView })));
+const UpdatePasswordView = lazy(() => import("@/components/Auth/UpdatePasswordView").then(m => ({ default: m.UpdatePasswordView })));
+const SignupPage = lazy(() => import("@/components/Marketing/SignupPage").then(m => ({ default: m.SignupPage })));
+const ActivityLogView = lazy(() => import("@/components/Activity/ActivityLogView").then(m => ({ default: m.ActivityLogView })));
+const MapView = lazy(() => import("@/components/Map/MapView").then(m => ({ default: m.MapView })));
+
+// ViewLoader is now imported from components/ui/view-loader
 
 function App() {
   const { user, loading, logout } = useAuth();
@@ -155,15 +161,19 @@ function App() {
       const normalizedPath = pathname.replace(/\/+$/, '');
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
-          {normalizedPath.startsWith('/pricing') ? (
-            <PricingPage />
-          ) : normalizedPath.startsWith('/features') ? (
-            <FeaturesPage />
-          ) : normalizedPath.startsWith('/signup') ? (
-            <SignupPage />
-          ) : (
-            <LandingPage />
-          )}
+          <Suspense fallback={<ViewLoader />}>
+            <PageTransition>
+              {normalizedPath.startsWith('/pricing') ? (
+                <PricingPage />
+              ) : normalizedPath.startsWith('/features') ? (
+                <FeaturesPage />
+              ) : normalizedPath.startsWith('/signup') ? (
+                <SignupPage />
+              ) : (
+                <LandingPage />
+              )}
+            </PageTransition>
+          </Suspense>
         </ThemeProvider>
       );
     }
@@ -185,7 +195,11 @@ function App() {
       // Show login page (even while auth is loading)
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
-          <LoginView />
+          <Suspense fallback={<ViewLoader />}>
+            <PageTransition>
+              <LoginView />
+            </PageTransition>
+          </Suspense>
         </ThemeProvider>
       );
     }
@@ -194,7 +208,11 @@ function App() {
     if (pathname.startsWith('/reset-password')) {
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
-          <ResetPasswordView />
+          <Suspense fallback={<ViewLoader />}>
+            <PageTransition>
+              <ResetPasswordView />
+            </PageTransition>
+          </Suspense>
         </ThemeProvider>
       );
     }
@@ -203,7 +221,11 @@ function App() {
     if (pathname.startsWith('/update-password')) {
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-marketing">
-          <UpdatePasswordView />
+          <Suspense fallback={<ViewLoader />}>
+            <PageTransition>
+              <UpdatePasswordView />
+            </PageTransition>
+          </Suspense>
         </ThemeProvider>
       );
     }
@@ -212,7 +234,11 @@ function App() {
     if (pathname.startsWith('/display')) {
       return (
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme-display">
-          <FloorDisplayView displayId={displayId} />
+          <Suspense fallback={<ViewLoader />}>
+            <PageTransition>
+              <FloorDisplayView displayId={displayId} />
+            </PageTransition>
+          </Suspense>
         </ThemeProvider>
       );
     }
@@ -254,56 +280,60 @@ function App() {
         />
         <SidebarInset className="bg-muted/40">
           <div className="flex min-h-screen flex-col min-w-0">
-            {currentView === "dashboard" && (
-              <DashboardView
-                onViewChange={handleViewChange}
-              />
-            )}
-            {currentView === "inventory" && (
-              <InventoryView />
-            )}
-            {currentView === "parts" && (
-              <PartsView />
-            )}
-            {currentView === "products" && (
-              <ProductEnrichment
-              />
-            )}
-            {currentView === "loads" && (
-              <LoadManagementView
-              />
-            )}
-            {currentView === "activity" && (
-              <ActivityLogView />
-            )}
-            {currentView === "map" && (
-              <MapView />
-            )}
-            {currentView === "create-session" && (
-              <CreateSessionView
-                onViewChange={handleViewChange}
-                sessionId={sessionId}
-                onSessionChange={handleSessionChange}
-              />
-            )}
-            {currentView === "settings-locations" && (
-              <SettingsView section="locations" />
-            )}
-            {currentView === "settings-location" && (
-              <SettingsView section="location" />
-            )}
-            {currentView === "settings-company" && (
-              <SettingsView section="company" />
-            )}
-            {currentView === "settings-users" && (
-              <SettingsView section="users" />
-            )}
-            {currentView === "settings-profile" && (
-              <SettingsView section="profile" />
-            )}
-            {currentView === "settings-displays" && (
-              <SettingsView section="displays" />
-            )}
+            <Suspense fallback={<ViewLoader />}>
+              <PageTransition>
+                {currentView === "dashboard" && (
+                  <DashboardView
+                    onViewChange={handleViewChange}
+                  />
+                )}
+                {currentView === "inventory" && (
+                  <InventoryView />
+                )}
+                {currentView === "parts" && (
+                  <PartsView />
+                )}
+                {currentView === "products" && (
+                  <ProductEnrichment
+                  />
+                )}
+                {currentView === "loads" && (
+                  <LoadManagementView
+                  />
+                )}
+                {currentView === "activity" && (
+                  <ActivityLogView />
+                )}
+                {currentView === "map" && (
+                  <MapView />
+                )}
+                {currentView === "create-session" && (
+                  <CreateSessionView
+                    onViewChange={handleViewChange}
+                    sessionId={sessionId}
+                    onSessionChange={handleSessionChange}
+                  />
+                )}
+                {currentView === "settings-locations" && (
+                  <SettingsView section="locations" />
+                )}
+                {currentView === "settings-location" && (
+                  <SettingsView section="location" />
+                )}
+                {currentView === "settings-company" && (
+                  <SettingsView section="company" />
+                )}
+                {currentView === "settings-users" && (
+                  <SettingsView section="users" />
+                )}
+                {currentView === "settings-profile" && (
+                  <SettingsView section="profile" />
+                )}
+                {currentView === "settings-displays" && (
+                  <SettingsView section="displays" />
+                )}
+              </PageTransition>
+            </Suspense>
           </div>
         </SidebarInset>
       </SidebarProvider>

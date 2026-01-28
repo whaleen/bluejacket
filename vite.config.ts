@@ -16,17 +16,32 @@ export default defineConfig(({ mode }) => {
     host: true, // <- key: exposes to LAN + prints Network URL
   },
   build: {
+    chunkSizeWarningLimit: 1400, // Sets the limit to 1000 KiB (1 MB)
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            // Keep supabase isolated; everything else in a single vendor chunk to avoid React cycles.
-            if (id.includes('supabase') || id.includes('@supabase')) {
-              return 'vendor-supabase';
-            }
-            return 'vendor';
+          if (!id.includes('node_modules')) {
+            return;
           }
-          // Your src code stays in main chunks (or split later)
+
+          // Supabase - completely isolated
+          if (id.includes('supabase') || id.includes('@supabase')) {
+            return 'vendor-supabase';
+          }
+          
+          // Leaflet - isolated map library
+          if (id.includes('leaflet') || id.includes('react-leaflet')) {
+            return 'vendor-leaflet';
+          }
+          
+          // Recharts and d3 - chart libraries (isolated)
+          if (id.includes('recharts') || id.includes('d3-')) {
+            return 'vendor-charts';
+          }
+          
+          // Everything else (React, Radix, TanStack, etc.) stays together
+          // This avoids circular dependencies
+          return 'vendor';
         },
       },
     },
