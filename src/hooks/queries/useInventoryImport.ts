@@ -1,5 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importInventorySnapshot, type ProductImportSource } from '@/lib/inventoryImportManager';
+import {
+  importInventorySnapshot,
+  type InventoryImportProgress,
+  type ProductImportSource,
+} from '@/lib/inventoryImportManager';
 import { queryKeys } from '@/lib/queryKeys';
 import { getActiveLocationContext } from '@/lib/tenant';
 
@@ -12,10 +16,12 @@ export function useImportInventorySnapshot() {
       source,
       locationId: overrideLocationId,
       companyId: overrideCompanyId,
+      onProgress,
     }: {
       source: ProductImportSource;
       locationId?: string;
       companyId?: string;
+      onProgress?: (progress: InventoryImportProgress) => void;
     }) => {
       const resolvedLocationId = overrideLocationId ?? locationId;
       const resolvedCompanyId = overrideCompanyId ?? companyId;
@@ -26,6 +32,7 @@ export function useImportInventorySnapshot() {
         source,
         locationId: resolvedLocationId,
         companyId: resolvedCompanyId,
+        onProgress,
       });
     },
     onSuccess: () => {

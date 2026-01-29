@@ -16,6 +16,21 @@ export type InventoryImportStats = {
   crossTypeSkipped: number;
 };
 
+export type InventoryImportProgress = {
+  phase:
+    | 'fetch'
+    | 'parse'
+    | 'lookup'
+    | 'conflicts'
+    | 'insert'
+    | 'upsert'
+    | 'orphans'
+    | 'complete';
+  message: string;
+  processed?: number;
+  total?: number;
+};
+
 type ProductImportRow = {
   'Model #'?: string | null;
   'Serial #'?: string | null;
@@ -87,19 +102,28 @@ export async function importInventorySnapshot(params: {
   locationId: string;
   companyId: string;
   batchSize?: number;
+  onProgress?: (progress: InventoryImportProgress) => void;
 }): Promise<InventoryImportStats> {
-  const { source, locationId, companyId, batchSize = 500 } = params;
+  const { source, locationId, companyId, batchSize = 500, onProgress } = params;
 
+  onProgress?.({ phase: 'fetch', message: 'Downloading inventory file…' });
   const rows = await fetchAsisXlsRows<ProductImportRow>(source.fileName, source.baseUrl);
   if (!rows.length) {
     return { totalRows: 0, processedRows: 0, crossTypeSkipped: 0 };
   }
+  onProgress?.({
+    phase: 'parse',
+    message: `Parsed ${rows.length} rows.`,
+    total: rows.length,
+  });
 
+  onProgress?.({ phase: 'lookup', message: 'Resolving product models…' });
   const models = rows
     .map((row) => String(row['Model #'] ?? '').trim())
     .filter(Boolean);
   const productLookup = await buildProductLookup(models);
 
+  onProgress?.({ phase: 'conflicts', message: 'Checking cross-type serials…' });
   const inventoryItems = rows
     .map((row) => {
       const model = String(row['Model #'] ?? '').trim();
@@ -207,34 +231,65 @@ export async function importInventorySnapshot(params: {
   const payloadWithoutId = payload
     .filter((item) => !item.id)
     .map((item) => {
-      const { id, ...rest } = item;
-      void id;
+      const rest = { ...item } as typeof item & { id?: string };
+      delete rest.id;
       return rest;
     });
 
+  let insertedCount = 0;
   for (const chunk of chunkArray(payloadWithoutId, batchSize)) {
     if (!chunk.length) continue;
+    onProgress?.({
+      phase: 'insert',
+      message: `Inserting ${chunk.length} new items…`,
+      processed: insertedCount,
+      total: payloadWithoutId.length,
+    });
     const { error } = await supabase.from('inventory_items').insert(chunk);
     if (error) throw error;
+    insertedCount += chunk.length;
   }
 
+  let upsertedCount = 0;
   for (const chunk of chunkArray(payloadWithId, batchSize)) {
     if (!chunk.length) continue;
+    onProgress?.({
+      phase: 'upsert',
+      message: `Updating ${chunk.length} existing items…`,
+      processed: upsertedCount,
+      total: payloadWithId.length,
+    });
     const { error } = await supabase
       .from('inventory_items')
       .upsert(chunk, { onConflict: 'id' });
     if (error) throw error;
+    upsertedCount += chunk.length;
   }
 
   const orphanIds = Array.from(existingIds).filter((id) => !matchedIds.has(id));
+  let orphanedCount = 0;
   for (const chunk of chunkArray(orphanIds, batchSize)) {
     if (!chunk.length) continue;
+    onProgress?.({
+      phase: 'orphans',
+      message: `Marking ${chunk.length} missing items as orphaned…`,
+      processed: orphanedCount,
+      total: orphanIds.length,
+    });
     const { error } = await supabase
       .from('inventory_items')
       .update({ status: 'NOT_IN_GE', ge_orphaned: true, ge_orphaned_at: new Date().toISOString() })
       .in('id', chunk);
     if (error) throw error;
+    orphanedCount += chunk.length;
   }
+
+  onProgress?.({
+    phase: 'complete',
+    message: 'Inventory import complete.',
+    processed: payload.length,
+    total: payload.length,
+  });
 
   return {
     totalRows: rows.length,

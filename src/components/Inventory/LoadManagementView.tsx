@@ -10,7 +10,7 @@ import type { LoadMetadata } from '@/types/inventory';
 import { LoadDetailPanel } from './LoadDetailPanel';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { getPathForView } from '@/lib/routes';
 
@@ -24,7 +24,6 @@ interface LoadManagementViewProps {
 }
 
 export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
-  const { toast } = useToast();
   const { data: loadsData, isLoading: loading, refetch } = useLoads();
   const [loads, setLoads] = useState<LoadWithCount[]>([]);
   const [showAway, setShowAway] = useState(false);
@@ -115,7 +114,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   }, [loads, selectedLoadForDetail]);
 
   useEffect(() => {
-    if (!selectedLoadForDetail) return;
+    if (!selectedLoadForDetail?.id) return;
     detailScrollRef.current?.scrollTo({ top: 0 });
     standaloneScrollRef.current?.scrollTo({ top: 0 });
   }, [selectedLoadForDetail?.id]);
@@ -191,19 +190,13 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     );
 
     if (success) {
-      toast({
-        message: `Deleted load "${loadPendingDelete.friendly_name || loadPendingDelete.sub_inventory_name}".`,
-        variant: 'success',
-      });
+      toast.success(`Deleted load "${loadPendingDelete.friendly_name || loadPendingDelete.sub_inventory_name}".`);
       if (selectedLoadForDetail?.id === loadPendingDelete.id) {
         setSelectedLoadForDetail(null);
       }
       refetch();
     } else {
-      toast({
-        message: `Failed to delete load: ${error?.message || 'Unknown error'}`,
-        variant: 'error',
-      });
+      toast.error(`Failed to delete load: ${error?.message || 'Unknown error'}`);
     }
 
     setLoadPendingDelete(null);

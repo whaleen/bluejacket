@@ -8,7 +8,7 @@ import { useLoadDetail, useLoadConflicts } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
 import JsBarcode from 'jsbarcode';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -36,7 +36,6 @@ export function LoadDetailPanel({
   const { user } = useAuth();
   const userDisplayName = user?.username ?? user?.email ?? 'Unknown';
   const { locationId, companyId } = getActiveLocationContext();
-  const { toast } = useToast();
   const logActivityMutation = useLogActivity();
 
   const { data: loadDetail, isLoading: loading } = useLoadDetail(
@@ -230,10 +229,8 @@ export function LoadDetailPanel({
       updates
     );
     if (!success) {
-      toast({
-        variant: 'error',
-        title: 'Failed to update load',
-        message: error?.message || 'Unable to save prep details.',
+      toast.error('Failed to update load', {
+        description: error?.message || 'Unable to save prep details.',
       });
     } else {
       onMetaUpdated?.(updates);
@@ -661,10 +658,8 @@ export function LoadDetailPanel({
 
   const handlePrintTags = () => {
     if (!items.length) {
-      toast({
-        variant: 'error',
-        title: 'No items to print',
-        message: 'This load has no items yet.',
+      toast.error('No items to print', {
+        description: 'This load has no items yet.',
       });
       return;
     }
@@ -776,10 +771,8 @@ export function LoadDetailPanel({
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      toast({
-        variant: 'error',
-        title: 'Pop-up blocked',
-        message: 'Allow pop-ups to open the print view.',
+      toast.error('Pop-up blocked', {
+        description: 'Allow pop-ups to open the print view.',
       });
       return;
     }

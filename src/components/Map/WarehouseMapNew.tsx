@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Map, MapMarker, MarkerContent, MarkerPopup, MapControls, type MapRef } from '@/components/ui/map';
+import { Map, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, type MapRef } from '@/components/ui/map';
 import { Button } from '@/components/ui/button';
 import { Globe, Package, Pencil, ScanLine, Trash2 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
@@ -198,7 +198,13 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         maxZoom={24} // Allow extreme zoom for precision
         styles={showWorldMap ? undefined : mapStyles}
       >
-        <MapControls position="top-right" showZoom />
+        <MapControls
+          position="top-right"
+          showZoom
+          showCompass
+          showLocate
+          showFullscreen
+        />
         {validLocations.map((location) => (
           <MapMarker
             key={location.id}
@@ -211,6 +217,9 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                 style={{ backgroundColor: location.load_color || '#94a3b8' }}
               />
             </MarkerContent>
+            <MarkerTooltip className="px-2 py-1 text-xs font-medium">
+              {location.model ?? 'Unknown'}
+            </MarkerTooltip>
             <MarkerPopup className="p-3 min-w-[200px]">
               <div className="space-y-2">
                 <div className="flex gap-3">

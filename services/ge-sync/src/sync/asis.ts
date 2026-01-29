@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { getCookieHeader } from '../auth/playwright.js';
 import { getSupabase, getLocationConfig, getProductLookup } from '../db/supabase.js';
-import { ENDPOINTS, HEADERS, REFERERS, GE_DMS_BASE, buildLoadDetailUrl, parseLoadNumber } from './endpoints.js';
+import { ENDPOINTS, HEADERS, REFERERS, GE_DMS_BASE, buildLoadDetailUrl } from './endpoints.js';
 import type {
   GEInventoryItem,
   GELoadMetadata,
@@ -974,12 +974,30 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     }
 
     const itemsWithId = Array.from(itemsWithIdMap.values());
-    const itemsWithoutId = Array.from(itemsWithoutIdMap.values()).map(({ id, ...rest }) => rest);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const itemsWithoutId = Array.from(itemsWithoutIdMap.values()).map(({ id: _id, ...rest }) => rest);
+    const itemsWithoutIdWithSerial = itemsWithoutId.filter(
+      (item) => typeof item.serial === 'string' && item.serial.trim().length > 0
+    );
+    const itemsWithoutIdWithoutSerial = itemsWithoutId.filter(
+      (item) => !item.serial || (typeof item.serial === 'string' && item.serial.trim().length === 0)
+    );
 
-    if (itemsWithoutId.length > 0) {
-      const { error: insertError } = await db.from('inventory_items').insert(itemsWithoutId);
+    if (itemsWithoutIdWithoutSerial.length > 0) {
+      const { error: insertError } = await db
+        .from('inventory_items')
+        .insert(itemsWithoutIdWithoutSerial);
       if (insertError) {
         throw new Error(`Failed to insert new items: ${insertError.message}`);
+      }
+    }
+
+    if (itemsWithoutIdWithSerial.length > 0) {
+      const { error: upsertSerialError } = await db
+        .from('inventory_items')
+        .upsert(itemsWithoutIdWithSerial, { onConflict: 'company_id,location_id,serial' });
+      if (upsertSerialError) {
+        throw new Error(`Failed to upsert serial items: ${upsertSerialError.message}`);
       }
     }
 

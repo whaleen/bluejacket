@@ -70,12 +70,6 @@ function buildSyntheticSerial(prefix: string, parts: (string | undefined)[], ind
   return `${prefix}:${joined}:${index}`;
 }
 
-/**
- * Check if serial is synthetic (generated for items without real serials)
- */
-function isSyntheticSerial(serial: string): boolean {
-  return serial.includes('-NS:') || serial.includes('-INV-NS:');
-}
 
 /**
  * Fetch master inventory from GE ERP system
@@ -378,9 +372,15 @@ export async function syncSimpleInventory(
     if (itemsToUpsert.length > 0) {
       console.log(`[${inventoryType}] Upserting ${itemsToUpsert.length} items...`);
 
+      const upsertPayload = itemsToUpsert.map((item) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id: _id, ...rest } = item;
+        return rest;
+      });
+
       const { error: upsertError } = await db
         .from('inventory_items')
-        .upsert(itemsToUpsert, {
+        .upsert(upsertPayload, {
           onConflict: 'company_id,location_id,serial',
           ignoreDuplicates: false,
         });

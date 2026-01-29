@@ -32,7 +32,7 @@ import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
 import { ButtonGroup } from '@/components/ui/button-group';
 import {
   DropdownMenu,
@@ -43,6 +43,7 @@ import {
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useGeSync } from '@/hooks/queries/useGeSync';
 import { useImportInventorySnapshot } from '@/hooks/queries/useInventoryImport';
+import type { InventoryImportProgress } from '@/lib/inventoryImportManager';
 import {
   useInventoryBrands,
   useInventoryExport,
@@ -159,7 +160,6 @@ interface InventoryViewProps {
 
 export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const { locationId, companyId } = getActiveLocationContext();
-  const { toast } = useToast();
   const geSyncMutation = useGeSync();
   const importSnapshotMutation = useImportInventorySnapshot();
   const [exportedRows, setExportedRows] = useState(0);
@@ -360,10 +360,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const handleNukeProducts = useCallback(async () => {
     if (nukeMutation.isPending) return;
     if (!locationId) {
-      toast({
-        variant: 'error',
-        title: 'No active location',
-        message: 'Select a location before clearing inventory.',
+      toast.error('No active location', {
+        description: 'Select a location before clearing inventory.',
       });
       return;
     }
@@ -371,10 +369,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     try {
       const source = resolveProductImportSource(inventoryTypeFilter);
       if (!source) {
-        toast({
-          variant: 'error',
-          title: 'Missing source',
-          message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+        toast.error('Missing source', {
+          description: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
         });
         return;
       }
@@ -382,9 +378,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       const typeFilter = types.length > 0 ? types : [source.inventoryType];
       const result = await nukeMutation.mutateAsync({ inventoryTypes: typeFilter, locationId });
 
-      toast({
-        title: `${source.label} inventory cleared`,
-        message: typeof result.count === 'number'
+      toast(`${source.label} inventory cleared`, {
+        description: typeof result.count === 'number'
           ? `${result.count} items removed (${typeFilter.join(', ')}).`
           : `${source.label} items removed.`,
       });
@@ -392,64 +387,89 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       setNukeDialogOpen(false);
     } catch (err) {
       console.error('Failed to clear inventory:', err);
-      toast({
-        variant: 'error',
-        title: 'Failed to clear inventory',
-        message: err instanceof Error ? err.message : 'Unable to delete inventory items.',
+      toast.error('Failed to clear inventory', {
+        description: err instanceof Error ? err.message : 'Unable to delete inventory items.',
       });
     }
-  }, [inventoryTypeFilter, locationId, nukeMutation, toast]);
+  }, [inventoryTypeFilter, locationId, nukeMutation]);
 
   const handleImportProducts = useCallback(async () => {
     if (importingProducts) return;
     const source = resolveProductImportSource(inventoryTypeFilter);
     if (!source) {
-      toast({
-        variant: 'error',
-        title: 'Missing source',
-        message: 'Pick ASIS, FG, or Local Stock in the type filter before importing.',
+      toast.error('Missing source', {
+        description: 'Pick ASIS, FG, or Local Stock in the type filter before importing.',
       });
       return;
     }
     setImportingProducts(true);
+    let importToastId: string | number | undefined;
+    let syncToastId: string | number | undefined;
+    let syncInterval: number | undefined;
+
     try {
       // For ASIS, use the GE sync logic (GE fields become source of truth)
       if (inventoryTypeFilter === 'ASIS') {
+        syncToastId = toast.loading('Syncing ASIS inventory…');
+        let elapsed = 0;
+        syncInterval = window.setInterval(() => {
+          elapsed += 5;
+          toast.loading('Syncing ASIS inventory…', {
+            id: syncToastId,
+            description: `Waiting for GE DMS… ${elapsed}s`,
+          });
+        }, 5000);
+
         const result = await geSyncMutation.mutateAsync({ type: 'asis', locationId });
         const stats = result.stats ?? {};
-        toast({
-          title: 'ASIS sync complete',
-          message: `${stats.totalGEItems ?? 0} items synced. ${stats.newItems ?? 0} new, ${stats.updatedItems ?? 0} updated. ${stats.unassignedItems ?? 0} not in loads.`,
+        toast.success('ASIS sync complete', {
+          id: syncToastId,
+          description: `${stats.totalGEItems ?? 0} items synced. ${stats.newItems ?? 0} new, ${stats.updatedItems ?? 0} updated. ${stats.unassignedItems ?? 0} not in loads.`,
         });
       } else {
+        importToastId = toast.loading(`Importing ${source.label} inventory…`);
+        const handleProgress = (progress: InventoryImportProgress) => {
+          const description =
+            typeof progress.total === 'number' && typeof progress.processed === 'number'
+              ? `${progress.message} ${progress.processed}/${progress.total}`
+              : progress.message;
+          toast.loading(`Importing ${source.label} inventory…`, {
+            id: importToastId,
+            description,
+          });
+        };
+
         const result = await importSnapshotMutation.mutateAsync({
           source,
           locationId,
           companyId,
+          onProgress: handleProgress,
         });
 
         if (result.totalRows === 0) {
-          toast({
-            title: `No ${source.label} products found`,
-            message: `${source.fileName} did not return any rows.`,
+          toast.error(`No ${source.label} products found`, {
+            id: importToastId,
+            description: `${source.fileName} did not return any rows.`,
           });
           return;
         }
 
-        toast({
-          title: `${source.label} products imported`,
-          message: `${result.processedRows} rows processed. ${result.crossTypeSkipped} skipped due to cross-type conflicts.`,
+        toast.success(`${source.label} products imported`, {
+          id: importToastId,
+          description: `${result.processedRows} rows processed. ${result.crossTypeSkipped} skipped due to cross-type conflicts.`,
         });
       }
 
     } catch (err) {
       console.error('Failed to import products:', err);
-      toast({
-        variant: 'error',
-        title: 'Import failed',
-        message: err instanceof Error ? err.message : 'Unable to import inventory file.',
+      toast.error('Import failed', {
+        id: importToastId ?? syncToastId,
+        description: err instanceof Error ? err.message : 'Unable to import inventory file.',
       });
     } finally {
+      if (syncInterval) {
+        window.clearInterval(syncInterval);
+      }
       setImportingProducts(false);
     }
   }, [
@@ -457,7 +477,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     importingProducts,
     inventoryTypeFilter,
     locationId,
-    toast,
     geSyncMutation,
     importSnapshotMutation,
   ]);
@@ -539,10 +558,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const selectedImportSource = resolveProductImportSource(inventoryTypeFilter);
   const handleNukeClick = () => {
     if (!selectedImportSource) {
-      toast({
-        variant: 'error',
-        title: 'Missing source',
-        message: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+      toast.error('Missing source', {
+        description: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
       });
       return;
     }

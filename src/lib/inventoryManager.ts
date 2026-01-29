@@ -1,6 +1,5 @@
 import supabase from '@/lib/supabase';
 import type { InventoryItem } from '@/types/inventory';
-import type { PostgrestFilterBuilder } from '@supabase/postgrest-js';
 
 export type InventoryTypeFilter = 'all' | 'ASIS' | 'FG' | 'LocalStock';
 
@@ -119,7 +118,8 @@ const normalizeInventoryItem = (item: RawInventoryItem): InventoryItemWithProduc
   products: Array.isArray(item.products) ? item.products[0] ?? null : item.products ?? null,
 });
 
-type InventoryQuery = PostgrestFilterBuilder<unknown, unknown, unknown>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type InventoryQuery = any;
 
 const applyInventoryFilters = (query: InventoryQuery, filters: InventoryFilters, types: string[]) => {
   let nextQuery = query;
@@ -258,7 +258,7 @@ export async function getInventoryPage(params: {
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
 
-  const nextItems = (data ?? []).map(normalizeInventoryItem);
+  const nextItems = ((data ?? []) as unknown as RawInventoryItem[]).map(normalizeInventoryItem);
   const hydratedItems = withProductImages
     ? await enrichItemsWithProductImages(nextItems)
     : nextItems;
@@ -436,7 +436,7 @@ export async function exportInventoryCsv(params: {
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    const batch = (data ?? []).map(normalizeInventoryItem);
+    const batch = ((data ?? []) as unknown as RawInventoryItem[]).map(normalizeInventoryItem);
     if (batch.length === 0) break;
 
     for (const item of batch) {

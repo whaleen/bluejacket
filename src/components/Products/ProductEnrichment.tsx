@@ -17,7 +17,7 @@ import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
 import supabase from '@/lib/supabase';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
 import { PageContainer } from '@/components/Layout/PageContainer';
 
 interface ProductData {
@@ -48,7 +48,6 @@ interface ProductEnrichmentProps {
 }
 
 export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
-  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<ProductData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,10 +140,7 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
         setError(`Failed to save: ${saveError.message}`);
       } else {
         setError(null);
-        toast({
-          message: 'Product saved successfully.',
-          variant: 'success',
-        });
+        toast.success('Product saved successfully.');
         setSearchTerm('');
         setProductData(null);
         setEditMode(false);
