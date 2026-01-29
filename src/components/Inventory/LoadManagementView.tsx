@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Check, AlertTriangle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
 import { useLoads } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -11,10 +12,6 @@ import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import supabase from '@/lib/supabase';
-import { getActiveLocationContext } from '@/lib/tenant';
-import { useAuth } from '@/context/AuthContext';
-import { logActivity } from '@/lib/activityLog';
 import { getPathForView } from '@/lib/routes';
 
 interface LoadWithCount extends LoadMetadata {
@@ -27,8 +24,6 @@ interface LoadManagementViewProps {
 }
 
 export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
-  const { locationId, companyId } = getActiveLocationContext();
-  const { user } = useAuth();
   const { toast } = useToast();
   const { data: loadsData, isLoading: loading, refetch } = useLoads();
   const [loads, setLoads] = useState<LoadWithCount[]>([]);

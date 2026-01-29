@@ -12,7 +12,6 @@ import { Globe, Package, Pencil, ScanLine, Trash2 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useDeleteProductLocation } from '@/hooks/queries/useMap';
 import type { ProductLocationForMap } from '@/types/map';
-import { useTheme } from '@/components/theme-provider';
 import { blankMapStyle } from './BlankMapStyle';
 
 interface WarehouseMapNewProps {
@@ -51,8 +50,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const hasSavedViewRef = useRef(Boolean(savedView));
   const hasFitRef = useRef(false);
   const deleteLocation = useDeleteProductLocation();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   // Calculate center point from all locations
   const { center } = useMemo(() => {
@@ -257,6 +254,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                         size="icon"
                         className="h-6 w-6"
                         onClick={() => {
+                          if (!location.sub_inventory) return;
                           const path = `/loads/${encodeURIComponent(location.sub_inventory)}`;
                           const params = new URLSearchParams(window.location.search);
                           params.set('from', 'map');
