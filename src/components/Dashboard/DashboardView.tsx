@@ -15,6 +15,7 @@ import { PageContainer } from '@/components/Layout/PageContainer';
 import { getPathForView } from '@/lib/routes';
 import type { AppView } from '@/lib/routes';
 import { getActiveLocationContext } from '@/lib/tenant';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface DashboardViewProps {
   onViewChange?: (view: AppView) => void;
@@ -87,7 +88,7 @@ type ActivityLogEntry = {
   action: string;
   entity_type?: string | null;
   entity_id?: string | null;
-  details?: Record<string, any> | null;
+  details?: Record<string, unknown> | null;
   actor_name?: string | null;
   actor_image?: string | null;
   created_at: string;
@@ -97,6 +98,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   const { user } = useAuth();
   const { locationId } = getActiveLocationContext();
   const userDisplayName = user?.username ?? user?.email ?? "User";
+  const isMobile = useIsMobile();
 
   const { data: loadsData } = useLoads();
   useActivityRealtime();
@@ -202,6 +204,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     if (loadsData) {
       fetchData(loadsData);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, loadsData]);
 
   // useEffect(() => {
@@ -241,10 +244,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     };
   }, [locationId]);
 
-  const fetchData = async (baseLoadsData: any[]) => {
+  const fetchData = async (baseLoadsData: unknown[]) => {
     try {
       // Fetch ALL inventory items in batches
-      let allItems: any[] = [];
+      let allItems: unknown[] = [];
       let from = 0;
       const batchSize = 1000;
       let hasMore = true;
@@ -746,33 +749,18 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 </p>
               </div>
             </div>
-
-            {/* Quick Action Buttons */}
-            {/* <div className="flex flex-wrap gap-2">
-              <Button size="responsive" onClick={() => navigateToInventory()}>
-                <ScanBarcode className="mr-2 h-4 w-4" />
-                Start Scanning
-              </Button>
-              <Button size="responsive" variant="outline" onClick={() => onViewChange?.('loads')}>
-                <PackageOpen className="mr-2 h-4 w-4" />
-                Manage Loads
-              </Button>
-              <Button size="responsive" variant="outline" onClick={() => navigateToInventory()}>
-                <TruckIcon className="mr-2 h-4 w-4" />
-                View Inventory
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div> */}
           </div>
         </Card>
 
         {/* Reorder Alerts */}
         <ReorderAlertsCard onViewParts={() => navigateToPartsInventory('reorder')} />
 
-        {/* Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div>
-            <h2 className="text-lg font-semibold mb-3">Load Board</h2>
+        {/* Mobile: Task Board First (Load Board, Quick Actions, Activity) */}
+        {isMobile && (
+          <>
+            {/* Load Board */}
+            <div>
+            <h2 className="text-lg font-semibold mb-3">ASIS Load Board</h2>
             <div className="space-y-5">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -813,6 +801,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
             </div>
           </div>
 
+          {/* Quick Actions */}
           <div>
             <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
             <Card className="p-4">
@@ -852,10 +841,9 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               </div>
             </Card>
           </div>
-        </div>
 
-        {/* Recent Activity */}
-        <div>
+          {/* Recent Activity */}
+          <div>
           <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
           <Card className="p-4">
             <div className="max-h-[320px] overflow-y-auto pr-2 space-y-3">
@@ -898,10 +886,15 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               </Button>
             </div>
           </Card>
-        </div>
+          </div>
+          </>
+        )}
 
-        {/* Interactive Donut Chart */}
-        <div className="flex justify-center">
+        {/* Desktop: Charts and Overview First */}
+        {!isMobile && (
+          <>
+            {/* Interactive Donut Chart */}
+            <div className="flex justify-center">
           <Card className="p-6 w-full max-w-2xl">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -990,10 +983,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               )}
             </div>
           </Card>
-        </div>
+            </div>
 
-        {/* Inventory Overview - 3 columns */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Inventory Overview - 3 columns */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Local Stock Card */}
           <Card className="p-5">
             <div className="space-y-4">
@@ -1106,7 +1099,140 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               </Button>
             </div>
           </Card>
-        </div>
+            </div>
+
+            {/* Actions - Desktop shows as 2-column grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h2 className="text-lg font-semibold mb-3">ASIS Load Board</h2>
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Sanity check ASIS load</p>
+                        <p className="text-xs text-muted-foreground">Loads requesting a sanity check.</p>
+                      </div>
+                      <Badge variant="outline">{asisActionLoads.sanityCheckRequested.length}</Badge>
+                    </div>
+                    {renderLoadChips(asisActionLoads.sanityCheckRequested, (load) => navigateToLoad(load.sub_inventory_name))}
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Prep ASIS load</p>
+                        <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
+                      </div>
+                      <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
+                    </div>
+                    {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
+                  </div>
+
+                  <div className="border-t border-border/60" />
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Prep ASIS load</p>
+                        <p className="text-xs text-muted-foreground">For Sale loads missing prep.</p>
+                      </div>
+                      <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
+                    </div>
+                    {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+                <Card className="p-4">
+                  <div className="space-y-3">
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                      onClick={() => navigateToInventory()}
+                    >
+                      <ScanBarcode className="mr-2 h-4 w-4" />
+                      Start New Scanning Session
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                      onClick={() => onViewChange?.('loads')}
+                    >
+                      <PackageOpen className="mr-2 h-4 w-4" />
+                      Manage Loads
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                      onClick={() => navigateToInventory()}
+                    >
+                      <TruckIcon className="mr-2 h-4 w-4" />
+                      View All Inventory
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3"
+                      onClick={() => onViewChange?.('products')}
+                    >
+                      <Package className="mr-2 h-4 w-4" />
+                      Product Lookup
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div>
+              <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
+              <Card className="p-4">
+                <div className="max-h-[320px] overflow-y-auto pr-2 space-y-3">
+                  {activityLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Package className="h-4 w-4 animate-pulse" />
+                      Loading activity…
+                    </div>
+                  ) : activityLogs.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No activity yet.</div>
+                  ) : (
+                    activityLogs.map((entry) => (
+                      <div key={entry.id} className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
+                          {entry.actor_image ? (
+                            <img
+                              src={entry.actor_image}
+                              alt={entry.actor_name ?? 'User'}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span>
+                              {(entry.actor_name ?? 'U').slice(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{entry.actor_name ?? 'Unknown'}</div>
+                          <div className="text-sm text-foreground">{formatActivityMessage(entry)}</div>
+                          <div className="text-xs text-muted-foreground">{formatActivityDate(entry.created_at)}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="pt-3">
+                  <Button variant="ghost" size="responsive" onClick={navigateToActivity}>
+                    View full activity log
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          </>
+        )}
 
         {/* Load Summary */}
         {/* <div>

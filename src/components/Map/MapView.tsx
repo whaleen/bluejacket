@@ -7,8 +7,10 @@
 
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
+import { MobileOverlay } from '@/components/Layout/MobileOverlay';
 import { useProductLocations } from '@/hooks/queries/useMap';
 import { WarehouseMapNew } from './WarehouseMapNew';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface MapViewProps {
   onMenuClick?: () => void;
@@ -16,7 +18,18 @@ interface MapViewProps {
 
 export function MapView({ onMenuClick }: MapViewProps) {
   const { data: locations } = useProductLocations();
+  const isMobile = useIsMobile();
 
+  // Mobile: Full-screen overlay
+  if (isMobile) {
+    return (
+      <MobileOverlay title="Warehouse Map">
+        <WarehouseMapNew locations={locations ?? []} />
+      </MobileOverlay>
+    );
+  }
+
+  // Desktop: Keep current in-page layout
   return (
     <div className="h-full min-h-0 bg-background flex flex-col">
       <AppHeader title="Warehouse Map" onMenuClick={onMenuClick} />

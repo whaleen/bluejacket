@@ -2,6 +2,7 @@ import { PageContainer } from '@/components/Layout/PageContainer';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useUiHandedness } from '@/hooks/useUiHandedness';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { NotificationBell } from '@/components/Navigation/NotificationBell';
 
 
 interface AppHeaderProps {
@@ -29,6 +30,7 @@ export function AppHeader({ title, actions, onMenuClick }: AppHeaderProps) {
             )}
           </div>
           <div className="flex items-center gap-2 sm:shrink-0">
+            <NotificationBell />
             {actions && (
               <div className="flex items-center gap-2 overflow-x-auto max-w-full pr-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {actions}

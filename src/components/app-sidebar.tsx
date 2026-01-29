@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type ComponentProps } from "react"
 import type { ComponentType } from "react"
 import {
-  AlertTriangle,
   Building2,
   ClipboardList,
   Database,
@@ -92,7 +91,7 @@ const baseNavSections: NavSection[] = [
         isActive: (currentView) => currentView === "inventory",
       },
       {
-        label: "Loads",
+        label: "ASIS Loads",
         icon: TruckIcon,
         view: "loads",
         applyParams: clearPartsParams,
@@ -118,41 +117,14 @@ const baseNavSections: NavSection[] = [
     title: "Parts",
     items: [
       {
-        label: "Parts Inventory",
+        label: "Parts",
         icon: Package,
         view: "parts",
         applyParams: (params) => {
           params.delete("tab")
           params.delete("status")
         },
-        isActive: (currentView, params) =>
-          currentView === "parts" &&
-          (params.get("tab") ?? "inventory") === "inventory" &&
-          params.get("status") !== "reorder",
-      },
-      {
-        label: "Parts History",
-        icon: History,
-        view: "parts",
-        applyParams: (params) => {
-          params.set("tab", "history")
-          params.delete("status")
-        },
-        isActive: (currentView, params) =>
-          currentView === "parts" &&
-          params.get("tab") === "history",
-      },
-      {
-        label: "Reorder Alerts",
-        icon: AlertTriangle,
-        view: "parts",
-        applyParams: (params) => {
-          params.delete("tab")
-          params.set("status", "reorder")
-        },
-        isActive: (currentView, params) =>
-          currentView === "parts" &&
-          params.get("status") === "reorder",
+        isActive: (currentView) => currentView === "parts",
       },
     ],
   },

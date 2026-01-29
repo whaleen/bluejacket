@@ -236,7 +236,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
           title={
             isStandaloneDetail
               ? `Load ${selectedLoadForDetail?.friendly_name || selectedLoadForDetail?.sub_inventory_name || ''}`.trim()
-              : "Load Management"
+              : "ASIS Loads"
           }
           onMenuClick={onMenuClick}
         />

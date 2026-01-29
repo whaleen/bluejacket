@@ -16,9 +16,11 @@ import supabase from '@/lib/supabase';
 import { createSession, deleteSession, getSessionSummaries, updateSessionStatus } from '@/lib/sessionManager';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
+import { MobileOverlay } from '@/components/Layout/MobileOverlay';
 import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveLocationContext } from '@/lib/tenant';
+import { useIsMobile } from '@/hooks/use-mobile';
 import type { AppView } from '@/lib/routes';
 
 interface CreateSessionViewProps {
@@ -74,6 +76,7 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
   const { user } = useAuth();
   const userDisplayName = user?.username ?? user?.email ?? null;
   const { locationId } = getActiveLocationContext();
+  const isMobile = useIsMobile();
   const [pageTab, setPageTab] = useState<'sessions' | 'new'>('sessions');
   const [sessionListTab, setSessionListTab] = useState<'active' | 'closed' | 'all'>('active');
   const [sessionSearch, setSessionSearch] = useState('');
@@ -418,6 +421,19 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
   };
 
   if (activeSessionId) {
+    // Mobile: Full-screen overlay for camera-focused scanning
+    if (isMobile) {
+      return (
+        <MobileOverlay title="Scanning Session" onClose={handleExitSession}>
+          <ScanningSessionView
+            sessionId={activeSessionId}
+            onExit={handleExitSession}
+          />
+        </MobileOverlay>
+      );
+    }
+
+    // Desktop: Keep in-page for keyboard-friendly manual entry
     return (
       <ScanningSessionView
         sessionId={activeSessionId}
