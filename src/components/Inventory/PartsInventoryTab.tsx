@@ -107,8 +107,9 @@ export function PartsInventoryTab({ searchTerm, statusFilter = 'all', onRefresh 
     if (!parts || parts.length === 0 || snapshotting) return;
 
     setSnapshotting(true);
-    const { success, error } = await snapshotTrackedParts(parts);
-    if (!success) {
+    try {
+      await snapshotTrackedParts(parts);
+    } catch (error) {
       console.error('Failed to snapshot counts:', error);
     }
     setSnapshotting(false);

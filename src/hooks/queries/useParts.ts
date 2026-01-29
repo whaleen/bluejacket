@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { ReorderAlert, TrackedPartWithDetails } from '@/types/inventory';
 import {
   getTrackedParts,
   updatePartCount,
@@ -8,6 +9,7 @@ import {
   removeTrackedPart,
   updateThreshold,
   getCountHistoryWithProducts,
+  getAvailablePartsToTrack,
 } from '@/lib/partsManager';
 import { queryKeys } from '@/lib/queryKeys';
 import { getActiveLocationContext } from '@/lib/tenant';
@@ -18,7 +20,6 @@ export function useTrackedParts() {
   return useQuery({
     queryKey: queryKeys.parts.tracked(locationId),
     queryFn: getTrackedParts,
-    select: (data) => data.data,
   });
 }
 
@@ -28,7 +29,6 @@ export function useReorderAlerts() {
   return useQuery({
     queryKey: queryKeys.parts.alerts(locationId),
     queryFn: getReorderAlerts,
-    select: (data) => data.data,
   });
 }
 
@@ -53,14 +53,17 @@ export function useUpdatePartCount() {
 
     onMutate: async ({ productId, newQty }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.parts.tracked(locationId) });
-      const previous = queryClient.getQueryData(queryKeys.parts.tracked(locationId));
+      const previous = queryClient.getQueryData<TrackedPartWithDetails[]>(queryKeys.parts.tracked(locationId));
 
-      queryClient.setQueryData(queryKeys.parts.tracked(locationId), (old: any) => {
-        if (!old) return old;
-        return old.map((part: any) =>
+      queryClient.setQueryData<TrackedPartWithDetails[] | undefined>(
+        queryKeys.parts.tracked(locationId),
+        (old) => {
+          if (!old) return old;
+          return old.map((part) =>
           part.product_id === productId ? { ...part, current_qty: newQty } : part
-        );
-      });
+          );
+        }
+      );
 
       return { previous };
     },
@@ -87,16 +90,19 @@ export function useMarkAsReordered() {
 
     onMutate: async (trackedPartId) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.parts.alerts(locationId) });
-      const previous = queryClient.getQueryData(queryKeys.parts.alerts(locationId));
+      const previous = queryClient.getQueryData<ReorderAlert[]>(queryKeys.parts.alerts(locationId));
 
-      queryClient.setQueryData(queryKeys.parts.alerts(locationId), (old: any) => {
-        if (!old) return old;
-        return old.map((alert: any) =>
-          alert.tracked_part_id === trackedPartId
-            ? { ...alert, reordered_at: new Date().toISOString() }
-            : alert
-        );
-      });
+      queryClient.setQueryData<ReorderAlert[] | undefined>(
+        queryKeys.parts.alerts(locationId),
+        (old) => {
+          if (!old) return old;
+          return old.map((alert) =>
+            alert.tracked_part_id === trackedPartId
+              ? { ...alert, reordered_at: new Date().toISOString() }
+              : alert
+          );
+        }
+      );
 
       return { previous };
     },
@@ -176,6 +182,19 @@ export function usePartsHistory(productId?: string, days: number = 30) {
   return useQuery({
     queryKey: queryKeys.parts.history(locationId, productId, days),
     queryFn: () => getCountHistoryWithProducts(productId, days),
-    select: (data) => data.data,
+  });
+}
+
+export function useAvailablePartsToTrack(searchTerm?: string, enabled: boolean = true) {
+  const { locationId } = getActiveLocationContext();
+
+  return useQuery({
+    queryKey: queryKeys.parts.available(locationId, searchTerm),
+    queryFn: () =>
+      getAvailablePartsToTrack({
+        searchTerm: searchTerm?.trim() ? searchTerm.trim() : undefined,
+        limit: 1000,
+      }),
+    enabled: enabled && !!locationId,
   });
 }

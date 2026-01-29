@@ -12,10 +12,7 @@ import { getActiveLocationContext } from '@/lib/tenant';
 /**
  * Get all tracked parts with their current quantities from inventory_items
  */
-export async function getTrackedParts(): Promise<{
-  data: TrackedPartWithDetails[] | null;
-  error: any
-}> {
+export async function getTrackedParts(): Promise<TrackedPartWithDetails[]> {
   const { locationId } = getActiveLocationContext();
   // First get all tracked parts with product info
   const { data: trackedParts, error: trackedError } = await supabase
@@ -36,7 +33,7 @@ export async function getTrackedParts(): Promise<{
     .order('created_at', { ascending: false });
 
   if (trackedError || !trackedParts) {
-    return { data: null, error: trackedError };
+    throw trackedError ?? new Error('Failed to load tracked parts');
   }
 
   // Get current quantities from inventory_items for these products
@@ -50,7 +47,7 @@ export async function getTrackedParts(): Promise<{
     .in('product_fk', productIds);
 
   if (invError) {
-    return { data: null, error: invError };
+    throw invError;
   }
 
   // Create a map of product_id -> { qty, inventory_item_id }
@@ -69,7 +66,7 @@ export async function getTrackedParts(): Promise<{
     inventory_item_id: qtyMap.get(tp.product_id)?.id
   }));
 
-  return { data: result, error: null };
+  return result;
 }
 
 /**
@@ -79,7 +76,7 @@ export async function addTrackedPart(
   productId: string,
   reorderThreshold: number = 5,
   createdBy?: string
-): Promise<{ data: TrackedPart | null; error: any }> {
+): Promise<TrackedPart> {
   const { locationId, companyId } = getActiveLocationContext();
   const { data, error } = await supabase
     .from('tracked_parts')
@@ -94,7 +91,10 @@ export async function addTrackedPart(
     .select()
     .single();
 
-  return { data, error };
+  if (error || !data) {
+    throw error ?? new Error('Failed to add tracked part');
+  }
+  return data as TrackedPart;
 }
 
 /**
@@ -103,7 +103,7 @@ export async function addTrackedPart(
 export async function updateThreshold(
   trackedPartId: string,
   threshold: number
-): Promise<{ success: boolean; error: any }> {
+): Promise<void> {
   const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
@@ -114,7 +114,9 @@ export async function updateThreshold(
     .eq('id', trackedPartId)
     .eq('location_id', locationId);
 
-  return { success: !error, error };
+  if (error) {
+    throw error;
+  }
 }
 
 /**
@@ -122,7 +124,7 @@ export async function updateThreshold(
  */
 export async function removeTrackedPart(
   trackedPartId: string
-): Promise<{ success: boolean; error: any }> {
+): Promise<void> {
   const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
@@ -133,7 +135,9 @@ export async function removeTrackedPart(
     .eq('id', trackedPartId)
     .eq('location_id', locationId);
 
-  return { success: !error, error };
+  if (error) {
+    throw error;
+  }
 }
 
 /**
@@ -141,7 +145,7 @@ export async function removeTrackedPart(
  */
 export async function markAsReordered(
   trackedPartId: string
-): Promise<{ success: boolean; error: any }> {
+): Promise<void> {
   const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
@@ -152,7 +156,9 @@ export async function markAsReordered(
     .eq('id', trackedPartId)
     .eq('location_id', locationId);
 
-  return { success: !error, error };
+  if (error) {
+    throw error;
+  }
 }
 
 /**
@@ -160,7 +166,7 @@ export async function markAsReordered(
  */
 export async function clearReorderedStatus(
   trackedPartId: string
-): Promise<{ success: boolean; error: any }> {
+): Promise<void> {
   const { locationId } = getActiveLocationContext();
   const { error } = await supabase
     .from('tracked_parts')
@@ -171,7 +177,9 @@ export async function clearReorderedStatus(
     .eq('id', trackedPartId)
     .eq('location_id', locationId);
 
-  return { success: !error, error };
+  if (error) {
+    throw error;
+  }
 }
 
 /**
@@ -183,7 +191,7 @@ export async function updatePartCount(
   countedBy?: string,
   notes?: string,
   reason?: 'usage' | 'return' | 'restock'
-): Promise<{ success: boolean; error: any }> {
+): Promise<void> {
   const { locationId, companyId } = getActiveLocationContext();
   // Get current qty from inventory_items
   const { data: currentItem, error: fetchError } = await supabase
@@ -196,19 +204,22 @@ export async function updatePartCount(
 
   if (fetchError && fetchError.code !== 'PGRST116') {
     // PGRST116 is "no rows returned" - that's OK, we'll create one
-    return { success: false, error: fetchError };
+    throw fetchError;
   }
 
   const previousQty = currentItem?.qty ?? 0;
 
   // Get the tracked_part_id for this product (with threshold and reordered status)
-  const { data: trackedPart } = await supabase
+  const { data: trackedPart, error: trackedError } = await supabase
     .from('tracked_parts')
     .select('id, reorder_threshold, reordered_at')
     .eq('product_id', productId)
     .eq('is_active', true)
     .eq('location_id', locationId)
     .single();
+  if (trackedError && trackedError.code !== 'PGRST116') {
+    throw trackedError;
+  }
 
   // Update or create the inventory_items record
   if (currentItem) {
@@ -222,7 +233,7 @@ export async function updatePartCount(
       .eq('location_id', locationId);
 
     if (updateError) {
-      return { success: false, error: updateError };
+      throw updateError;
     }
   } else {
     // Need to get product info to create inventory item
@@ -233,7 +244,7 @@ export async function updatePartCount(
       .single();
 
     if (productError || !product) {
-      return { success: false, error: productError || 'Product not found' };
+      throw productError ?? new Error('Product not found');
     }
 
     const { error: insertError } = await supabase
@@ -251,7 +262,7 @@ export async function updatePartCount(
       });
 
     if (insertError) {
-      return { success: false, error: insertError };
+      throw insertError;
     }
   }
 
@@ -272,7 +283,7 @@ export async function updatePartCount(
 
   if (snapshotError) {
     console.error('Failed to create count snapshot:', snapshotError);
-    // Don't fail the operation - the count was updated successfully
+    // Non-fatal: count update already succeeded.
   }
 
   // If qty is now above threshold and part was marked as reordered, clear the status
@@ -287,7 +298,7 @@ export async function updatePartCount(
       .eq('location_id', locationId);
   }
 
-  return { success: true, error: null };
+  return;
 }
 
 /**
@@ -296,7 +307,7 @@ export async function updatePartCount(
 export async function getCountHistory(
   productId?: string,
   days: number = 30
-): Promise<{ data: InventoryCount[] | null; error: any }> {
+): Promise<InventoryCount[]> {
   const { locationId } = getActiveLocationContext();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -314,7 +325,10 @@ export async function getCountHistory(
 
   const { data, error } = await query;
 
-  return { data, error };
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as InventoryCount[];
 }
 
 /**
@@ -323,7 +337,7 @@ export async function getCountHistory(
 export async function getCountHistoryWithProducts(
   productId?: string,
   days: number = 90
-): Promise<{ data: InventoryCountWithProduct[] | null; error: any }> {
+): Promise<InventoryCountWithProduct[]> {
   const { locationId } = getActiveLocationContext();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
@@ -357,16 +371,16 @@ export async function getCountHistoryWithProducts(
 
   const { data, error } = await query;
 
-  return { data: data as InventoryCountWithProduct[] | null, error };
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as InventoryCountWithProduct[];
 }
 
 /**
  * Get all reorder alerts (parts below threshold)
  */
-export async function getReorderAlerts(): Promise<{
-  data: ReorderAlert[] | null;
-  error: any
-}> {
+export async function getReorderAlerts(): Promise<ReorderAlert[]> {
   const { locationId } = getActiveLocationContext();
   // Get all active tracked parts with product info
   const { data: trackedParts, error: trackedError } = await supabase
@@ -385,7 +399,7 @@ export async function getReorderAlerts(): Promise<{
     .eq('location_id', locationId);
 
   if (trackedError || !trackedParts) {
-    return { data: null, error: trackedError };
+    throw trackedError ?? new Error('Failed to load reorder alerts');
   }
 
   // Get current quantities
@@ -399,7 +413,7 @@ export async function getReorderAlerts(): Promise<{
     .in('product_fk', productIds);
 
   if (invError) {
-    return { data: null, error: invError };
+    throw invError;
   }
 
   // Create qty map
@@ -438,7 +452,7 @@ export async function getReorderAlerts(): Promise<{
       return a.current_qty - b.current_qty;
     });
 
-  return { data: alerts, error: null };
+  return alerts;
 }
 
 /**
@@ -448,23 +462,20 @@ export async function getReorderAlerts(): Promise<{
 export async function getAvailablePartsToTrack(options?: {
   searchTerm?: string;
   limit?: number;
-}): Promise<{
-  data: Product[] | null;
-  error: any;
-  meta?: {
-    trackedMatches?: Product[];
-  };
-}> {
+}): Promise<{ parts: Product[]; trackedMatches: Product[] }> {
   const { locationId } = getActiveLocationContext();
   const searchTerm = options?.searchTerm?.trim();
   const limit = options?.limit ?? 1000;
 
   // Get already tracked product IDs
-  const { data: tracked } = await supabase
+  const { data: tracked, error: trackedError } = await supabase
     .from('tracked_parts')
     .select('product_id')
     .eq('is_active', true)
     .eq('location_id', locationId);
+  if (trackedError) {
+    throw trackedError;
+  }
 
   const trackedIds = tracked?.map(t => t.product_id) ?? [];
   const trackedIdSet = new Set(trackedIds);
@@ -489,9 +500,8 @@ export async function getAvailablePartsToTrack(options?: {
   if (trackedIds.length > 0) {
     // Supabase doesn't have a NOT IN, so we filter client-side
     const { data, error } = await query;
-
     if (error) {
-      return { data: null, error };
+      throw error;
     }
 
     const filtered =
@@ -500,12 +510,15 @@ export async function getAvailablePartsToTrack(options?: {
       ? data?.filter(p => p.id && trackedIdSet.has(p.id)) ?? []
       : [];
 
-    return { data: filtered, error: null, meta: { trackedMatches } };
+    return { parts: filtered, trackedMatches };
   }
 
   const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
   const trackedMatches = searchTerm ? [] : [];
-  return { data, error, meta: { trackedMatches } };
+  return { parts: data ?? [], trackedMatches };
 }
 
 /**
@@ -515,10 +528,10 @@ export async function snapshotTrackedParts(
   parts: TrackedPartWithDetails[],
   countedBy?: string,
   notes: string = 'snapshot: manual'
-): Promise<{ success: boolean; error: any; inserted: number }> {
+): Promise<{ inserted: number }> {
   const { locationId, companyId } = getActiveLocationContext();
   if (parts.length === 0) {
-    return { success: true, error: null, inserted: 0 };
+    return { inserted: 0 };
   }
 
   const createdAt = new Date().toISOString();
@@ -539,9 +552,9 @@ export async function snapshotTrackedParts(
     const chunk = rows.slice(i, i + chunkSize);
     const { error } = await supabase.from('inventory_counts').insert(chunk);
     if (error) {
-      return { success: false, error, inserted: i };
+      throw error;
     }
   }
 
-  return { success: true, error: null, inserted: rows.length };
+  return { inserted: rows.length };
 }

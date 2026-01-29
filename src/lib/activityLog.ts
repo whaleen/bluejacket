@@ -32,9 +32,9 @@ export async function logActivity({
   entityType,
   entityId,
   details,
-}: ActivityLogInput) {
+}: ActivityLogInput): Promise<void> {
   if (!companyId || !locationId || !user) {
-    return { error: new Error('Missing required activity log context.') };
+    throw new Error('Missing required activity log context.');
   }
 
   const payload = {
@@ -50,5 +50,7 @@ export async function logActivity({
   };
 
   const { error } = await supabase.from('activity_log').insert(payload);
-  return { error };
+  if (error) {
+    throw error;
+  }
 }

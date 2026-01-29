@@ -1,6 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import supabase from '@/lib/supabase';
-import type { InventoryItem } from '@/types/inventory';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,57 +41,27 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { fetchAsisXlsRows } from '@/lib/asisImport';
+import { useGeSync } from '@/hooks/queries/useGeSync';
+import { useImportInventorySnapshot } from '@/hooks/queries/useInventoryImport';
+import {
+  useInventoryBrands,
+  useInventoryExport,
+  useInventoryPages,
+  useInventorySubInventories,
+  useNukeInventory,
+} from '@/hooks/queries/useInventory';
+import {
+  resolveInventoryTypes,
+  type InventoryExportColumn,
+  type InventoryFilters,
+  type InventorySort,
+  type InventoryTypeFilter,
+} from '@/lib/inventoryManager';
+import type { ProductImportSource } from '@/lib/inventoryImportManager';
 import { cn } from '@/lib/utils';
-
-type InventoryItemWithProduct = InventoryItem & {
-  products: {
-    id: string;
-    model: string;
-    product_type: string;
-    brand?: string;
-    description?: string;
-    dimensions?: Record<string, any>;
-    image_url?: string;
-    product_url?: string;
-    product_category?: string;
-  } | null;
-};
-
-type ProductImportRow = {
-  'Model #': string;
-  'Serial #': string;
-  'Inv Qty': string | number;
-  'Availability Status': string;
-  'Availability Message': string;
-};
 
 const PAGE_SIZE = 60;
 const EXPORT_BATCH_SIZE = 1000;
-const IMPORT_BATCH_SIZE = 500;
-const GE_SYNC_URL =
-  (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? 'http://localhost:3001';
-const GE_SYNC_API_KEY = import.meta.env.VITE_GE_SYNC_API_KEY as string | undefined;
-
-type InventoryTypeFilter = 'all' | 'ASIS' | 'FG' | 'LocalStock';
-
-type InventoryFilters = {
-  inventoryType: InventoryTypeFilter;
-  subInventory: string;
-  productCategory: 'all' | 'appliance' | 'accessory';
-  brand: string;
-  search: string;
-};
-
-type InventorySort = 'model-asc' | 'model-desc' | 'created-desc' | 'created-asc';
-
-type ProductImportSource = {
-  label: string;
-  baseUrl: string;
-  fileName: string;
-  inventoryType: 'ASIS' | 'FG' | 'STA';
-  csoValue: string;
-};
 
 const PRODUCT_IMPORT_SOURCES_BY_FILTER: Record<'ASIS' | 'FG' | 'LocalStock', ProductImportSource> = {
   ASIS: {
@@ -154,12 +122,7 @@ type ExportColumnKey =
   | 'ge_ordc'
   | 'ge_orphaned';
 
-type ExportColumn = {
-  key: ExportColumnKey;
-  label: string;
-  group: 'Item' | 'Product';
-  getValue: (item: InventoryItemWithProduct) => string | number | boolean | null | undefined;
-};
+type ExportColumn = InventoryExportColumn & { key: ExportColumnKey };
 
 const exportColumns: ExportColumn[] = [
   { key: 'item_id', label: 'Item ID', group: 'Item', getValue: item => item.id },
@@ -190,139 +153,6 @@ const exportColumns: ExportColumn[] = [
   { key: 'product_url', label: 'Product URL', group: 'Product', getValue: item => item.products?.product_url },
 ];
 
-const csvEscape = (value: unknown) => {
-  if (value === null || value === undefined) return '';
-  const stringValue = String(value);
-  if (/[",\n]/.test(stringValue)) {
-    return `"${stringValue.replace(/"/g, '""')}"`;
-  }
-  return stringValue;
-};
-
-const normalizeInventoryItem = (item: any): InventoryItemWithProduct => ({
-  ...item,
-  qty: item.qty ?? 1,
-  products: Array.isArray(item.products) ? item.products[0] ?? null : item.products ?? null,
-});
-
-const chunkArray = <T,>(items: T[], size: number) => {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-};
-
-const buildInventorySelect = (filters: InventoryFilters) => {
-  const productJoin =
-    filters.brand !== 'all' || filters.productCategory !== 'all'
-      ? 'product_fk!inner'
-      : 'product_fk';
-
-  return `
-    id,
-    qty,
-    cso,
-    serial,
-    model,
-    product_type,
-    inventory_type,
-    sub_inventory,
-    route_id,
-    is_scanned,
-    consumer_customer_name,
-    created_at,
-    ge_model,
-    ge_serial,
-    ge_inv_qty,
-    ge_availability_status,
-    ge_availability_message,
-    ge_ordc,
-    ge_orphaned,
-    products:${productJoin} (
-      id,
-      model,
-      product_type,
-      brand,
-      description,
-      image_url,
-      product_url,
-      product_category
-    )
-  `;
-};
-
-const enrichItemsWithProductImages = async (
-  items: InventoryItemWithProduct[]
-): Promise<InventoryItemWithProduct[]> => {
-  const modelSet = new Set<string>();
-  for (const item of items) {
-    const model = item.products?.model ?? item.model;
-    if (!model) continue;
-    if (!item.products?.image_url) {
-      modelSet.add(model);
-    }
-  }
-  const modelsToFetch = Array.from(modelSet);
-
-  if (modelsToFetch.length === 0) {
-    return items;
-  }
-
-  try {
-    const productRows: InventoryItemWithProduct['products'][] = [];
-    const chunks = chunkArray(modelsToFetch, 200);
-
-    for (const chunk of chunks) {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, model, product_type, brand, description, image_url, product_url, product_category')
-        .in('model', chunk);
-
-      if (error) throw error;
-      if (data) {
-        productRows.push(...data);
-      }
-    }
-
-    if (productRows.length === 0) return items;
-
-    const productByModel = new Map<string, InventoryItemWithProduct['products']>();
-    for (const product of productRows) {
-      if (product?.model) {
-        productByModel.set(product.model, product);
-      }
-    }
-
-    return items.map((item) => {
-      if (item.products?.image_url) return item;
-      const model = item.products?.model ?? item.model;
-      if (!model) return item;
-      const product = productByModel.get(model);
-      if (!product) return item;
-
-      if (item.products) {
-        return {
-          ...item,
-          products: {
-            ...item.products,
-            image_url: item.products.image_url ?? product.image_url,
-            brand: item.products.brand ?? product.brand,
-            description: item.products.description ?? product.description,
-            product_category: item.products.product_category ?? product.product_category,
-            product_url: item.products.product_url ?? product.product_url,
-          },
-        };
-      }
-
-      return { ...item, products: product };
-    });
-  } catch (err) {
-    console.error('Failed to fetch product images:', err);
-    return items;
-  }
-};
-
 interface InventoryViewProps {
   onMenuClick?: () => void;
 }
@@ -330,25 +160,17 @@ interface InventoryViewProps {
 export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const { locationId, companyId } = getActiveLocationContext();
   const { toast } = useToast();
-  const [items, setItems] = useState<InventoryItemWithProduct[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
-  const [listError, setListError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
-  const [exporting, setExporting] = useState(false);
+  const geSyncMutation = useGeSync();
+  const importSnapshotMutation = useImportInventorySnapshot();
   const [exportedRows, setExportedRows] = useState(0);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [nukeDialogOpen, setNukeDialogOpen] = useState(false);
-  const [nuking, setNuking] = useState(false);
   const [importingProducts, setImportingProducts] = useState(false);
   const [exportColumnKeys, setExportColumnKeys] = useState<Set<ExportColumnKey>>(
     () => new Set(exportColumns.map(column => column.key))
   );
   const [includeRowNumbers, setIncludeRowNumbers] = useState(false);
-  const requestIdRef = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Read filter from URL on mount
@@ -382,14 +204,6 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const uiHandedness = useUiHandedness();
   const isMobile = useIsMobile();
   const alignRight = isMobile && uiHandedness === 'right';
-  const [subInventoryOptions, setSubInventoryOptions] = useState<Array<{
-    value: string;
-    label: string;
-    color?: string | null;
-    friendlyName?: string | null;
-    cso?: string | null;
-  }>>([]);
-  const [brandOptions, setBrandOptions] = useState<string[]>([]);
 
   // State
   const [itemDetailOpen, setItemDetailOpen] = useState(false);
@@ -397,91 +211,30 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const { view, setView } = usePartsListView();
   const isImageView = view === 'images';
   const isTableView = view === 'table';
-
-  const resolveInventoryTypes = useCallback((type: InventoryTypeFilter) => {
-    if (type === 'FG') {
-      return ['FG', 'BackHaul'];
-    }
-    if (type === 'LocalStock') {
-      return ['LocalStock', 'Staged', 'STA', 'Inbound', 'WillCall'];
-    }
-    if (type === 'ASIS') {
-      return ['ASIS'];
-    }
-    return [];
-  }, []);
-
-  const findCrossTypeSerials = useCallback(async (serials: string[], inventoryType: string) => {
-    if (!locationId || serials.length === 0) return new Set<string>();
-    const conflictSerials = new Set<string>();
-    for (const chunk of chunkArray(serials, 500)) {
-      const { data, error } = await supabase
-        .from('inventory_items')
-        .select('serial, inventory_type')
-        .eq('location_id', locationId)
-        .in('serial', chunk)
-        .neq('inventory_type', inventoryType);
-      if (error) throw error;
-      (data ?? []).forEach(row => {
-        if (row.serial) {
-          conflictSerials.add(row.serial);
-        }
-      });
-    }
-    return conflictSerials;
-  }, [locationId]);
-
-  const applyInventoryFilters = useCallback(
-    (query: any, filters: InventoryFilters) => {
-      let nextQuery = query;
-
-      if (filters.inventoryType !== 'all') {
-        const types = resolveInventoryTypes(filters.inventoryType);
-        if (types.length === 1) {
-          nextQuery = nextQuery.eq('inventory_type', types[0]);
-        } else if (types.length > 1) {
-          nextQuery = nextQuery.in('inventory_type', types);
-        }
-      }
-
-      if (filters.subInventory !== 'all') {
-        nextQuery = nextQuery.eq('sub_inventory', filters.subInventory);
-      }
-
-      if (filters.productCategory !== 'all') {
-        nextQuery = nextQuery.eq('products.product_category', filters.productCategory);
-      }
-
-      if (filters.brand !== 'all') {
-        nextQuery = nextQuery.eq('products.brand', filters.brand);
-      }
-
-      if (filters.search) {
-        const escaped = filters.search.replace(/[%_]/g, '\\$&').replace(/,/g, ' ');
-        const like = `%${escaped}%`;
-        nextQuery = nextQuery.or(
-          `cso.ilike.${like},serial.ilike.${like},model.ilike.${like},product_type.ilike.${like}`
-        );
-      }
-
-      return nextQuery;
-    },
-    [resolveInventoryTypes]
-  );
-
-  const applyInventorySort = useCallback((query: any, sort: InventorySort) => {
-    switch (sort) {
-      case 'model-desc':
-        return query.order('model', { ascending: false }).order('created_at', { ascending: false });
-      case 'created-asc':
-        return query.order('created_at', { ascending: true }).order('model', { ascending: true });
-      case 'created-desc':
-        return query.order('created_at', { ascending: false }).order('model', { ascending: true });
-      case 'model-asc':
-      default:
-        return query.order('model', { ascending: true }).order('created_at', { ascending: false });
-    }
-  }, []);
+  const inventoryFilters = useMemo<InventoryFilters>(() => ({
+    inventoryType: inventoryTypeFilter,
+    subInventory: subInventoryFilter,
+    productCategory: productCategoryFilter,
+    brand: brandFilter,
+    search: searchTerm,
+  }), [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm]);
+  const inventoryQuery = useInventoryPages(inventoryFilters, sortOption, PAGE_SIZE);
+  const { data: brandOptions = [] } = useInventoryBrands();
+  const { data: subInventoryOptions = [] } = useInventorySubInventories(inventoryTypeFilter);
+  const exportMutation = useInventoryExport();
+  const nukeMutation = useNukeInventory();
+  const items = inventoryQuery.data?.pages.flatMap(page => page.items) ?? [];
+  const totalCount = inventoryQuery.data?.pages[0]?.count ?? 0;
+  const loading = inventoryQuery.isLoading;
+  const loadingMore = inventoryQuery.isFetchingNextPage;
+  const hasMore = Boolean(inventoryQuery.hasNextPage);
+  const exporting = exportMutation.isPending;
+  const nuking = nukeMutation.isPending;
+  const listError = inventoryQuery.isError
+    ? inventoryQuery.error instanceof Error
+      ? inventoryQuery.error.message
+      : 'Failed to load inventory items'
+    : null;
 
   // Keep tabs in sync with URL changes (e.g., sidebar navigation)
   useEffect(() => {
@@ -540,88 +293,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     window.dispatchEvent(new Event('app:locationchange'));
   }, [inventoryTypeFilter, sortOption]);
 
-  useEffect(() => {
-    const fetchBrands = async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('brand')
-        .not('brand', 'is', null);
-
-      if (error) {
-        console.error('Failed to load brands:', error);
-        return;
-      }
-
-      const unique = Array.from(new Set((data ?? []).map(item => item.brand).filter(Boolean))).sort();
-      setBrandOptions(unique);
-    };
-
-    fetchBrands();
-  }, []);
-
-  useEffect(() => {
-    const typesWithLoads = ['ASIS', 'FG', 'LocalStock'];
-    if (inventoryTypeFilter === 'all' || !typesWithLoads.includes(inventoryTypeFilter)) {
-      setSubInventoryOptions([]);
-      return;
-    }
-
-    const fetchSubInventories = async () => {
-      const types = resolveInventoryTypes(inventoryTypeFilter);
-      const { data, error } = await supabase
-        .from('load_metadata')
-        .select('sub_inventory_name, friendly_name, primary_color, ge_cso')
-        .eq('location_id', locationId)
-        .in('inventory_type', types);
-
-      if (error) {
-        console.error('Failed to load sub-inventories:', error);
-        setSubInventoryOptions([]);
-        return;
-      }
-
-      const optionMap = new Map<string, {
-        value: string;
-        friendlyName?: string | null;
-        color?: string | null;
-        cso?: string | null;
-      }>();
-
-      (data ?? []).forEach((item) => {
-        const value = item.sub_inventory_name?.trim();
-        if (!value) return;
-        const existing = optionMap.get(value);
-        optionMap.set(value, {
-          value,
-          friendlyName: item.friendly_name?.trim() || existing?.friendlyName || null,
-          color: item.primary_color?.trim() || existing?.color || null,
-          cso: item.ge_cso?.trim() || existing?.cso || null,
-        });
-      });
-
-      const isAsis = inventoryTypeFilter === 'ASIS';
-      const options = Array.from(optionMap.values())
-        .map(option => {
-          if (!isAsis) {
-            return {
-              ...option,
-              label: option.value,
-            };
-          }
-          const friendly = option.friendlyName?.trim() || 'Unnamed';
-          const csoOrLoad = option.cso?.trim() || option.value;
-          return {
-            ...option,
-            label: `${friendly} • ${csoOrLoad}`,
-          };
-        })
-        .sort((a, b) => a.label.localeCompare(b.label));
-
-      setSubInventoryOptions(options);
-    };
-
-    fetchSubInventories();
-  }, [inventoryTypeFilter, resolveInventoryTypes, locationId]);
+  
 
   const handleViewItem = (itemId: string) => {
     setSelectedItemId(itemId);
@@ -629,7 +301,11 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   };
 
   const handleExport = useCallback(async () => {
-    if (exporting) return;
+    if (exportMutation.isPending) return;
+    if (!locationId) {
+      setExportError('No active location selected.');
+      return;
+    }
 
     const exportSearch = searchInput.trim();
     const exportFilters: InventoryFilters = {
@@ -640,82 +316,26 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       search: exportSearch,
     };
 
-    setExporting(true);
     setExportedRows(0);
     setExportError(null);
 
     try {
-      const lines: string[] = [];
-      const selectedColumns = exportColumns.filter(column => exportColumnKeys.has(column.key));
-      if (selectedColumns.length === 0) {
-        throw new Error('Select at least one column to export.');
-      }
+      const selectedColumns = exportColumns.filter(column => exportColumnKeys.has(column.key)) as InventoryExportColumn[];
+      const result = await exportMutation.mutateAsync({
+        locationId,
+        filters: exportFilters,
+        sort: sortOption,
+        columns: selectedColumns,
+        includeRowNumbers,
+        batchSize: EXPORT_BATCH_SIZE,
+        onProgress: setExportedRows,
+      });
 
-      const header = [
-        ...(includeRowNumbers ? ['#'] : []),
-        ...selectedColumns.map(column => column.label),
-      ];
-      lines.push(header.map(csvEscape).join(','));
-
-      let from = 0;
-      let totalExported = 0;
-      let rowNumber = 1;
-
-      while (true) {
-        let query = supabase
-          .from('inventory_items')
-          .select(buildInventorySelect(exportFilters))
-          .eq('location_id', locationId)
-          .range(from, from + EXPORT_BATCH_SIZE - 1);
-
-        query = applyInventoryFilters(query, exportFilters);
-        query = applyInventorySort(query, sortOption);
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        const batch = (data ?? []).map(normalizeInventoryItem);
-        if (batch.length === 0) break;
-
-        for (const item of batch) {
-          const rowValues = selectedColumns.map(column => {
-            const value = column.getValue(item);
-            if (column.key === 'is_scanned') {
-              return value ? 'true' : 'false';
-            }
-            return value ?? '';
-          });
-
-          const row = includeRowNumbers
-            ? [rowNumber, ...rowValues]
-            : rowValues;
-
-          lines.push(row.map(csvEscape).join(','));
-          rowNumber += 1;
-        }
-
-        totalExported += batch.length;
-        setExportedRows(totalExported);
-
-        if (batch.length < EXPORT_BATCH_SIZE) break;
-        from += EXPORT_BATCH_SIZE;
-      }
-
-      const filenameParts = ['inventory-export'];
-      if (exportFilters.inventoryType !== 'all') {
-        filenameParts.push(exportFilters.inventoryType.toLowerCase());
-      }
-      if (exportFilters.subInventory !== 'all') {
-        filenameParts.push(exportFilters.subInventory.replace(/\s+/g, '-').toLowerCase());
-      }
-      filenameParts.push(new Date().toISOString().slice(0, 10));
-      const filename = `${filenameParts.join('-')}.csv`;
-
-      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      link.download = result.filename;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -723,98 +343,22 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     } catch (err) {
       console.error('Failed to export inventory:', err);
       setExportError(err instanceof Error ? err.message : 'Failed to export inventory');
-    } finally {
-      setExporting(false);
     }
   }, [
-    applyInventoryFilters,
-    applyInventorySort,
-    locationId,
-    exportColumnKeys,
-    exporting,
-    inventoryTypeFilter,
-    subInventoryFilter,
-    productCategoryFilter,
     brandFilter,
+    exportColumnKeys,
+    exportMutation,
     includeRowNumbers,
+    inventoryTypeFilter,
+    locationId,
+    productCategoryFilter,
     searchInput,
     sortOption,
+    subInventoryFilter,
   ]);
 
-  const fetchInventoryPage = useCallback(async (pageIndex: number, options?: { append?: boolean }) => {
-    const append = options?.append ?? false;
-    const requestId = ++requestIdRef.current;
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
-    setListError(null);
-
-    try {
-      const filters: InventoryFilters = {
-        inventoryType: inventoryTypeFilter,
-        subInventory: subInventoryFilter,
-        productCategory: productCategoryFilter,
-        brand: brandFilter,
-        search: searchTerm,
-      };
-
-      let query = supabase
-        .from('inventory_items')
-        .select(buildInventorySelect(filters), { count: 'exact' })
-        .eq('location_id', locationId)
-        .range(pageIndex * PAGE_SIZE, pageIndex * PAGE_SIZE + PAGE_SIZE - 1);
-
-      query = applyInventoryFilters(query, filters);
-      query = applyInventorySort(query, sortOption);
-
-      const { data, error, count } = await query;
-
-      if (requestId !== requestIdRef.current) return;
-      if (error) throw error;
-
-      const nextItems = (data ?? []).map(normalizeInventoryItem);
-      const hydratedItems = await enrichItemsWithProductImages(nextItems);
-
-      if (requestId !== requestIdRef.current) return;
-
-      setItems(prev => (append ? [...prev, ...hydratedItems] : hydratedItems));
-      setPage(pageIndex);
-      if (typeof count === 'number') {
-        setTotalCount(count);
-      }
-      const moreAvailable = nextItems.length === PAGE_SIZE && (typeof count !== 'number' || (pageIndex + 1) * PAGE_SIZE < count);
-      setHasMore(moreAvailable);
-    } catch (err) {
-      if (requestId !== requestIdRef.current) return;
-      console.error('Failed to load inventory items:', err);
-      setListError(err instanceof Error ? err.message : 'Failed to load inventory items');
-      if (!append) {
-        setItems([]);
-        setTotalCount(0);
-        setHasMore(false);
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    }
-  }, [inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, searchTerm, sortOption, applyInventoryFilters, applyInventorySort, locationId]);
-
-  const refreshInventoryList = useCallback(() => {
-    setItems([]);
-    setPage(0);
-    setHasMore(true);
-    setTotalCount(0);
-    setListError(null);
-    setLoadingMore(false);
-    fetchInventoryPage(0, { append: false });
-  }, [fetchInventoryPage]);
-
   const handleNukeProducts = useCallback(async () => {
-    if (nuking) return;
+    if (nukeMutation.isPending) return;
     if (!locationId) {
       toast({
         variant: 'error',
@@ -834,26 +378,17 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         });
         return;
       }
-      setNuking(true);
       const types = resolveInventoryTypes(inventoryTypeFilter);
       const typeFilter = types.length > 0 ? types : [source.inventoryType];
-
-      const { error, count } = await supabase
-        .from('inventory_items')
-        .delete({ count: 'exact' })
-        .eq('location_id', locationId)
-        .in('inventory_type', typeFilter);
-
-      if (error) throw error;
+      const result = await nukeMutation.mutateAsync({ inventoryTypes: typeFilter, locationId });
 
       toast({
         title: `${source.label} inventory cleared`,
-        message: typeof count === 'number'
-          ? `${count} items removed (${typeFilter.join(', ')}).`
+        message: typeof result.count === 'number'
+          ? `${result.count} items removed (${typeFilter.join(', ')}).`
           : `${source.label} items removed.`,
       });
 
-      refreshInventoryList();
       setNukeDialogOpen(false);
     } catch (err) {
       console.error('Failed to clear inventory:', err);
@@ -862,28 +397,8 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         title: 'Failed to clear inventory',
         message: err instanceof Error ? err.message : 'Unable to delete inventory items.',
       });
-    } finally {
-      setNuking(false);
     }
-  }, [inventoryTypeFilter, locationId, nuking, refreshInventoryList, toast]);
-
-  const buildProductLookup = useCallback(async (models: string[]) => {
-    const uniqueModels = Array.from(new Set(models.map(model => model.trim()).filter(Boolean)));
-    const lookup = new Map<string, { id: string; product_type: string }>();
-    for (const chunk of chunkArray(uniqueModels, 500)) {
-      const { data, error } = await supabase
-        .from('products')
-        .select('id, model, product_type')
-        .in('model', chunk);
-      if (error) throw error;
-      (data ?? []).forEach(product => {
-        if (product.id && product.product_type) {
-          lookup.set(product.model, { id: product.id, product_type: product.product_type });
-        }
-      });
-    }
-    return lookup;
-  }, []);
+  }, [inventoryTypeFilter, locationId, nukeMutation, toast]);
 
   const handleImportProducts = useCallback(async () => {
     if (importingProducts) return;
@@ -900,30 +415,20 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     try {
       // For ASIS, use the GE sync logic (GE fields become source of truth)
       if (inventoryTypeFilter === 'ASIS') {
-        const response = await fetch(`${GE_SYNC_URL}/sync/asis`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(GE_SYNC_API_KEY ? { 'X-API-Key': GE_SYNC_API_KEY } : {}),
-          },
-          body: JSON.stringify({ locationId }),
-        });
-
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.success) {
-          const errorMessage = payload?.error || response.statusText || 'Failed to sync ASIS';
-          throw new Error(errorMessage);
-        }
-
-        const stats = payload.stats ?? {};
+        const result = await geSyncMutation.mutateAsync({ type: 'asis', locationId });
+        const stats = result.stats ?? {};
         toast({
           title: 'ASIS sync complete',
           message: `${stats.totalGEItems ?? 0} items synced. ${stats.newItems ?? 0} new, ${stats.updatedItems ?? 0} updated. ${stats.unassignedItems ?? 0} not in loads.`,
         });
       } else {
-        // For FG/STA, import GE snapshot (GE fields become source of truth)
-        const rows = await fetchAsisXlsRows<ProductImportRow>(source.fileName, source.baseUrl);
-        if (!rows.length) {
+        const result = await importSnapshotMutation.mutateAsync({
+          source,
+          locationId,
+          companyId,
+        });
+
+        if (result.totalRows === 0) {
           toast({
             title: `No ${source.label} products found`,
             message: `${source.fileName} did not return any rows.`,
@@ -931,149 +436,12 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
           return;
         }
 
-        const models = rows
-          .map(row => String(row['Model #'] ?? '').trim())
-          .filter(Boolean);
-        const productLookup = await buildProductLookup(models);
-
-        const inventoryItems = rows
-          .map(row => {
-            const model = String(row['Model #'] ?? '').trim();
-            if (!model) return null;
-            const serialValue = String(row['Serial #'] ?? '').trim();
-            const qtyValue = typeof row['Inv Qty'] === 'number'
-              ? row['Inv Qty']
-              : parseInt(String(row['Inv Qty']).trim(), 10);
-            const product = productLookup.get(model);
-            return {
-              cso: source.csoValue,
-              model,
-              qty: Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1,
-              serial: serialValue || undefined,
-              product_type: product?.product_type ?? 'UNKNOWN',
-              product_fk: product?.id,
-              inventory_type: source.inventoryType,
-              is_scanned: false,
-              scanned_at: undefined,
-              scanned_by: undefined,
-              notes: undefined,
-              status: undefined,
-              ge_model: model || undefined,
-              ge_serial: serialValue || undefined,
-              ge_inv_qty: Number.isFinite(qtyValue) ? qtyValue : undefined,
-              ge_availability_status: String(row['Availability Status'] ?? '').trim() || undefined,
-              ge_availability_message: String(row['Availability Message'] ?? '').trim() || undefined,
-              ge_orphaned: false,
-              ge_orphaned_at: undefined,
-            };
-          })
-          .filter(Boolean) as InventoryItem[];
-
-        const incomingSerials = Array.from(
-          new Set(inventoryItems.map(item => item.serial).filter(Boolean))
-        ) as string[];
-        const crossTypeSerials = await findCrossTypeSerials(incomingSerials, source.inventoryType);
-
-        const filteredItems = inventoryItems.filter(
-          (item) => !item.serial || !crossTypeSerials.has(item.serial)
-        );
-
-        const uniqueBySerial = new Map<string, InventoryItem>();
-        const itemsWithoutSerial: InventoryItem[] = [];
-        filteredItems.forEach(item => {
-          if (!item.serial) {
-            itemsWithoutSerial.push(item);
-            return;
-          }
-          if (!uniqueBySerial.has(item.serial)) {
-            uniqueBySerial.set(item.serial, item);
-          }
-        });
-
-        const uniqueItems = [...itemsWithoutSerial, ...uniqueBySerial.values()];
-
-        // Fetch existing items for this inventory type (for id matching)
-        const { data: existingItems, error: existingError } = await supabase
-          .from('inventory_items')
-          .select('id, serial')
-          .eq('location_id', locationId)
-          .eq('inventory_type', source.inventoryType);
-
-        if (existingError) throw existingError;
-
-        const existingBySerial = new Map<string, string>();
-        const existingIds = new Set<string>();
-
-        (existingItems ?? []).forEach(item => {
-          if (!item.serial || !item.id) return;
-          if (!existingBySerial.has(item.serial)) {
-            existingBySerial.set(item.serial, item.id);
-          }
-          existingIds.add(item.id);
-        });
-
-        const matchedIds = new Set<string>();
-        const payload = uniqueItems.map(item => {
-          if (!item.serial) {
-            return {
-              ...item,
-              company_id: companyId,
-              location_id: locationId,
-            };
-          }
-
-          const existingId = existingBySerial.get(item.serial);
-          if (existingId) {
-            matchedIds.add(existingId);
-          }
-
-          return {
-            ...item,
-            id: existingId,
-            company_id: companyId,
-            location_id: locationId,
-          };
-        });
-
-        const payloadWithId = payload.filter(item => item.id);
-        const payloadWithoutId = payload
-          .filter(item => !item.id)
-          .map(({ id, ...rest }) => rest);
-
-        for (const chunk of chunkArray(payloadWithoutId, IMPORT_BATCH_SIZE)) {
-          if (chunk.length === 0) continue;
-          const { error } = await supabase
-            .from('inventory_items')
-            .insert(chunk);
-          if (error) throw error;
-        }
-
-        for (const chunk of chunkArray(payloadWithId, IMPORT_BATCH_SIZE)) {
-          if (chunk.length === 0) continue;
-          const { error } = await supabase
-            .from('inventory_items')
-            .upsert(chunk, { onConflict: 'id' });
-          if (error) throw error;
-        }
-
-        // Flag items that no longer exist in GE for this inventory type
-        const orphanIds = Array.from(existingIds).filter(id => !matchedIds.has(id));
-        for (const chunk of chunkArray(orphanIds, IMPORT_BATCH_SIZE)) {
-          if (chunk.length === 0) continue;
-          const { error } = await supabase
-            .from('inventory_items')
-            .update({ status: 'NOT_IN_GE', ge_orphaned: true, ge_orphaned_at: new Date().toISOString() })
-            .in('id', chunk);
-          if (error) throw error;
-        }
-
         toast({
           title: `${source.label} products imported`,
-          message: `${inventoryItems.length} rows processed. ${crossTypeSerials.size} skipped due to cross-type conflicts.`,
+          message: `${result.processedRows} rows processed. ${result.crossTypeSkipped} skipped due to cross-type conflicts.`,
         });
       }
 
-      refreshInventoryList();
     } catch (err) {
       console.error('Failed to import products:', err);
       toast({
@@ -1085,38 +453,25 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       setImportingProducts(false);
     }
   }, [
-    buildProductLookup,
     companyId,
-    findCrossTypeSerials,
     importingProducts,
     inventoryTypeFilter,
     locationId,
-    refreshInventoryList,
     toast,
+    geSyncMutation,
+    importSnapshotMutation,
   ]);
 
   const handleLoadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
-    fetchInventoryPage(page + 1, { append: true });
-  }, [fetchInventoryPage, hasMore, loading, loadingMore, page]);
+    inventoryQuery.fetchNextPage();
+  }, [hasMore, inventoryQuery, loading, loadingMore]);
 
   useEffect(() => {
     setSubInventoryFilter('all');
   }, [inventoryTypeFilter]);
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setItems([]);
-      setPage(0);
-      setHasMore(true);
-      setTotalCount(0);
-      setListError(null);
-      setLoadingMore(false);
-      fetchInventoryPage(0, { append: false });
-    }, 150);
-
-    return () => window.clearTimeout(timeout);
-  }, [searchTerm, inventoryTypeFilter, subInventoryFilter, productCategoryFilter, brandFilter, sortOption, fetchInventoryPage]);
+  
 
   useEffect(() => {
     const node = loadMoreRef.current;

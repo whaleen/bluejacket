@@ -5,14 +5,11 @@ import { RefreshCw, Database, Package, Truck } from "lucide-react";
 import { useState } from "react";
 import { PageContainer } from "@/components/Layout/PageContainer";
 import { getActiveLocationContext } from "@/lib/tenant";
+import { useGeSync } from "@/hooks/queries/useGeSync";
 
 interface GESyncViewProps {
   onMenuClick?: () => void;
 }
-
-const GE_SYNC_URL =
-  (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? "http://localhost:3001";
-const GE_SYNC_API_KEY = import.meta.env.VITE_GE_SYNC_API_KEY as string | undefined;
 
 type SyncType = "asis" | "fg" | "sta";
 
@@ -35,6 +32,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
     fg: { type: "fg", loading: false, success: null, error: null },
     sta: { type: "sta", loading: false, success: null, error: null },
   });
+  const geSyncMutation = useGeSync();
 
   const handleSync = async (type: SyncType) => {
     const { locationId } = getActiveLocationContext();
@@ -58,21 +56,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
     }));
 
     try {
-      const response = await fetch(`${GE_SYNC_URL}/sync/${type}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(GE_SYNC_API_KEY ? { "X-API-Key": GE_SYNC_API_KEY } : {}),
-        },
-        body: JSON.stringify({ locationId }),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || result.error || "Sync failed");
-      }
-
+      const result = await geSyncMutation.mutateAsync({ type, locationId });
       setSyncStatuses((prev) => ({
         ...prev,
         [type]: {

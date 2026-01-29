@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Settings as SettingsIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { PageContainer } from "@/components/Layout/PageContainer"
-import supabase from "@/lib/supabase"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/context/AuthContext"
 import { AvatarUploader } from "@/components/Auth/AvatarUploader"
@@ -21,43 +20,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DisplayManager } from "@/components/FloorDisplay/DisplayManager"
 import { getStoredUiHandedness, setStoredUiHandedness, type UiHandedness } from "@/lib/uiPreferences"
 import { useTheme } from "@/components/theme-provider"
+import {
+  useCompanies,
+  useCreateCompany,
+  useCreateLocation,
+  useLocationSettings,
+  useLocations,
+  useUpdateCompany,
+  useUpdateLocation,
+  useUpdateUserProfile,
+  useUpsertSettings,
+  useUsers,
+} from "@/hooks/queries/useSettings"
+import type { LocationRecord, CompanyRecord, UserRecord } from "@/lib/settingsManager"
 
 interface SettingsViewProps {
   onMenuClick?: () => void
   section?: SettingsSection
 }
 
-type LocationRow = {
-  id: string
-  company_id: string
-  name: string
-  slug: string
-  created_at?: string | null
-  active?: boolean | null
-  companies?: {
-    id?: string
-    name?: string | null
-    slug?: string | null
-  } | null
-}
-
-type CompanyRow = {
-  id: string
-  name: string
-  slug: string
-  created_at?: string | null
-  active?: boolean | null
-}
-
-type UserRow = {
-  id: string
-  email: string | null
-  username: string | null
-  role?: string | null
-  image?: string | null
-  company_id?: string | null
-  created_at?: string | null
-}
+type LocationRow = LocationRecord
+type CompanyRow = CompanyRecord
+type UserRow = UserRecord
 
 const SUPER_ADMIN_STORAGE_KEY = "super_admin_unlocked"
 
@@ -107,6 +91,18 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     if (getEnvActiveCompanyId()) return "env-company"
     return "none"
   })
+  const locationsQuery = useLocations()
+  const companiesQuery = useCompanies()
+  const usersQuery = useUsers()
+  const locationSettingsQuery = useLocationSettings(activeLocationKey)
+  const updateLocationMutation = useUpdateLocation()
+  const upsertSettingsMutation = useUpsertSettings()
+  const createLocationMutation = useCreateLocation()
+  const updateCompanyMutation = useUpdateCompany()
+  const createCompanyMutation = useCreateCompany()
+  const updateUserMutation = useUpdateUserProfile()
+  const refetchCompanies = companiesQuery.refetch
+  const refetchUsers = usersQuery.refetch
   const [locationId, setLocationId] = useState<string | null>(null)
   const [locationCompanyId, setLocationCompanyId] = useState<string | null>(null)
   const [locationName, setLocationName] = useState("")
@@ -115,8 +111,6 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [ssoPassword, setSsoPassword] = useState("")
   const [uiHandedness, setUiHandedness] = useState<UiHandedness>(() => getStoredUiHandedness())
   const [locations, setLocations] = useState<LocationRow[]>([])
-  const [locationsLoading, setLocationsLoading] = useState(true)
-  const [locationsError, setLocationsError] = useState<string | null>(null)
   const [newLocationName, setNewLocationName] = useState("")
   const [newLocationSlug, setNewLocationSlug] = useState("")
   const [newLocationSlugTouched, setNewLocationSlugTouched] = useState(false)
@@ -124,7 +118,6 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [locationManagerSaving, setLocationManagerSaving] = useState(false)
   const [locationManagerError, setLocationManagerError] = useState<string | null>(null)
   const [locationManagerSuccess, setLocationManagerSuccess] = useState<string | null>(null)
-  const [locationLoading, setLocationLoading] = useState(true)
   const [locationSaving, setLocationSaving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [locationSuccess, setLocationSuccess] = useState<string | null>(null)
@@ -134,13 +127,10 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [userError, setUserError] = useState<string | null>(null)
   const [userSuccess, setUserSuccess] = useState<string | null>(null)
   const [users, setUsers] = useState<UserRow[]>([])
-  const [usersLoading, setUsersLoading] = useState(true)
   const [usersError, setUsersError] = useState<string | null>(null)
   const [usersSavingId, setUsersSavingId] = useState<string | number | null>(null)
   const [usersSuccess, setUsersSuccess] = useState<string | null>(null)
   const [companies, setCompanies] = useState<CompanyRow[]>([])
-  const [companiesLoading, setCompaniesLoading] = useState(true)
-  const [companiesError, setCompaniesError] = useState<string | null>(null)
   const [companySavingId, setCompanySavingId] = useState<string | null>(null)
   const [companyManagerError, setCompanyManagerError] = useState<string | null>(null)
   const [companyManagerSuccess, setCompanyManagerSuccess] = useState<string | null>(null)
@@ -155,6 +145,17 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   const [superAdminUsername, setSuperAdminUsername] = useState("")
   const [superAdminPassword, setSuperAdminPassword] = useState("")
   const [superAdminError, setSuperAdminError] = useState<string | null>(null)
+
+  const locationsLoading = locationsQuery.isLoading
+  const locationsQueryError =
+    locationsQuery.error instanceof Error ? locationsQuery.error.message : null
+  const companiesLoading = companiesQuery.isLoading
+  const companiesQueryError =
+    companiesQuery.error instanceof Error ? companiesQuery.error.message : null
+  const usersLoading = usersQuery.isLoading
+  const usersQueryError =
+    usersQuery.error instanceof Error ? usersQuery.error.message : null
+  const locationLoading = locationSettingsQuery.isLoading
 
   const companyLabel = companies.find((company) => company.id === locationCompanyId)?.name ?? ""
   const locationLabel = locationName || ""
@@ -177,6 +178,24 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
   }, [newLocationName, newLocationSlugTouched])
 
   useEffect(() => {
+    if (locationsQuery.data) {
+      setLocations(locationsQuery.data)
+    }
+  }, [locationsQuery.data])
+
+  useEffect(() => {
+    if (companiesQuery.data) {
+      setCompanies(companiesQuery.data)
+    }
+  }, [companiesQuery.data])
+
+  useEffect(() => {
+    if (usersQuery.data) {
+      setUsers(usersQuery.data)
+    }
+  }, [usersQuery.data])
+
+  useEffect(() => {
     if (locationCompanyId) {
       setNewLocationCompanyId(locationCompanyId)
     }
@@ -196,177 +215,47 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     }
   }, [companies, locationCompanyId, newLocationCompanyId])
 
-  const fetchLocations = async () => {
-    setLocationsLoading(true)
-    setLocationsError(null)
-    const { data, error } = await supabase
-      .from("locations")
-      .select("id, company_id, name, slug, created_at, active, companies:company_id (id, name, slug)")
-      .order("created_at", { ascending: true })
-
-    if (error) {
-      setLocationsError(error.message)
-      setLocations([])
-      setLocationsLoading(false)
+  useEffect(() => {
+    if (!activeLocationKey) {
+      setLocationError("Select an active location below.")
+      setLocationId(null)
+      setLocationCompanyId(null)
+      setLocationName("")
+      setLocationSlug("")
+      setSsoUsername("")
+      setSsoPassword("")
       return
     }
 
-    setLocations((data ?? []) as LocationRow[])
-    setLocationsLoading(false)
-  }
+    setLocationError(null)
+    setLocationSuccess(null)
 
-  useEffect(() => {
-    fetchLocations()
-  }, [])
-
-  const fetchCompanies = async () => {
-    setCompaniesLoading(true)
-    setCompaniesError(null)
-    const { data, error } = await supabase
-      .from("companies")
-      .select("id, name, slug, created_at, active")
-      .order("created_at", { ascending: true })
-
-    if (error) {
-      setCompaniesError(error.message)
-      setCompanies([])
-      setCompaniesLoading(false)
+    if (locationSettingsQuery.error) {
+      const message =
+        locationSettingsQuery.error instanceof Error
+          ? locationSettingsQuery.error.message
+          : "Failed to load location settings."
+      setLocationError(message)
       return
     }
 
-    setCompanies((data ?? []) as CompanyRow[])
-    setCompaniesLoading(false)
-  }
+    if (!locationSettingsQuery.data) return
 
-  useEffect(() => {
-    fetchCompanies()
-  }, [])
-
-  const fetchUsers = async () => {
-    setUsersLoading(true)
-    setUsersError(null)
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email, username, role, image, company_id, created_at")
-      .order("created_at", { ascending: true })
-
-    if (error) {
-      setUsersError(error.message)
-      setUsers([])
-      setUsersLoading(false)
-      return
-    }
-
-    setUsers((data ?? []) as UserRow[])
-    setUsersLoading(false)
-  }
-
-  useEffect(() => {
-    fetchUsers()
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const loadSettings = async () => {
-      if (!activeLocationKey) {
-        setLocationError("Select an active location below.")
-        setLocationLoading(false)
-        setLocationId(null)
-        setLocationCompanyId(null)
-        setLocationName("")
-        setLocationSlug("")
-        setSsoUsername("")
-        setSsoPassword("")
-        return
-      }
-
-      setLocationLoading(true)
-      setLocationError(null)
-      setLocationSuccess(null)
-
-      const isUuidLike = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        activeLocationKey
-      )
-      const locationQuery = supabase.from("locations").select("id, company_id, name, slug")
-      const locationLookup = isUuidLike
-        ? await locationQuery.eq("id", activeLocationKey).maybeSingle()
-        : await locationQuery.eq("slug", activeLocationKey).maybeSingle()
-
-      let location = locationLookup.data as LocationRow | null
-      let locationError = locationLookup.error
-
-      if (!location?.id && isUuidLike) {
-        const fallbackLookup = await supabase
-          .from("locations")
-          .select("id, company_id, name, slug")
-          .eq("company_id", activeLocationKey)
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle()
-
-        if (fallbackLookup.data) {
-          location = fallbackLookup.data as LocationRow
-          locationError = null
-        } else if (fallbackLookup.error) {
-          locationError = fallbackLookup.error
-        }
-      }
-
-      if (locationError) {
-        if (!cancelled) {
-          setLocationError(locationError.message)
-          setLocationLoading(false)
-        }
-        return
-      }
-
-      if (!location?.id) {
-        if (!cancelled) {
-          setLocationError(`No location found for "${activeLocationKey}".`)
-          setLocationLoading(false)
-        }
-        return
-      }
-
-      const { data: settings, error: settingsError } = await supabase
-        .from("settings")
-        .select("sso_username, sso_password, ui_handedness")
-        .eq("location_id", location.id)
-        .maybeSingle()
-
-      if (settingsError) {
-        if (!cancelled) {
-          setLocationError(settingsError.message)
-          setLocationLoading(false)
-        }
-        return
-      }
-
-      if (!cancelled) {
-        setLocationId(location.id)
-        setLocationCompanyId(location.company_id ?? null)
-        setLocationName(location?.name ?? "")
-        setLocationSlug(location?.slug ?? "")
-        setSsoUsername(settings?.sso_username ?? "")
-        setSsoPassword(settings?.sso_password ?? "")
-        const resolvedHandedness =
-          settings?.ui_handedness === "left" || settings?.ui_handedness === "right"
-            ? settings.ui_handedness
-            : getStoredUiHandedness()
-        setUiHandedness(resolvedHandedness)
-        setStoredUiHandedness(resolvedHandedness)
-        setActiveLocationContext(location.id, location.company_id ?? null)
-        setLocationLoading(false)
-      }
-    }
-
-    loadSettings()
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeLocationKey])
+    const { location, settings } = locationSettingsQuery.data
+    setLocationId(location.id)
+    setLocationCompanyId(location.company_id ?? null)
+    setLocationName(location?.name ?? "")
+    setLocationSlug(location?.slug ?? "")
+    setSsoUsername(settings?.sso_username ?? "")
+    setSsoPassword(settings?.sso_password ?? "")
+    const resolvedHandedness =
+      settings?.ui_handedness === "left" || settings?.ui_handedness === "right"
+        ? (settings.ui_handedness as UiHandedness)
+        : getStoredUiHandedness()
+    setUiHandedness(resolvedHandedness)
+    setStoredUiHandedness(resolvedHandedness)
+    setActiveLocationContext(location.id, location.company_id ?? null)
+  }, [activeLocationKey, locationSettingsQuery.data, locationSettingsQuery.error])
 
   useEffect(() => {
     setUsername(user?.username ?? "")
@@ -400,39 +289,28 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
       return
     }
 
-    const { error: locationError } = await supabase
-      .from("locations")
-      .update({ name: locationName, slug: trimmedSlug })
-      .eq("id", locationId)
+    try {
+      await updateLocationMutation.mutateAsync({
+        locationId,
+        name: locationName,
+        slug: trimmedSlug,
+      })
 
-    if (locationError) {
-      setLocationError(locationError.message)
-      setLocationSaving(false)
-      return
-    }
-
-    const { error: settingsError } = await supabase
-      .from("settings")
-      .upsert(
-        {
-          location_id: locationId,
-          company_id: locationCompanyId,
-          sso_username: ssoUsername || null,
-          sso_password: ssoPassword || null,
-          ui_handedness: uiHandedness,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "location_id" }
-      )
-
-    if (settingsError) {
-      setLocationError(settingsError.message)
+      await upsertSettingsMutation.mutateAsync({
+        locationId,
+        companyId: locationCompanyId,
+        ssoUsername: ssoUsername || null,
+        ssoPassword: ssoPassword || null,
+        uiHandedness,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save location settings."
+      setLocationError(message)
       setLocationSaving(false)
       return
     }
 
     setStoredUiHandedness(uiHandedness)
-    await fetchLocations()
     setLocationSuccess("Location settings saved.")
     setLocationSaving(false)
   }
@@ -501,26 +379,24 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setLocationManagerError(null)
     setLocationManagerSuccess(null)
 
-    const { data, error } = await supabase
-      .from("locations")
-      .insert({ name: trimmedName, slug: trimmedSlug, company_id: newLocationCompanyId })
-      .select("id, name, slug, company_id")
-      .single()
-
-    if (error) {
-      setLocationManagerError(error.message)
+    try {
+      const data = await createLocationMutation.mutateAsync({
+        name: trimmedName,
+        slug: trimmedSlug,
+        companyId: newLocationCompanyId,
+      })
+      setNewLocationName("")
+      setNewLocationSlug("")
+      setNewLocationSlugTouched(false)
+      if (data?.id) {
+        handleSetActiveLocation(data as LocationRow)
+      }
       setLocationManagerSaving(false)
-      return
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create location."
+      setLocationManagerError(message)
+      setLocationManagerSaving(false)
     }
-
-    await fetchLocations()
-    setNewLocationName("")
-    setNewLocationSlug("")
-    setNewLocationSlugTouched(false)
-    if (data?.id) {
-      handleSetActiveLocation(data as LocationRow)
-    }
-    setLocationManagerSaving(false)
   }
 
   const updateCompanyField = (id: string, field: keyof CompanyRow, value: string) => {
@@ -554,21 +430,20 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setCompanyManagerError(null)
     setCompanyManagerSuccess(null)
 
-    const { error } = await supabase
-      .from("companies")
-      .update({ name: trimmedName, slug: trimmedSlug })
-      .eq("id", row.id)
-
-    if (error) {
-      setCompanyManagerError(error.message)
+    try {
+      await updateCompanyMutation.mutateAsync({
+        companyId: row.id,
+        name: trimmedName,
+        slug: trimmedSlug,
+      })
+      setCompanySavingId(null)
+      setCompanyManagerSuccess("Company updated.")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update company."
+      setCompanyManagerError(message)
       setCompanySavingId(null)
       return
     }
-
-    setCompanySavingId(null)
-    setCompanyManagerSuccess("Company updated.")
-    await fetchCompanies()
-    await fetchLocations()
   }
 
   const handleCreateCompany = async () => {
@@ -589,29 +464,26 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setCompanyManagerError(null)
     setCompanyManagerSuccess(null)
 
-    const { data, error } = await supabase
-      .from("companies")
-      .insert({ name: trimmedName, slug: trimmedSlug })
-      .select("id, name, slug")
-      .single()
+    try {
+      const data = await createCompanyMutation.mutateAsync({
+        name: trimmedName,
+        slug: trimmedSlug,
+      })
+      setNewCompanyName("")
+      setNewCompanySlug("")
+      setNewCompanySlugTouched(false)
 
-    if (error) {
-      setCompanyManagerError(error.message)
+      if (data?.id) {
+        setNewLocationCompanyId(data.id)
+      }
+
+      setCompanyManagerSuccess("Company created.")
       setNewCompanySaving(false)
-      return
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create company."
+      setCompanyManagerError(message)
+      setNewCompanySaving(false)
     }
-
-    await fetchCompanies()
-    setNewCompanyName("")
-    setNewCompanySlug("")
-    setNewCompanySlugTouched(false)
-
-    if (data?.id) {
-      setNewLocationCompanyId(data.id)
-    }
-
-    setCompanyManagerSuccess("Company created.")
-    setNewCompanySaving(false)
   }
 
   const handleUserSave = async () => {
@@ -632,19 +504,15 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
       }
       let settingsErrorMessage: string | null = null
       if (locationId && locationCompanyId) {
-        const { error: settingsError } = await supabase
-          .from("settings")
-          .upsert(
-            {
-              location_id: locationId,
-              company_id: locationCompanyId,
-              ui_handedness: uiHandedness,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "location_id" }
-          )
-        if (settingsError) {
-          settingsErrorMessage = settingsError.message
+        try {
+          await upsertSettingsMutation.mutateAsync({
+            locationId,
+            companyId: locationCompanyId,
+            uiHandedness,
+          })
+        } catch (settingsError) {
+          settingsErrorMessage =
+            settingsError instanceof Error ? settingsError.message : "Failed to update handedness."
         }
       }
       setStoredUiHandedness(uiHandedness)
@@ -684,24 +552,21 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
     setUsersError(null)
     setUsersSuccess(null)
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
+    try {
+      await updateUserMutation.mutateAsync({
+        id: String(row.id),
         username: row.username,
         role: row.role ?? "member",
-        company_id: row.company_id ?? null,
+        companyId: row.company_id ?? null,
       })
-      .eq("id", row.id)
-
-    if (error) {
-      setUsersError(error.message)
+      setUsersSavingId(null)
+      setUsersSuccess("User updated.")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update user."
+      setUsersError(message)
       setUsersSavingId(null)
       return
     }
-
-    setUsersSavingId(null)
-    setUsersSuccess("User updated.")
-    await fetchUsers()
   }
 
   const renderLocationManagerSection = () => (
@@ -778,8 +643,8 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
               })}
             </div>
           )}
-          {locationsError && (
-            <div className="text-sm text-destructive">{locationsError}</div>
+          {locationsQueryError && (
+            <div className="text-sm text-destructive">{locationsQueryError}</div>
           )}
         </div>
 
@@ -972,8 +837,10 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
             </div>
           )}
 
-          {companiesError && (
-            <div className="text-sm text-destructive">{companiesError}</div>
+          {companiesQueryError && (
+            <div className="text-sm text-destructive">
+              {companiesQueryError}
+            </div>
           )}
         </Card>
       </>
@@ -1200,7 +1067,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Existing Companies</h3>
-              <Button variant="outline" size="responsive" onClick={fetchCompanies}>
+              <Button variant="outline" size="responsive" onClick={() => refetchCompanies()}>
                 Refresh
               </Button>
             </div>
@@ -1247,8 +1114,10 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
               </div>
             )}
 
-            {companiesError && (
-              <div className="text-sm text-destructive">{companiesError}</div>
+            {companiesQueryError && (
+              <div className="text-sm text-destructive">
+                {companiesQueryError}
+              </div>
             )}
           </div>
         </Card>
@@ -1279,7 +1148,7 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground">Existing Users</h3>
-            <Button variant="outline" size="responsive" onClick={fetchUsers}>
+            <Button variant="outline" size="responsive" onClick={() => refetchUsers()}>
               Refresh
             </Button>
           </div>
@@ -1362,8 +1231,12 @@ export function SettingsView({ onMenuClick, section }: SettingsViewProps) {
           )}
 
           <div className="text-sm">
-            {usersError && <span className="text-destructive">{usersError}</span>}
-            {!usersError && usersSuccess && <span className="text-emerald-600">{usersSuccess}</span>}
+            {(usersError ?? usersQueryError) && (
+              <span className="text-destructive">{usersError ?? usersQueryError}</span>
+            )}
+            {!usersError && !usersQueryError && usersSuccess && (
+              <span className="text-emerald-600">{usersSuccess}</span>
+            )}
           </div>
         </div>
       </Card>

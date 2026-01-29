@@ -1,7 +1,8 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import supabase from '@/lib/supabase';
 import { queryKeys } from '@/lib/queryKeys';
 import { getActiveLocationContext } from '@/lib/tenant';
+import { logActivity, type ActivityLogInput } from '@/lib/activityLog';
 
 const PAGE_SIZE = 50;
 
@@ -30,5 +31,19 @@ export function useActivityLog() {
     },
     getNextPageParam: (lastPage) => lastPage.nextPage,
     initialPageParam: 0,
+  });
+}
+
+export function useLogActivity() {
+  const queryClient = useQueryClient();
+  const { locationId } = getActiveLocationContext();
+
+  return useMutation({
+    mutationFn: (input: ActivityLogInput) => logActivity(input),
+    onSuccess: () => {
+      if (locationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.activity.all(locationId) });
+      }
+    },
   });
 }

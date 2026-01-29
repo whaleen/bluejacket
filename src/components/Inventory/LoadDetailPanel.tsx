@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveLocationContext } from '@/lib/tenant';
-import { logActivity } from '@/lib/activityLog';
+import { useLogActivity } from '@/hooks/queries/useActivity';
 
 interface LoadDetailPanelProps {
   load: LoadMetadata;
@@ -37,6 +37,7 @@ export function LoadDetailPanel({
   const userDisplayName = user?.username ?? user?.email ?? 'Unknown';
   const { locationId, companyId } = getActiveLocationContext();
   const { toast } = useToast();
+  const logActivityMutation = useLogActivity();
 
   const { data: loadDetail, isLoading: loading } = useLoadDetail(
     load.inventory_type,
@@ -132,7 +133,7 @@ export function LoadDetailPanel({
       item.cso?.toLowerCase().includes(q) ||
       item.serial?.toLowerCase().includes(q) ||
       item.model?.toLowerCase().includes(q) ||
-      (item.products as any)?.brand?.toLowerCase().includes(q)
+      item.products?.brand?.toLowerCase().includes(q)
     );
   });
 
@@ -238,22 +239,23 @@ export function LoadDetailPanel({
       onMetaUpdated?.(updates);
       triggerSavePulse();
       if (!options?.skipActivityLog) {
-        const { error: activityError } = await logActivity({
-          companyId,
-          locationId,
-          user,
-          action: 'load_update',
-          entityType: 'ASIS_LOAD',
-          entityId: load.sub_inventory_name,
-          details: {
-            loadNumber: load.sub_inventory_name,
-            friendlyName: load.friendly_name ?? null,
-            fields: Object.keys(updates),
-            updates,
-          },
-        });
-        if (activityError) {
-          console.warn('Failed to log activity (load_update):', activityError.message);
+        try {
+          await logActivityMutation.mutateAsync({
+            companyId,
+            locationId,
+            user,
+            action: 'load_update',
+            entityType: 'ASIS_LOAD',
+            entityId: load.sub_inventory_name,
+            details: {
+              loadNumber: load.sub_inventory_name,
+              friendlyName: load.friendly_name ?? null,
+              fields: Object.keys(updates),
+              updates,
+            },
+          });
+        } catch (activityError) {
+          console.warn('Failed to log activity (load_update):', activityError);
         }
       }
     }
@@ -261,10 +263,10 @@ export function LoadDetailPanel({
     return success;
   };
 
-  const triggerSavePulse = () => {
+  const triggerSavePulse = useCallback(() => {
     setSavePulse(true);
     window.setTimeout(() => setSavePulse(false), 1200);
-  };
+  }, []);
 
   const deriveFriendlyNameFromNotes = (notes?: string | null, status?: string | null) => {
     if (!notes) return null;
@@ -398,7 +400,7 @@ export function LoadDetailPanel({
     );
   })();
 
-  const handleSaveMeta = async () => {
+  const handleSaveMeta = useCallback(async () => {
     if (!hasMetaChanges) {
       setMetaError('No changes to save.');
       return;
@@ -441,27 +443,44 @@ export function LoadDetailPanel({
     } else {
       onMetaUpdated?.(updates);
       triggerSavePulse();
-      const { error: activityError } = await logActivity({
-        companyId,
-        locationId,
-        user,
-        action: 'load_update',
-        entityType: 'ASIS_LOAD',
-        entityId: load.sub_inventory_name,
-        details: {
-          loadNumber: load.sub_inventory_name,
-          friendlyName: friendly || load.friendly_name || null,
-          fields: Object.keys(updates),
-          updates,
-        },
-      });
-      if (activityError) {
-        console.warn('Failed to log activity (load_update):', activityError.message);
+      try {
+        await logActivityMutation.mutateAsync({
+          companyId,
+          locationId,
+          user,
+          action: 'load_update',
+          entityType: 'ASIS_LOAD',
+          entityId: load.sub_inventory_name,
+          details: {
+            loadNumber: load.sub_inventory_name,
+            friendlyName: friendly || load.friendly_name || null,
+            fields: Object.keys(updates),
+            updates,
+          },
+        });
+      } catch (activityError) {
+        console.warn('Failed to log activity (load_update):', activityError);
       }
     }
 
     setSavingMeta(false);
-  };
+  }, [
+    companyId,
+    friendlyName,
+    friendlyNameError,
+    hasMetaChanges,
+    isSalvage,
+    load.friendly_name,
+    load.inventory_type,
+    load.sub_inventory_name,
+    locationId,
+    logActivityMutation,
+    notes,
+    onMetaUpdated,
+    primaryColor,
+    triggerSavePulse,
+    user,
+  ]);
 
   useEffect(() => {
     if (!hasMetaChanges || savingMeta || friendlyNameError) return;
@@ -478,7 +497,7 @@ export function LoadDetailPanel({
         window.clearTimeout(metaSaveTimeoutRef.current);
       }
     };
-  }, [friendlyName, notes, primaryColor, isSalvage, hasMetaChanges, savingMeta, friendlyNameError]);
+  }, [friendlyName, notes, primaryColor, isSalvage, hasMetaChanges, savingMeta, friendlyNameError, handleSaveMeta]);
 
   const deriveCsoFromLoadNumber = (value: string) => {
     if (!value) return '';
@@ -564,20 +583,21 @@ export function LoadDetailPanel({
       { skipActivityLog: true }
     );
     if (success) {
-      const { error: activityError } = await logActivity({
-        companyId,
-        locationId,
-        user,
-        action: 'sanity_check_requested',
-        entityType: 'ASIS_LOAD',
-        entityId: load.sub_inventory_name,
-        details: {
-          loadNumber: load.sub_inventory_name,
-          friendlyName: load.friendly_name ?? null,
-        },
-      });
-      if (activityError) {
-        console.warn('Failed to log activity (sanity_check_requested):', activityError.message);
+      try {
+        await logActivityMutation.mutateAsync({
+          companyId,
+          locationId,
+          user,
+          action: 'sanity_check_requested',
+          entityType: 'ASIS_LOAD',
+          entityId: load.sub_inventory_name,
+          details: {
+            loadNumber: load.sub_inventory_name,
+            friendlyName: load.friendly_name ?? null,
+          },
+        });
+      } catch (activityError) {
+        console.warn('Failed to log activity (sanity_check_requested):', activityError);
       }
     }
   };
@@ -597,20 +617,21 @@ export function LoadDetailPanel({
       { skipActivityLog: true }
     );
     if (success) {
-      const { error: activityError } = await logActivity({
-        companyId,
-        locationId,
-        user,
-        action: 'sanity_check_completed',
-        entityType: 'ASIS_LOAD',
-        entityId: load.sub_inventory_name,
-        details: {
-          loadNumber: load.sub_inventory_name,
-          friendlyName: load.friendly_name ?? null,
-        },
-      });
-      if (activityError) {
-        console.warn('Failed to log activity (sanity_check_completed):', activityError.message);
+      try {
+        await logActivityMutation.mutateAsync({
+          companyId,
+          locationId,
+          user,
+          action: 'sanity_check_completed',
+          entityType: 'ASIS_LOAD',
+          entityId: load.sub_inventory_name,
+          details: {
+            loadNumber: load.sub_inventory_name,
+            friendlyName: load.friendly_name ?? null,
+          },
+        });
+      } catch (activityError) {
+        console.warn('Failed to log activity (sanity_check_completed):', activityError);
       }
     }
   };
@@ -1194,7 +1215,7 @@ export function LoadDetailPanel({
                   showInventoryTypeBadge={false}
                   showRouteBadge={false}
                   showProductMeta
-                  showImage={Boolean((normalizedItem.products as any)?.image_url)}
+                  showImage={Boolean(normalizedItem.products?.image_url)}
                   badges={badges}
                 />
               );

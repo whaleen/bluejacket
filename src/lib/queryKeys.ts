@@ -20,6 +20,13 @@ export const queryKeys = {
   },
   inventory: {
     all: (locationId: string) => ['inventory', locationId] as const,
+    list: (locationId: string, filters: unknown, sort: string, pageSize: number) =>
+      ['inventory', locationId, 'list', filters, sort, pageSize] as const,
+    item: (locationId: string, itemId: string) =>
+      ['inventory', locationId, 'item', itemId] as const,
+    brands: () => ['inventory', 'brands'] as const,
+    subInventories: (locationId: string, inventoryType: string) =>
+      ['inventory', locationId, 'subinventories', inventoryType] as const,
     byType: (locationId: string, type: string) => ['inventory', locationId, type] as const,
     stats: (locationId: string) => ['inventory', locationId, 'stats'] as const,
   },
@@ -37,5 +44,17 @@ export const queryKeys = {
   products: {
     search: (searchTerm: string) => ['products', 'search', searchTerm] as const,
     detail: (productId: string) => ['products', productId] as const,
+  },
+  locations: {
+    all: () => ['locations'] as const,
+  },
+  companies: {
+    all: () => ['companies'] as const,
+  },
+  users: {
+    all: () => ['users'] as const,
+  },
+  settings: {
+    byKey: (locationKey: string | null) => ['settings', locationKey] as const,
   },
 } as const;

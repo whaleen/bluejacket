@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -15,8 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Loader2, Search, Package } from 'lucide-react';
 import { usePartsListView } from '@/hooks/usePartsListView';
 import { PartsListViewToggle } from './PartsListViewToggle';
-import { getAvailablePartsToTrack, addTrackedPart } from '@/lib/partsManager';
-import type { Product } from '@/types/inventory';
+import { useAddTrackedPart, useAvailablePartsToTrack } from '@/hooks/queries/useParts';
 
 interface PartsTrackingDialogProps {
   open: boolean;
@@ -29,49 +28,35 @@ export function PartsTrackingDialog({
   onOpenChange,
   onPartAdded
 }: PartsTrackingDialogProps) {
-  const [parts, setParts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [defaultThreshold, setDefaultThreshold] = useState(5);
   const [adding, setAdding] = useState(false);
-  const [trackedMatches, setTrackedMatches] = useState<Product[]>([]);
   const { view, setView } = usePartsListView();
   const effectiveView = view === 'table' ? 'compact' : view;
   const isImageView = effectiveView === 'images';
+  const addTrackedPartMutation = useAddTrackedPart();
+  const { data, isLoading } = useAvailablePartsToTrack(debouncedSearch, open);
+  const trackedMatches = data?.trackedMatches ?? [];
+  const parts = data?.parts ?? [];
 
   useEffect(() => {
     if (open) {
       setSelectedIds(new Set());
       setSearchTerm('');
-      setTrackedMatches([]);
     }
   }, [open]);
-
-  const fetchParts = useCallback(async (term?: string) => {
-    setLoading(true);
-    const trimmed = term?.trim();
-    const { data, error, meta } = await getAvailablePartsToTrack({
-      searchTerm: trimmed && trimmed.length > 0 ? trimmed : undefined,
-      limit: 1000
-    });
-    if (error) {
-      console.error('Failed to fetch available parts:', error);
-    }
-    setParts(data ?? []);
-    setTrackedMatches(meta?.trackedMatches ?? []);
-    setLoading(false);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
 
     const timeoutId = setTimeout(() => {
-      fetchParts(searchTerm);
+      setDebouncedSearch(searchTerm.trim());
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [open, searchTerm, fetchParts]);
+  }, [open, searchTerm]);
 
   const handleToggle = (partId: string) => {
     setSelectedIds(prev => {
@@ -103,10 +88,13 @@ export function PartsTrackingDialog({
     let successCount = 0;
 
     for (const productId of selectedIds) {
-      const { error } = await addTrackedPart(productId, defaultThreshold);
-      if (!error) {
+      try {
+        await addTrackedPartMutation.mutateAsync({
+          productId,
+          reorderThreshold: defaultThreshold,
+        });
         successCount++;
-      } else {
+      } catch (error) {
         console.error('Failed to add part:', error);
       }
     }
@@ -167,7 +155,7 @@ export function PartsTrackingDialog({
             </div>
           </div>
 
-          {loading ? (
+          {isLoading ? (
             <div className="flex items-center justify-center py-12 gap-2">
               <Loader2 className="h-5 w-5 animate-spin" />
               <span>Loading parts...</span>
