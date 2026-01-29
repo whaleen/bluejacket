@@ -244,10 +244,12 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     };
   }, [locationId]);
 
-  const fetchData = async (baseLoadsData: unknown[]) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fetchData = async (baseLoadsData: any[]) => {
     try {
       // Fetch ALL inventory items in batches
-      let allItems: unknown[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let allItems: any[] = [];
       let from = 0;
       const batchSize = 1000;
       let hasMore = true;
@@ -673,7 +675,8 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
   const formatActivityMessage = (entry: ActivityLogEntry) => {
     if (entry.action === 'asis_sync') {
-      const total = entry.details?.stats?.totalGEItems ?? entry.details?.stats?.totalItems;
+      const stats = entry.details?.stats as { totalGEItems?: number; totalItems?: number } | undefined;
+      const total = stats?.totalGEItems ?? stats?.totalItems;
       return total ? `Synced ASIS (${total} items)` : 'Synced ASIS from GE';
     }
     if (entry.action === 'asis_wipe') {
@@ -890,41 +893,29 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
           </>
         )}
 
-        {/* Desktop: Charts and Overview First */}
+        {/* Desktop: 3-Column Grid Layout */}
         {!isMobile && (
-          <>
-            {/* Interactive Donut Chart */}
-            <div className="flex justify-center">
-          <Card className="p-6 w-full max-w-2xl">
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold min-w-0">
-                  {selectedDrilldown ?
-                    `Load Details: ${selectedDrilldown.replace(/-/g, ' ')}` :
-                    selectedChartType === 'overview' ? 'Inventory Distribution' :
-                    selectedChartType === 'LocalStock' ? 'Local Stock Breakdown' :
-                    selectedChartType === 'FG' ? 'FG Breakdown' : 'ASIS Breakdown'}
-                </h2>
-                {selectedDrilldown ? (
+          <div className="grid grid-cols-12 gap-6">
+            {/* Left Column: Chart & Stats */}
+            <div className="col-span-3 space-y-6">
+              {/* Interactive Donut Chart */}
+              <Card className="p-4">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Inventory</h3>
+                {selectedChartType !== 'overview' && (
                   <Button
                     variant="ghost"
-                    size="responsive"
-                    onClick={() => setSelectedDrilldown(null)}
-                  >
-                    ← Back to {selectedChartType}
-                  </Button>
-                ) : selectedChartType !== 'overview' ? (
-                  <Button
-                    variant="ghost"
-                    size="responsive"
+                    size="sm"
                     onClick={() => setSelectedChartType('overview')}
+                    className="h-6 text-xs"
                   >
-                    ← Back to Overview
+                    ← Back
                   </Button>
-                ) : null}
+                )}
               </div>
 
-              <div className="w-full aspect-square max-w-sm mx-auto">
+              <div className="w-full aspect-square">
                 <ChartContainer config={chartConfig} className="w-full h-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -976,135 +967,91 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 </ChartContainer>
               </div>
 
-              {!selectedDrilldown && (
-                <p className="text-sm text-muted-foreground text-center">
-                  Click on a segment to view detailed breakdown
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground text-center">
+                Click to explore
+              </p>
             </div>
-          </Card>
-            </div>
+              </Card>
 
-            {/* Inventory Overview - 3 columns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Local Stock Card */}
-          <Card className="p-5">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg" style={{ backgroundColor: 'oklch(var(--chart-1) / 0.1)' }}>
-                    <PackageOpen className="h-5 w-5" style={{ color: 'oklch(var(--chart-1))' }} />
+              {/* Local Stock - Compact */}
+              <Card className="p-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded" style={{ backgroundColor: 'oklch(var(--chart-1) / 0.1)' }}>
+                        <PackageOpen className="h-4 w-4" style={{ color: 'oklch(var(--chart-1))' }} />
+                      </div>
+                      <h4 className="text-sm font-semibold">Local Stock</h4>
+                    </div>
+                    <span className="text-lg font-bold">{stats.localStock.total}</span>
                   </div>
-                  <h3 className="font-semibold">Local Stock</h3>
-                </div>
-                <span className="text-2xl font-bold">{stats.localStock.total}</span>
-              </div>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Unassigned</span>
-                  <span className="font-medium">{stats.localStock.unassigned}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">In Routes</span>
-                  <span className="font-medium">{stats.localStock.routes}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Staged</span>
-                  <span className="font-medium">{stats.localStock.staged}</span>
-                </div>
-              </div>
-
-              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('LocalStock')}>
-                View Local Stock
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </Card>
-
-          {/* FG Card */}
-          <Card className="p-5">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg" style={{ backgroundColor: 'oklch(var(--chart-2) / 0.1)' }}>
-                    <TruckIcon className="h-5 w-5" style={{ color: 'oklch(var(--chart-2))' }} />
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Routes</span>
+                      <span className="font-medium">{stats.localStock.routes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Unassigned</span>
+                      <span className="font-medium">{stats.localStock.unassigned}</span>
+                    </div>
                   </div>
-                  <h3 className="font-semibold">FG</h3>
                 </div>
-                <span className="text-2xl font-bold">{stats.fg.total}</span>
-              </div>
+              </Card>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Regular FG</span>
-                  <span className="font-medium">{stats.fg.regular}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">BackHaul</span>
-                  <span className="font-medium">{stats.fg.backhaul}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">BackHaul Loads</span>
-                  <span className="font-medium">{stats.loads.byType.fg}</span>
-                </div>
-              </div>
-
-              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('FG')}>
-                View FG
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          </Card>
-
-          {/* ASIS Card */}
-          <Card className="p-5">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg" style={{ backgroundColor: 'oklch(var(--chart-3) / 0.1)' }}>
-                    <Package className="h-5 w-5" style={{ color: 'oklch(var(--chart-3))' }} />
+              {/* FG - Compact */}
+              <Card className="p-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded" style={{ backgroundColor: 'oklch(var(--chart-2) / 0.1)' }}>
+                        <TruckIcon className="h-4 w-4" style={{ color: 'oklch(var(--chart-2))' }} />
+                      </div>
+                      <h4 className="text-sm font-semibold">FG</h4>
+                    </div>
+                    <span className="text-lg font-bold">{stats.fg.total}</span>
                   </div>
-                  <h3 className="font-semibold">ASIS</h3>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Regular</span>
+                      <span className="font-medium">{stats.fg.regular}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">BackHaul</span>
+                      <span className="font-medium">{stats.fg.backhaul}</span>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-2xl font-bold">{stats.asisLoads.total}</span>
-              </div>
+              </Card>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">For Sale loads</span>
-                  <span className="font-medium">{stats.asisLoads.forSale}</span>
+              {/* ASIS - Compact */}
+              <Card className="p-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded" style={{ backgroundColor: 'oklch(var(--chart-3) / 0.1)' }}>
+                        <Package className="h-4 w-4" style={{ color: 'oklch(var(--chart-3))' }} />
+                      </div>
+                      <h4 className="text-sm font-semibold">ASIS</h4>
+                    </div>
+                    <span className="text-lg font-bold">{stats.asisLoads.total}</span>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">For Sale</span>
+                      <span className="font-medium">{stats.asisLoads.forSale}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Sold</span>
+                      <span className="font-medium">{stats.asisLoads.sold}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">For Sale to prep</span>
-                  <span className="font-medium">{stats.asisLoads.forSaleNeedsWrap}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sold loads</span>
-                  <span className="font-medium">{stats.asisLoads.sold}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sold to prep</span>
-                  <span className="font-medium">{stats.asisLoads.soldNeedsBoth}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Pickup soon (≤3d) needs prep</span>
-                  <span className="font-medium">{stats.asisLoads.pickupSoonNeedsPrep}</span>
-                </div>
-              </div>
-
-              <Button size="responsive" variant="outline" className="w-full" onClick={() => navigateToInventory('ASIS')}>
-                View ASIS
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              </Card>
             </div>
-          </Card>
-            </div>
 
-            {/* Actions - Desktop shows as 2-column grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <h2 className="text-lg font-semibold mb-3">ASIS Load Board</h2>
+            {/* Center Column: Load Board */}
+            <div className="col-span-6">
+              <h2 className="text-lg font-semibold mb-4">ASIS Load Board</h2>
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -1143,10 +1090,12 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                     {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
                   </div>
                 </div>
-              </div>
+            </div>
 
+            {/* Right Column: Quick Actions + Activity */}
+            <div className="col-span-3 space-y-6">
               <div>
-                <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
+                <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
                 <Card className="p-4">
                   <div className="space-y-3">
                     <Button
@@ -1184,11 +1133,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   </div>
                 </Card>
               </div>
-            </div>
 
-            {/* Recent Activity */}
-            <div>
-              <h2 className="text-lg font-semibold mb-3">Recent Activity</h2>
+              {/* Recent Activity */}
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
               <Card className="p-4">
                 <div className="max-h-[320px] overflow-y-auto pr-2 space-y-3">
                   {activityLoading ? (
@@ -1230,8 +1178,9 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   </Button>
                 </div>
               </Card>
+              </div>
             </div>
-          </>
+          </div>
         )}
 
         {/* Load Summary */}
