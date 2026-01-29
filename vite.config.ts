@@ -94,6 +94,8 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Bump up the max file size to cache to 5mb
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
             // Only cache GET requests to Supabase REST/Storage; never cache auth POSTs.
