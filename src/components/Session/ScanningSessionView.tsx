@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,7 +10,7 @@ import { ItemSelectionDialog } from '@/components/Scanner/ItemSelectionDialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ScanBarcode, CheckCircle2, Circle, Loader2, Search, MapPin, X } from 'lucide-react';
+import { ScanBarcode, CheckCircle2, Circle, Loader2, Search, MapPin, X, Scan } from 'lucide-react';
 import type { InventoryItem } from '@/types/inventory';
 import type { ScanningSession } from '@/types/session';
 import { getSession, updateSessionScannedItems } from '@/lib/sessionManager';
@@ -19,6 +19,13 @@ import { findMatchingItemsInSession } from '@/lib/sessionScanner';
 import { useAuth } from '@/context/AuthContext';
 import { InventoryItemCard } from '@/components/Inventory/InventoryItemCard';
 import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
+import {
+  feedbackScanDetected,
+  feedbackProcessing,
+  feedbackSuccess,
+  feedbackError,
+  feedbackWarning,
+} from '@/lib/feedback';
 
 interface ScanningSessionViewProps {
   sessionId: string;
@@ -104,6 +111,11 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
   const [itemTab, setItemTab] = useState<'pending' | 'scanned' | 'all'>('pending');
   const [itemSearch, setItemSearch] = useState('');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [manualInput, setManualInput] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const manualInputRef = useRef<HTMLInputElement>(null);
+  const stopProcessingFeedbackRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -142,6 +154,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     if (!session) return;
 
     if (session.status === 'closed') {
+      feedbackError();
       setAlert({
         type: 'error',
         message: 'This session is closed and cannot be updated.'
@@ -153,6 +166,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     const result = findMatchingItemsInSession(barcode, session);
 
     if (result.type === 'not_found') {
+      feedbackError();
       setAlert({
         type: 'error',
         message: `No matching items found for: ${barcode}`
@@ -164,6 +178,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     if (result.type === 'unique' && result.items && result.items.length === 1) {
       const itemId = result.items[0].id!;
       if (session.scannedItemIds.includes(itemId)) {
+        feedbackWarning();
         setAlert({
           type: 'error',
           message: 'Item already scanned in this session.'
@@ -172,6 +187,11 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
         return;
       }
 
+      // Start processing feedback (pulsing haptic + visual)
+      setIsProcessing(true);
+      setProcessingItemId(itemId);
+      stopProcessingFeedbackRef.current = feedbackProcessing();
+
       const nextScanned = [...session.scannedItemIds, itemId];
       const { data: updatedSession, error } = await updateSessionScannedItems({
         sessionId: session.id,
@@ -179,7 +199,14 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
         updatedBy: userDisplayName
       });
 
+      // Stop processing feedback
+      stopProcessingFeedbackRef.current?.();
+      stopProcessingFeedbackRef.current = null;
+      setIsProcessing(false);
+      setProcessingItemId(null);
+
       if (error || !updatedSession) {
+        feedbackError();
         setAlert({
           type: 'error',
           message: error?.message || 'Failed to update session'
@@ -188,6 +215,8 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
         return;
       }
 
+      // Success!
+      feedbackSuccess();
       setSession(updatedSession);
 
       // Capture position for fog of war map (non-blocking)
@@ -204,7 +233,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
         type: 'success',
         message: `Scanned: ${result.items[0].product_type} (${result.matchedField?.toUpperCase()})`
       });
-      setTimeout(() => setAlert(null), 3000);
+      setTimeout(() => setAlert(null), 2000);
       return;
     }
 
@@ -376,6 +405,43 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
             <Progress value={progress.percentage} className="h-2" />
           </div>
 
+          {/* Handheld Scanner Input */}
+          {session.status !== 'closed' && (
+            <div className="relative">
+              <Scan className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={manualInputRef}
+                type="text"
+                value={manualInput}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setManualInput(value);
+
+                  // Detect when scanner injects barcode (usually ends with Enter)
+                  // We'll handle the scan on Enter key instead
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && manualInput.trim()) {
+                    e.preventDefault();
+                    feedbackScanDetected(); // Quick beep when scan detected
+                    handleScan(manualInput.trim());
+                    setManualInput(''); // Clear for next scan
+                  }
+                }}
+                placeholder="Scan barcode here..."
+                className="pl-10 h-12 text-base font-mono"
+                disabled={isProcessing}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+              />
+              {isProcessing && (
+                <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-primary" />
+              )}
+            </div>
+          )}
+
           {/* Tabs and search */}
           <div className="flex flex-col sm:flex-row gap-2">
             <Tabs value={itemTab} onValueChange={(v) => setItemTab(v as 'pending' | 'scanned' | 'all')}>
@@ -444,27 +510,36 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
             ) : (
               <div className="space-y-2">
                 {filteredPending.map(item => (
-                  <InventoryItemCard
+                  <div
                     key={item.id}
-                    item={item}
-                    leading={
-                      session.status !== 'closed' ? (
-                        <Checkbox
-                          checked={selectedItems.has(item.id!)}
-                          onCheckedChange={() => toggleItemSelection(item.id!)}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      ) : (
-                        <Circle className="h-5 w-5 text-muted-foreground/70" />
-                      )
-                    }
-                    onClick={session.status !== 'closed' ? () => toggleItemSelection(item.id!) : undefined}
-                    variant="pending"
-                    selected={selectedItems.has(item.id!)}
-                    showInventoryTypeBadge={false}
-                    showProductMeta={false}
-                    routeValue={item.route_id ?? item.sub_inventory}
-                  />
+                    className={`relative ${processingItemId === item.id ? 'animate-pulse ring-2 ring-primary rounded-lg' : ''}`}
+                  >
+                      <InventoryItemCard
+                        item={item}
+                      leading={
+                        session.status !== 'closed' ? (
+                          <Checkbox
+                            checked={selectedItems.has(item.id!)}
+                            onCheckedChange={() => toggleItemSelection(item.id!)}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        ) : (
+                          <Circle className="h-5 w-5 text-muted-foreground/70" />
+                        )
+                      }
+                      onClick={session.status !== 'closed' ? () => toggleItemSelection(item.id!) : undefined}
+                      variant="pending"
+                      selected={selectedItems.has(item.id!)}
+                      showInventoryTypeBadge={false}
+                      showProductMeta={false}
+                      routeValue={item.route_id ?? item.sub_inventory}
+                    />
+                    {processingItemId === item.id && (
+                      <div className="absolute inset-0 bg-primary/10 rounded-lg pointer-events-none flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
