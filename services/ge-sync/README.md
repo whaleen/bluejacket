@@ -240,7 +240,7 @@ The frontend reads the sync service URL at build time via Vite env vars (managed
   - `VITE_GE_SYNC_URL=http://localhost:3001`
   - `VITE_GE_SYNC_API_KEY=your_api_key`
 - **Production** (frontend):
-  - `VITE_GE_SYNC_URL=https://<your-railway-service>.up.railway.app`
+  - `VITE_GE_SYNC_URL=https://warehouse-production-02e6.up.railway.app`
   - `VITE_GE_SYNC_API_KEY=<same API_KEY as Railway>`
 
 These are stored in Doppler and injected at build time. If you change these values in Doppler, you must rebuild the frontend so Vite can bake them in.

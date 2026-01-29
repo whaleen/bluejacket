@@ -162,15 +162,15 @@ WHERE serial LIKE 'FG-NS:%' OR serial LIKE 'STA-NS:%';
 1. **Morning - Run syncs:**
    ```bash
    # Sync all three types
-   curl -X POST https://your-railway-service.up.railway.app/sync/asis \
+   curl -X POST https://warehouse-production-02e6.up.railway.app/sync/asis \
      -H "X-API-Key: $API_KEY" \
      -d '{"locationId": "..."}'
 
-   curl -X POST https://your-railway-service.up.railway.app/sync/fg \
+   curl -X POST https://warehouse-production-02e6.up.railway.app/sync/fg \
      -H "X-API-Key: $API_KEY" \
      -d '{"locationId": "..."}'
 
-   curl -X POST https://your-railway-service.up.railway.app/sync/sta \
+   curl -X POST https://warehouse-production-02e6.up.railway.app/sync/sta \
      -H "X-API-Key: $API_KEY" \
      -d '{"locationId": "..."}'
    ```
