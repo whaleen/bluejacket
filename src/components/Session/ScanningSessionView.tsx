@@ -110,10 +110,11 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [itemTab, setItemTab] = useState<'pending' | 'scanned' | 'all'>('pending');
   const [itemSearch, setItemSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null); // Single-select only
   const [manualInput, setManualInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [scanInputMode, setScanInputMode] = useState<'manual' | 'camera'>('manual');
   const manualInputRef = useRef<HTMLInputElement>(null);
   const stopProcessingFeedbackRef = useRef<(() => void) | null>(null);
 
@@ -143,7 +144,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
 
   // Clear selection when switching tabs
   useEffect(() => {
-    setSelectedItems(new Set());
+    setSelectedItemId(null);
   }, [itemTab]);
 
 
@@ -322,31 +323,14 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
   }, [scannedItems, itemSearch]);
 
   const toggleItemSelection = (id: string) => {
-    setSelectedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const selectAllPending = () => {
-    setSelectedItems(new Set(filteredPending.map(item => item.id!).filter(Boolean)));
-  };
-
-  const clearSelection = () => {
-    setSelectedItems(new Set());
+    setSelectedItemId(prev => prev === id ? null : id);
   };
 
   const handleMarkSelected = async () => {
-    const selected = Array.from(selectedItems);
-    if (selected.length > 0) {
-      await handleMultiSelectConfirm(selected);
-      setSelectedItems(new Set());
-    }
+    if (!selectedItemId) return;
+
+    await handleMultiSelectConfirm([selectedItemId]);
+    setSelectedItemId(null);
   };
 
   if (loading) {
@@ -405,40 +389,57 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
             <Progress value={progress.percentage} className="h-2" />
           </div>
 
-          {/* Handheld Scanner Input */}
+          {/* Scanner Input with Mode Toggle */}
           {session.status !== 'closed' && (
-            <div className="relative">
-              <Scan className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                ref={manualInputRef}
-                type="text"
-                value={manualInput}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setManualInput(value);
-
-                  // Detect when scanner injects barcode (usually ends with Enter)
-                  // We'll handle the scan on Enter key instead
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && manualInput.trim()) {
-                    e.preventDefault();
-                    feedbackScanDetected(); // Quick beep when scan detected
-                    handleScan(manualInput.trim());
-                    setManualInput(''); // Clear for next scan
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Scan className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={manualInputRef}
+                  type="text"
+                  value={manualInput}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setManualInput(value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && manualInput.trim()) {
+                      e.preventDefault();
+                      feedbackScanDetected();
+                      handleScan(manualInput.trim());
+                      setManualInput('');
+                    }
+                  }}
+                  placeholder="Scan barcode here..."
+                  className="pl-10 h-12 text-base font-mono"
+                  disabled={isProcessing}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+                {isProcessing && (
+                  <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-primary" />
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-12 px-4"
+                onClick={() => {
+                  if (scanInputMode === 'manual') {
+                    setScanInputMode('camera');
+                    setScannerOpen(true);
+                  } else {
+                    setScanInputMode('manual');
+                    setScannerOpen(false);
+                    manualInputRef.current?.focus();
                   }
                 }}
-                placeholder="Scan barcode here..."
-                className="pl-10 h-12 text-base font-mono"
                 disabled={isProcessing}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-              />
-              {isProcessing && (
-                <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-primary" />
-              )}
+              >
+                <ScanBarcode className="h-5 w-5" />
+              </Button>
             </div>
           )}
 
@@ -490,19 +491,15 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
                 {itemTab === 'all' && (
                   <span className="uppercase tracking-wide text-muted-foreground">Pending Items</span>
                 )}
-                {session.status !== 'closed' && (
-                  <>
-                    <Button size="sm" variant="outline" onClick={selectAllPending}>
-                      Select All
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={clearSelection}>
-                      Clear
-                    </Button>
-                  </>
+                {session.status !== 'closed' && selectedItemId && (
+                  <Button size="sm" variant="default" onClick={handleMarkSelected}>
+                    <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                    Mark as Scanned
+                  </Button>
                 )}
               </div>
               <span className="text-muted-foreground">
-                {selectedItems.size > 0 ? `${selectedItems.size} selected • ` : ''}{filteredPending.length} shown
+                {filteredPending.length} shown
               </span>
             </div>
             {filteredPending.length === 0 ? (
@@ -519,7 +516,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
                       leading={
                         session.status !== 'closed' ? (
                           <Checkbox
-                            checked={selectedItems.has(item.id!)}
+                            checked={selectedItemId === item.id}
                             onCheckedChange={() => toggleItemSelection(item.id!)}
                             onClick={(event) => event.stopPropagation()}
                           />
@@ -529,7 +526,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
                       }
                       onClick={session.status !== 'closed' ? () => toggleItemSelection(item.id!) : undefined}
                       variant="pending"
-                      selected={selectedItems.has(item.id!)}
+                      selected={selectedItemId === item.id}
                       showInventoryTypeBadge={false}
                       showProductMeta={false}
                       routeValue={item.route_id ?? item.sub_inventory}
@@ -588,31 +585,6 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
         )}
       </PageContainer>
 
-      {session.status !== 'closed' && (
-        <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur">
-          <PageContainer className="py-3 flex flex-col gap-2">
-            <Button
-              variant="outline"
-              size="lg"
-              className="w-full"
-              onClick={handleMarkSelected}
-              disabled={selectedItems.size === 0}
-            >
-              <CheckCircle2 className="h-5 w-5 mr-2" />
-              {selectedItems.size > 0 ? `Mark ${selectedItems.size} Selected` : 'Mark Selected'}
-            </Button>
-            <Button
-              size="lg"
-              className="w-full h-12 text-base font-semibold"
-              onClick={() => setScannerOpen(true)}
-              disabled={unscannedItems.length === 0}
-            >
-              <ScanBarcode className="h-5 w-5 mr-2" />
-              Scan Barcode
-            </Button>
-          </PageContainer>
-        </div>
-      )}
 
       {scannerOpen && session.status !== 'closed' && (
         <BarcodeScanner
