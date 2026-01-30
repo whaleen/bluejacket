@@ -10,7 +10,7 @@ import { Map, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls,
 import { Button } from '@/components/ui/button';
 import { Globe, Package, Pencil, ScanLine, Trash2 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { useDeleteProductLocation } from '@/hooks/queries/useMap';
+import { useDeleteProductLocation, useClearAllScans } from '@/hooks/queries/useMap';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { ProductLocationForMap } from '@/types/map';
 import { blankMapStyle } from './BlankMapStyle';
@@ -36,6 +36,8 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(WORLD_MAP_STORAGE_KEY) === 'true';
   });
+  const deleteLocation = useDeleteProductLocation();
+  const clearAllScans = useClearAllScans();
   const savedView = useMemo<SavedViewState | null>(() => {
     if (typeof window === 'undefined') return null;
     const raw = window.localStorage.getItem(VIEW_STATE_STORAGE_KEY);
@@ -51,7 +53,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const savedViewRef = useRef<SavedViewState | null>(savedView);
   const hasSavedViewRef = useRef(Boolean(savedView));
   const hasFitRef = useRef(false);
-  const deleteLocation = useDeleteProductLocation();
 
   // Calculate center point from all locations
   const { center } = useMemo(() => {
@@ -83,6 +84,25 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const validLocations = useMemo(() => {
     return locations.filter(l => l.raw_lat != null && l.raw_lng != null);
   }, [locations]);
+
+  // Group locations by load for legend
+  const loadGroups = useMemo(() => {
+    const groups = new Map<string, { name: string; color: string; count: number }>();
+
+    validLocations.forEach(loc => {
+      const key = loc.sub_inventory || 'no-load';
+      const name = loc.load_friendly_name || loc.sub_inventory || 'No Load';
+      const color = loc.load_color || '#94a3b8';
+
+      if (groups.has(key)) {
+        groups.get(key)!.count++;
+      } else {
+        groups.set(key, { name, color, count: 1 });
+      }
+    });
+
+    return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+  }, [validLocations]);
 
   const mapStyles = useMemo(
     () => ({
@@ -146,6 +166,11 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const handleMapRef = useCallback((instance: MapRef | null) => {
     setMapInstance(instance);
   }, []);
+
+  const handleClearAllScans = () => {
+    if (!confirm('Clear all GPS scans from the map? This cannot be undone.')) return;
+    clearAllScans.mutate();
+  };
 
   useEffect(() => {
     const map = mapInstance;
@@ -340,7 +365,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       </Map>
 
       {/* Scans count overlay */}
-      <div className="absolute bottom-4 left-4 bg-card/95 backdrop-blur border border-border p-3 rounded-lg shadow-lg space-y-2">
+      <div className="absolute bottom-4 left-4 bg-card/95 backdrop-blur border border-border p-3 rounded-lg shadow-lg space-y-3 max-w-xs">
         <div>
           <div className="text-xs text-muted-foreground">Inventory</div>
           <div className="text-2xl font-bold">{validLocations.length}</div>
@@ -350,24 +375,64 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
             </div>
           )}
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={showWorldMap ? '' : 'opacity-50'}
-          onClick={() => {
-            setShowWorldMap((prev) => {
-              const next = !prev;
-              if (typeof window !== 'undefined') {
-                window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
-              }
-              return next;
-            });
-          }}
-          aria-label="Toggle world map"
-        >
-          <Globe className="h-4 w-4" />
-        </Button>
+
+        {/* Legend */}
+        {loadGroups.length > 0 && (
+          <div className="space-y-1.5 border-t pt-2">
+            <div className="text-xs text-muted-foreground font-medium">Legend</div>
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {loadGroups.map((group, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-xs">
+                  <div
+                    className="size-3 rounded-sm shrink-0"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  <span className="truncate flex-1">{group.name}</span>
+                  <span className="text-muted-foreground shrink-0">({group.count})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 border-t pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={showWorldMap ? '' : 'opacity-50'}
+            onClick={() => {
+              setShowWorldMap((prev) => {
+                const next = !prev;
+                if (typeof window !== 'undefined') {
+                  window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
+                }
+                return next;
+              });
+            }}
+            aria-label="Toggle world map"
+          >
+            <Globe className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="flex-1"
+            onClick={handleClearAllScans}
+            disabled={clearAllScans.isPending || validLocations.length === 0}
+            aria-label="Clear all scans"
+          >
+            {clearAllScans.isPending ? (
+              <Spinner size="sm" />
+            ) : (
+              <>
+                <Trash2 className="h-3 w-3 mr-1" />
+                Clear All
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="absolute bottom-4 right-4">
