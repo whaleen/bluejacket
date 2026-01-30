@@ -35,6 +35,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const isMobile = useIsMobile();
   const [mapInstance, setMapInstance] = useState<MapRef | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Map<string, { name: string; created_at: string }>>(new Map());
+  const [loadMetadata, setLoadMetadata] = useState<Map<string, { friendly_name: string | null; ge_cso: string | null }>>(new Map());
   const [showWorldMap, setShowWorldMap] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(WORLD_MAP_STORAGE_KEY) === 'true';
@@ -89,7 +90,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     return locations.filter(l => l.raw_lat != null && l.raw_lng != null);
   }, [locations]);
 
-  // Fetch session metadata for legend
+  // Fetch session and load metadata for legend
   useEffect(() => {
     const sessionIds = Array.from(new Set(
       validLocations
@@ -97,34 +98,62 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         .filter(Boolean)
     )) as string[];
 
-    if (sessionIds.length === 0) return;
+    const loadNames = Array.from(new Set(
+      validLocations
+        .map(loc => loc.sub_inventory)
+        .filter(Boolean)
+    )) as string[];
 
-    const fetchSessions = async () => {
+    const fetchMetadata = async () => {
       const { locationId } = getActiveLocationContext();
-      const { data } = await supabase
-        .from('scanning_sessions')
-        .select('id, name, created_at')
-        .eq('location_id', locationId)
-        .in('id', sessionIds);
 
-      if (data) {
-        const metadata = new Map<string, { name: string; created_at: string }>();
-        data.forEach((session: { id: string; name: string; created_at: string }) => {
-          metadata.set(session.id, {
-            name: session.name,
-            created_at: session.created_at,
+      // Fetch sessions
+      if (sessionIds.length > 0) {
+        const { data: sessionData } = await supabase
+          .from('scanning_sessions')
+          .select('id, name, created_at')
+          .eq('location_id', locationId)
+          .in('id', sessionIds);
+
+        if (sessionData) {
+          const metadata = new Map<string, { name: string; created_at: string }>();
+          sessionData.forEach((session: { id: string; name: string; created_at: string }) => {
+            metadata.set(session.id, {
+              name: session.name,
+              created_at: session.created_at,
+            });
           });
-        });
-        setSessionMetadata(metadata);
+          setSessionMetadata(metadata);
+        }
+      }
+
+      // Fetch loads
+      if (loadNames.length > 0) {
+        const { data: loadData } = await supabase
+          .from('load_metadata')
+          .select('sub_inventory_name, friendly_name, ge_cso')
+          .eq('location_id', locationId)
+          .in('sub_inventory_name', loadNames);
+
+        if (loadData) {
+          const metadata = new Map<string, { friendly_name: string | null; ge_cso: string | null }>();
+          loadData.forEach((load: { sub_inventory_name: string; friendly_name: string | null; ge_cso: string | null }) => {
+            metadata.set(load.sub_inventory_name, {
+              friendly_name: load.friendly_name,
+              ge_cso: load.ge_cso,
+            });
+          });
+          setLoadMetadata(metadata);
+        }
       }
     };
 
-    fetchSessions();
+    fetchMetadata();
   }, [validLocations]);
 
   // Group locations by session for legend
   const sessionGroups = useMemo(() => {
-    const groups = new Map<string, { sessionId: string; name: string; color: string; count: number; createdAt: string }>();
+    const groups = new Map<string, { sessionId: string; name: string; color: string; count: number; subInventory: string | null }>();
     let noSessionCount = 0;
 
     validLocations.forEach(loc => {
@@ -134,35 +163,48 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         return;
       }
 
-      const metadata = sessionMetadata.get(sessionId);
-      const name = metadata?.name || sessionId.slice(0, 8);
+      const session = sessionMetadata.get(sessionId);
+      const sessionName = session?.name || sessionId.slice(0, 8);
+
+      // Get load metadata for display
+      const subInventory = loc.sub_inventory;
+      const load = subInventory ? loadMetadata.get(subInventory) : null;
+      const friendlyName = load?.friendly_name;
+      const csoLast4 = load?.ge_cso ? load.ge_cso.slice(-4) : null;
+
+      // Build display name: "Session Name - Friendly Name [1234]"
+      let displayName = sessionName;
+      if (friendlyName) {
+        displayName += ` - ${friendlyName}`;
+      }
+      if (csoLast4) {
+        displayName += ` [${csoLast4}]`;
+      }
+
       const color = loc.load_color || '#94a3b8';
-      const createdAt = metadata?.created_at || '';
 
       if (groups.has(sessionId)) {
         groups.get(sessionId)!.count++;
       } else {
-        groups.set(sessionId, { sessionId, name, color, count: 1, createdAt });
+        groups.set(sessionId, { sessionId, name: displayName, color, count: 1, subInventory });
       }
     });
 
-    const sorted = Array.from(groups.values()).sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const result = Array.from(groups.values());
 
     // Add "No Session" group at the end if there are orphaned scans
     if (noSessionCount > 0) {
-      sorted.push({
+      result.push({
         sessionId: '',
         name: 'No Session',
         color: '#64748b',
         count: noSessionCount,
-        createdAt: '',
+        subInventory: null,
       });
     }
 
-    return sorted;
-  }, [validLocations, sessionMetadata]);
+    return result;
+  }, [validLocations, sessionMetadata, loadMetadata]);
 
   const mapStyles = useMemo(
     () => ({
