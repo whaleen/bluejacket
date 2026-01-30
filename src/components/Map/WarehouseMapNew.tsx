@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Map, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, type MapRef } from '@/components/ui/map';
+import { Map as MapComponent, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, type MapRef } from '@/components/ui/map';
 import { Button } from '@/components/ui/button';
 import { Globe, Package, Pencil, ScanLine, Trash2 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
@@ -217,7 +217,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
   return (
     <div className="relative w-full h-full">
-      <Map
+      <MapComponent
         ref={handleMapRef}
         center={center}
         zoom={19} // Start very zoomed in for warehouse-level detail
@@ -362,7 +362,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
             </MarkerPopup>
           </MapMarker>
         ))}
-      </Map>
+      </MapComponent>
 
       {/* Scans count overlay */}
       <div className="absolute bottom-4 left-4 bg-card/95 backdrop-blur border border-border p-3 rounded-lg shadow-lg space-y-3 max-w-xs">
