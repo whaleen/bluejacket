@@ -32,7 +32,6 @@ type SavedViewState = {
 export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const isMobile = useIsMobile();
   const [mapInstance, setMapInstance] = useState<MapRef | null>(null);
-  const [currentZoom, setCurrentZoom] = useState(19);
   const [showWorldMap, setShowWorldMap] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(WORLD_MAP_STORAGE_KEY) === 'true';
@@ -53,23 +52,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const hasSavedViewRef = useRef(Boolean(savedView));
   const hasFitRef = useRef(false);
   const deleteLocation = useDeleteProductLocation();
-
-  // Calculate marker size based on zoom level
-  const markerSize = useMemo(() => {
-    // Zoom-based sizing: smoother transitions
-    // Mobile: 16px at zoom 12 → 48px at zoom 22+
-    // Desktop: 8px at zoom 12 → 24px at zoom 22+
-    const minZoom = 12;
-    const maxZoom = 22;
-    const minSize = isMobile ? 16 : 8;
-    const maxSize = isMobile ? 48 : 24;
-
-    const clampedZoom = Math.max(minZoom, Math.min(maxZoom, currentZoom));
-    const progress = (clampedZoom - minZoom) / (maxZoom - minZoom);
-    const size = minSize + (maxSize - minSize) * progress;
-
-    return Math.round(size);
-  }, [currentZoom, isMobile]);
 
   // Calculate center point from all locations
   const { center } = useMemo(() => {
@@ -179,7 +161,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         pitch: parsed.pitch ?? 0,
       });
       hasSavedViewRef.current = true;
-      setCurrentZoom(parsed.zoom);
     };
 
     if (savedViewRef.current) {
@@ -189,10 +170,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         map.once('load', applySavedView);
       }
     }
-
-    const handleMove = () => {
-      setCurrentZoom(map.getZoom());
-    };
 
     const handleMoveEnd = () => {
       const center = map.getCenter();
@@ -206,11 +183,9 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       hasSavedViewRef.current = true;
     };
 
-    map.on('move', handleMove);
     map.on('moveend', handleMoveEnd);
 
     return () => {
-      map.off('move', handleMove);
       map.off('moveend', handleMoveEnd);
     };
   }, [mapInstance]);
@@ -239,20 +214,14 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
             latitude={location.raw_lat!}
           >
             <MarkerContent>
-              <div
-                className={isMobile ? "p-2 cursor-pointer" : "cursor-pointer"}
-              >
+              <div className={isMobile ? "p-2 cursor-pointer" : "cursor-pointer"}>
                 <div
                   className={
                     isMobile
-                      ? "rounded-sm shadow-lg transition-all"
-                      : "rounded-sm shadow-lg hover:scale-125 transition-all"
+                      ? "size-8 rounded-sm shadow-lg"
+                      : "size-3 rounded-sm shadow-lg hover:scale-125 transition-transform"
                   }
-                  style={{
-                    backgroundColor: location.load_color || '#94a3b8',
-                    width: `${markerSize}px`,
-                    height: `${markerSize}px`,
-                  }}
+                  style={{ backgroundColor: location.load_color || '#94a3b8' }}
                 />
               </div>
             </MarkerContent>
