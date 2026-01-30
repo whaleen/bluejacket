@@ -36,6 +36,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const [mapInstance, setMapInstance] = useState<MapRef | null>(null);
   const [sessionMetadata, setSessionMetadata] = useState<Map<string, { name: string; created_at: string }>>(new Map());
   const [loadMetadata, setLoadMetadata] = useState<Map<string, { friendly_name: string | null; ge_cso: string | null }>>(new Map());
+  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set());
   const [showWorldMap, setShowWorldMap] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(WORLD_MAP_STORAGE_KEY) === 'true';
@@ -89,6 +90,26 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const validLocations = useMemo(() => {
     return locations.filter(l => l.raw_lat != null && l.raw_lng != null);
   }, [locations]);
+
+  // Filter visible locations based on hidden sessions
+  const visibleLocations = useMemo(() => {
+    return validLocations.filter(loc => {
+      const sessionId = loc.scanning_session_id || '';
+      return !hiddenSessions.has(sessionId);
+    });
+  }, [validLocations, hiddenSessions]);
+
+  const toggleSessionVisibility = (sessionId: string) => {
+    setHiddenSessions(prev => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  };
 
   // Fetch session and load metadata for legend
   useEffect(() => {
@@ -335,7 +356,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
           showLocate
           showFullscreen
         />
-        {validLocations.map((location) => (
+        {visibleLocations.map((location) => (
           <MapMarker
             key={location.id}
             longitude={location.raw_lng!}
@@ -471,7 +492,12 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       <div className="absolute bottom-4 left-4 bg-card/95 backdrop-blur border border-border p-3 rounded-lg shadow-lg space-y-3 max-w-xs">
         <div>
           <div className="text-xs text-muted-foreground">Inventory</div>
-          <div className="text-2xl font-bold">{validLocations.length}</div>
+          <div className="text-2xl font-bold">
+            {visibleLocations.length}
+            {hiddenSessions.size > 0 && (
+              <span className="text-sm text-muted-foreground ml-1">/ {validLocations.length}</span>
+            )}
+          </div>
           {validLocations.length !== locations.length && (
             <div className="text-xs text-amber-500">
               {locations.length - validLocations.length} without GPS
@@ -482,37 +508,54 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         {/* Sessions Legend */}
         {sessionGroups.length > 0 && (
           <div className="space-y-1.5 border-t pt-2">
-            <div className="text-xs text-muted-foreground font-medium">Sessions</div>
+            <div className="text-xs text-muted-foreground font-medium">Sessions (click to toggle)</div>
             <div className="space-y-1 max-h-40 overflow-y-auto">
-              {sessionGroups.map((group) => (
-                <div key={group.sessionId} className="flex items-center gap-2 text-xs group">
-                  <div
-                    className="size-3 rounded-sm shrink-0"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  <span className="truncate flex-1 min-w-0">{group.name}</span>
-                  <span className="text-muted-foreground shrink-0">({group.count})</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => {
-                      if (confirm(`Delete ${group.count} scans from "${group.name}"?`)) {
-                        deleteSessionScans.mutate(group.sessionId);
-                      }
-                    }}
-                    disabled={deleteSessionScans.isPending}
-                    aria-label={`Delete session ${group.name}`}
-                  >
-                    {deleteSessionScans.isPending ? (
-                      <Spinner size="sm" />
-                    ) : (
-                      <X className="h-3 w-3" />
-                    )}
-                  </Button>
-                </div>
-              ))}
+              {sessionGroups.map((group) => {
+                const isHidden = hiddenSessions.has(group.sessionId);
+                return (
+                  <div key={group.sessionId} className="flex items-center gap-2 text-xs group">
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent/50 rounded px-1 -mx-1 py-0.5"
+                      onClick={() => toggleSessionVisibility(group.sessionId)}
+                    >
+                      <div
+                        className="size-3 rounded-sm shrink-0 transition-opacity"
+                        style={{
+                          backgroundColor: group.color,
+                          opacity: isHidden ? 0.3 : 1
+                        }}
+                      />
+                      <span className={`truncate flex-1 min-w-0 text-left transition-opacity ${isHidden ? 'opacity-40 line-through' : ''}`}>
+                        {group.name}
+                      </span>
+                      <span className={`text-muted-foreground shrink-0 transition-opacity ${isHidden ? 'opacity-40' : ''}`}>
+                        ({group.count})
+                      </span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete ${group.count} scans from "${group.name}"?`)) {
+                          deleteSessionScans.mutate(group.sessionId);
+                        }
+                      }}
+                      disabled={deleteSessionScans.isPending}
+                      aria-label={`Delete session ${group.name}`}
+                    >
+                      {deleteSessionScans.isPending ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        <X className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
