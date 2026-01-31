@@ -4,13 +4,15 @@
 
 | Need to... | Go to... |
 |------------|----------|
-| Use CLI tools | `agent-instructions/cli-tools.md` |
+| Use CLI tools | `.agent/cli-tools.md` |
 | Explore GE DMS system | `services/ge-sync/docs/EXPLORATION_GUIDE.md` |
 | Look up GE DMS pages | `services/ge-sync/docs/GE_DMS_PAGES.md` |
 | Understand GE workflows | `services/ge-sync/docs/GE_DMS_SYSTEM_OVERVIEW.md` |
+| Setup GE sync secrets | `services/ge-sync/docs/SECRETS.md` |
+| Plan a feature | `.agent/plans/` |
+| Review session notes | `.agent/sessions/` |
 | Add a TODO | `TODO.md` |
-| Plan a feature | `agent-instructions/plans/` |
-| Read human docs | `docs/` or `README.md` |
+| Read human docs | `docs/README.md` (index) |
 
 ## Project Overview
 
@@ -37,7 +39,7 @@ This project has linked CLIs: **Supabase, Netlify, Railway, psql**
 
 **If a CLI fails:** Tell the user, ask them to fix it, wait for confirmation. Do not work around with curl/REST APIs.
 
-See `agent-instructions/cli-tools.md` for full documentation.
+See `.agent/cli-tools.md` for full documentation.
 
 ## Git Commits
 
@@ -60,21 +62,33 @@ Examples:
 - Don't use Claude mentions in commit messages
 - Don't work around CLI failures with scripts or REST APIs
 
-## File Organization
+## Documentation Organization
 
+### Agent Documentation (`.agent/`)
+- **cli-tools.md** - Supabase, Netlify, Railway, psql CLIs
+- **plans/** - Feature planning docs (floor-display, saas-feasibility)
+- **sessions/** - Ephemeral exploration/session notes
+
+### Human Documentation (`docs/`)
+- **README.md** - Index of all human documentation
+- **architecture/** - System architecture, auth, endpoints
+- **database/** - Schema, data dictionary
+- **features/** - Feature-specific docs (map, scanner, scraper)
+- **sync-service/** - GE sync implementation notes
+
+### Service Documentation (`services/ge-sync/docs/`)
+- **EXPLORATION_GUIDE.md** - How to explore GE DMS safely
+- **GE_DMS_PAGES.md** - Complete page catalog (30 pages)
+- **GE_DMS_SYSTEM_OVERVIEW.md** - Business processes and terminology
+- **GE_ENDPOINT_FIELDS.md** - Field mappings for sync endpoints
+- **SECRETS.md** - Complete secrets setup guide (local, deployed, exploration)
+
+### Project Root
 ```
 CLAUDE.md                 # You are here - agent entry point
-README.md                 # Human project documentation
+README.md                 # Human project overview
 TODO.md                   # Project todos
-
-agent-instructions/       # Detailed agent docs
-├── index.md              # Index and routing guide
-├── cli-tools.md          # CLI documentation
-└── plans/                # Feature planning docs
-
-docs/                     # Human documentation
-└── auth.md               # Auth implementation
-
-research/                 # Research artifacts
-services/                 # Service-specific docs
+.agent/                   # Agent-specific documentation
+docs/                     # Human documentation (organized by category)
+services/                 # Service-specific docs and code
 ```

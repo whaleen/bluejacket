@@ -3,14 +3,16 @@ import fs from "fs"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import legacy from "@vitejs/plugin-legacy"
-import { defineConfig } from "vite"
+import { defineConfig, type PluginOption } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 import { qrcode } from "vite-plugin-qrcode"
+import { visualizer } from "rollup-plugin-visualizer"
 
 export default defineConfig(({ mode }) => {
   const isDev = mode === 'development';
   const appName = isDev ? 'Warehouse (Dev)' : 'Warehouse Inventory Scanner';
   const appShortName = isDev ? 'Warehouse Dev' : 'Warehouse';
+  const shouldAnalyze = process.env.ANALYZE === 'true';
 
   // Check for mkcert certificates
   const certPath = path.resolve(__dirname, 'localhost+3.pem');
@@ -65,6 +67,12 @@ export default defineConfig(({ mode }) => {
       targets: ['defaults', 'not IE 11', 'chrome >= 50'], // Support Samsung TV browsers
     }),
     qrcode(), // <- prints QR code in terminal
+    shouldAnalyze && (visualizer({
+      filename: 'dist/bundle-stats.html',
+      gzipSize: true,
+      brotliSize: true,
+      open: true,
+    }) as PluginOption),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
@@ -132,7 +140,7 @@ export default defineConfig(({ mode }) => {
         type: 'module'
       }
     })
-  ],
+  ].filter((plugin): plugin is NonNullable<typeof plugin> => Boolean(plugin)),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

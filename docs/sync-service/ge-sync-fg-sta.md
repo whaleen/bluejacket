@@ -298,4 +298,4 @@ WHERE location_id = $1;
 Refer to:
 - `services/ge-sync/README.md` - Service architecture and deployment
 - `docs/product-lifecycle.md` - Data lifecycle and guardrails
-- `research/ge-dms/docs/GE-DMS-ENDPOINTS.md` - GE DMS API discovery
+- `services/ge-sync/docs/GE_DMS_PAGES.md` - GE DMS pages catalog

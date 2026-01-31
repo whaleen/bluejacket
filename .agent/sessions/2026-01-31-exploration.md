@@ -63,7 +63,7 @@ Completed systematic exploration and documentation of the entire GE Dealer Manag
    - Authentication setup
    - Troubleshooting guide
 
-5. **Updated agent-instructions/index.md**
+5. **Updated agent documentation**
    - Added GE DMS documentation references
    - Clear routing to exploration guides
 
@@ -205,7 +205,7 @@ Some pages couldn't be fully documented:
 
 Next agent should be able to:
 
-1. **Find documentation** via CLAUDE.md → agent-instructions/index.md
+1. **Find documentation** via CLAUDE.md
 2. **Understand GE DMS** by reading GE_DMS_PAGES.md
 3. **Start exploration** following EXPLORATION_GUIDE.md
 4. **Run scripts** using scripts/README.md instructions
