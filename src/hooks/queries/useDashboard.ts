@@ -9,6 +9,7 @@ export function useDashboardInventoryItems() {
 
   return useQuery<InventoryItem[]>({
     queryKey: queryKeys.dashboard.items(locationId ?? 'missing'),
+    enabled: !!locationId,
     queryFn: async () => {
       if (!locationId) {
         throw new Error('No active location selected');

@@ -57,9 +57,14 @@ export function getActiveLocationId() {
 
 export function getActiveLocationContext() {
   const locationId = getActiveLocationId()
+  const companyId = getActiveCompanyId() ?? locationId
+  return { locationId: locationId ?? null, companyId: companyId ?? null }
+}
+
+export function requireActiveLocationContext() {
+  const { locationId, companyId } = getActiveLocationContext()
   if (!locationId) {
     throw new Error("Missing active location ID. Set it in Settings or VITE_ACTIVE_LOCATION_ID.")
   }
-  const companyId = getActiveCompanyId() ?? locationId
   return { locationId, companyId }
 }
