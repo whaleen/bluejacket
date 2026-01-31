@@ -119,10 +119,10 @@ getLocationConfig('00000000-0000-0000-0000-000000000001')
 "
 
 # Test build
-npm run build
+pnpm run build
 
 # Test sync service (will attempt to auth with GE)
-npm run sync
+pnpm run sync
 ```
 
 ---
@@ -233,7 +233,7 @@ ssoPassword: ✅ SET
 - [ ] `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` are valid
 - [ ] GE SSO credentials in `location_configs` table
 - [ ] Location ID `00000000-0000-0000-0000-000000000001` exists in `locations` table
-- [ ] Build succeeds: `npm run build`
+- [ ] Build succeeds: `pnpm run build`
 - [ ] Credentials verified: `npx tsx -e "import { getLocationConfig } from './src/db/supabase.js'; ..."`
 
 ### For Deployed Service (Railway)
@@ -341,7 +341,7 @@ echo "3. Checking GE SSO credentials..."
 npx tsx -e "import { getLocationConfig } from './src/db/supabase.js'; getLocationConfig('00000000-0000-0000-0000-000000000001').then(c => console.log('✅ SSO creds:', !!c.ssoUsername && !!c.ssoPassword ? 'PRESENT' : 'MISSING')).catch(e => console.log('❌ Error:', e.message));"
 
 echo "4. Checking build..."
-npm run build && echo "✅ Build successful" || echo "❌ Build failed"
+pnpm run build && echo "✅ Build successful" || echo "❌ Build failed"
 ```
 
 ### Railway Deployment Check
@@ -362,7 +362,7 @@ railway logs --filter "auth"
 
 **Solution**: Install dependencies
 ```bash
-npm install
+pnpm install
 ```
 
 ### Issue: "SUPABASE_URL is not defined"
@@ -399,7 +399,7 @@ echo $SUPABASE_SERVICE_KEY | cut -c1-20
 
 After setting up secrets:
 
-1. **Test local sync**: `npm run sync`
+1. **Test local sync**: `pnpm run sync`
 2. **Test exploration**: `npx tsx src/scripts/exploreLink.ts "ASIS"`
 3. **Deploy to Railway**: `railway up`
 4. **Verify deployment**: Check Railway logs for auth success
