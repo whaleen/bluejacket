@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import supabase from '@/lib/supabase';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useLoads } from '@/hooks/queries/useLoads';
 import type { LoadBoardConfig } from '@/types/display';
 import { CheckCircle2, Circle } from 'lucide-react';
 
@@ -90,62 +90,9 @@ const formatCso = (cso?: string | null) => {
 };
 
 export function AsisLoadsWidget({ title = 'ASIS Loads', locationId, className, config }: Props) {
-  const [loads, setLoads] = useState<LoadRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading: loading } = useLoads('ASIS');
+  const loads = (data ?? []) as LoadRow[];
   const [pageIndex, setPageIndex] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchLoads = async () => {
-      if (!locationId) {
-        setLoads([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('load_metadata')
-        .select('id, sub_inventory_name, friendly_name, ge_source_status, ge_cso_status, ge_cso, ge_units, ge_submitted_date, primary_color, prep_tagged, prep_wrapped, pickup_date, pickup_tba')
-        .eq('location_id', locationId)
-        .eq('inventory_type', 'ASIS');
-
-      if (!cancelled) {
-        setLoads((data as LoadRow[]) ?? []);
-        setLoading(false);
-      }
-    };
-
-    fetchLoads();
-    const channel = locationId
-      ? supabase
-          .channel(`asis-loads:${locationId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'load_metadata',
-              filter: `location_id=eq.${locationId}`,
-            },
-            (payload) => {
-              const nextType = (payload.new as { inventory_type?: string } | null)?.inventory_type;
-              const prevType = (payload.old as { inventory_type?: string } | null)?.inventory_type;
-              if (nextType !== 'ASIS' && prevType !== 'ASIS') return;
-              if (!cancelled) {
-                fetchLoads();
-              }
-            }
-          )
-          .subscribe()
-      : null;
-    return () => {
-      cancelled = true;
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
-    };
-  }, [locationId]);
 
   const statusFilter = config?.statusFilter ?? 'both';
   const rawPageSize = Number(config?.pageSize ?? 8);
