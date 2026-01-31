@@ -1,6 +1,6 @@
 # TanStack Query Migration Guide
 
-**Status**: Phase 1 Complete + Phase 2/3 partial (14/19 components migrated)
+**Status**: Phase 1 Complete + Phase 2/3 partial (16/19 components migrated)
 **Last Updated**: 2026-01-31
 **Target**: TanStack Query v5
 
@@ -44,6 +44,7 @@ const queryClient = new QueryClient({
 - [x] `src/hooks/queries/useInventory.ts` - Inventory item details
 - [x] `src/hooks/queries/useMap.ts` - 2 hooks (product locations + genesis point)
 - [x] `src/hooks/queries/useProducts.ts` - Product search + upsert
+- [x] `src/hooks/queries/useSessions.ts` - Sessions queries + mutations
 - [x] `src/hooks/queries/useSettings.ts` - Locations, companies, users, settings
 - [x] `src/hooks/queries/useInventoryImport.ts` - Inventory import mutation hooks
 - [x] `src/hooks/queries/useGeSync.ts` - GE sync mutation hooks
@@ -94,13 +95,10 @@ const queryClient = new QueryClient({
 | PartsTrackingDialog | `src/components/Inventory/PartsTrackingDialog.tsx` | Uses `useAvailablePartsToTrack` + `useAddTrackedPart` | Debounced search + cached results |
 | SettingsView | `src/components/Settings/SettingsView.tsx` | Uses `useSettings` hooks | Shared cache for admin data |
 | ProductEnrichment | `src/components/Products/ProductEnrichment.tsx` | Uses `useProductSearch` + `useUpsertProduct` | Debounced search + cache invalidation |
+| CreateSessionView | `src/components/Session/CreateSessionView.tsx` | Uses session + inventory hooks | Cached lists + mutations |
+| ScanningSessionView | `src/components/Session/ScanningSessionView.tsx` | Uses session detail + mutation hooks | Cache-backed scans |
 
-### ❌ Not Started (Phase 3 - Remaining: 2 components)
-
-| Component | File | Priority | Estimated Hooks Needed |
-|-----------|------|----------|------------------------|
-| CreateSessionView | `src/components/Session/CreateSessionView.tsx` | Medium | New `useSessions` hook |
-| ScanningSessionView | `src/components/Session/ScanningSessionView.tsx` | Medium | `useSessionDetail` hook |
+### ✅ Phase 3 Complete
 
 ## Migration Patterns
 
@@ -565,7 +563,7 @@ export function useSessionDetail(sessionId: string) {
 ### 3. Migrate Secondary Components (Phase 3)
 
 **Priority order:**
-1. CreateSessionView + ScanningSessionView - Related, migrate together
+All Phase 3 components are migrated.
 
 ### 4. Optimize InventoryView (Post-migration cleanup)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,16 +10,23 @@ import { Card } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Loader2, Search } from 'lucide-react';
-import type { InventoryType, InventoryItem } from '@/types/inventory';
+import type { InventoryType } from '@/types/inventory';
 import type { ScanningSession, SessionSummary } from '@/types/session';
-import supabase from '@/lib/supabase';
-import { createSession, deleteSession, getSessionSummaries, updateSessionStatus } from '@/lib/sessionManager';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { MobileOverlay } from '@/components/Layout/MobileOverlay';
 import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
 import { useAuth } from '@/context/AuthContext';
-import { getActiveLocationContext } from '@/lib/tenant';
+import {
+  useCreateSessionFromInventory,
+  useDeleteSession,
+  useInventoryPreviewCount,
+  useSessionCreatorAvatars,
+  useSessionLoadMetadata,
+  useSessionSummaries,
+  useSubInventoryNames,
+  useUpdateSessionStatus,
+} from '@/hooks/queries/useSessions';
 import { useIsMobile } from '@/hooks/use-mobile';
 import type { AppView } from '@/lib/routes';
 
@@ -75,7 +82,6 @@ function getInitials(name?: string) {
 export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSessionChange }: CreateSessionViewProps) {
   const { user } = useAuth();
   const userDisplayName = user?.username ?? user?.email ?? null;
-  const { locationId } = getActiveLocationContext();
   const isMobile = useIsMobile();
   const [pageTab, setPageTab] = useState<'sessions' | 'new'>('sessions');
   const [sessionListTab, setSessionListTab] = useState<'active' | 'closed' | 'all'>('active');
@@ -84,172 +90,44 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
   const [sessionName, setSessionName] = useState('');
   const [inventoryType, setInventoryType] = useState<InventoryType>('FG');
   const [subInventory, setSubInventory] = useState<string>('all');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewCount, setPreviewCount] = useState(0);
-  const [subInventories, setSubInventories] = useState<string[]>([]);
-  const [loadMetadata, setLoadMetadata] = useState<Map<string, { friendly_name: string | null; primary_color: string | null; ge_cso: string | null }>>(new Map());
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessionsActionError, setSessionsActionError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId ?? null);
-  const [creatorAvatars, setCreatorAvatars] = useState<Record<string, string | null>>({});
-  const [sessionLoadMetadata, setSessionLoadMetadata] = useState<Map<string, { friendly_name: string | null; primary_color: string | null; ge_cso: string | null }>>(new Map());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<SessionSummary | null>(null);
-
-  // Fetch available sub-inventories when inventory type changes
-  useEffect(() => {
-    const fetchSubInventories = async () => {
-      const { data } = await supabase
-        .from('inventory_items')
-        .select('sub_inventory')
-        .eq('location_id', locationId)
-        .eq('inventory_type', inventoryType)
-        .not('sub_inventory', 'is', null);
-
-      if (data) {
-        const unique = [...new Set(data.map(d => d.sub_inventory))].filter(Boolean) as string[];
-        setSubInventories(unique);
-      }
-    };
-
-    fetchSubInventories();
-  }, [inventoryType, locationId]);
-
-  // Fetch load metadata for sub-inventories
-  useEffect(() => {
-    const fetchLoadMetadata = async () => {
-      if (subInventories.length === 0) {
-        setLoadMetadata(new Map());
-        return;
-      }
-
-      const { data } = await supabase
-        .from('load_metadata')
-        .select('sub_inventory_name, friendly_name, primary_color, ge_cso')
-        .eq('location_id', locationId)
-        .in('sub_inventory_name', subInventories);
-
-      if (data) {
-        const metadataMap = new Map<string, { friendly_name: string | null; primary_color: string | null; ge_cso: string | null }>();
-        for (const item of data) {
-          metadataMap.set(item.sub_inventory_name, {
-            friendly_name: item.friendly_name,
-            primary_color: item.primary_color,
-            ge_cso: item.ge_cso
-          });
-        }
-        setLoadMetadata(metadataMap);
-      }
-    };
-
-    fetchLoadMetadata();
-  }, [subInventories, locationId]);
+  const sessionsQuery = useSessionSummaries();
+  const createSessionMutation = useCreateSessionFromInventory();
+  const deleteSessionMutation = useDeleteSession();
+  const updateStatusMutation = useUpdateSessionStatus();
+  const subInventoryQuery = useSubInventoryNames(inventoryType);
+  const previewCountQuery = useInventoryPreviewCount(inventoryType, subInventory);
+  const subInventories = subInventoryQuery.data ?? [];
+  const previewCount = previewCountQuery.data ?? 0;
+  const loadMetadataQuery = useSessionLoadMetadata(subInventories, inventoryType);
+  const loadMetadata = loadMetadataQuery.data ?? new Map();
+  const sessions = sessionsQuery.data ?? [];
+  const sessionsLoading = sessionsQuery.isLoading;
+  const sessionsError = sessionsQuery.error instanceof Error ? sessionsQuery.error.message : null;
+  const sessionsDisplayError = sessionsActionError ?? sessionsError;
+  const sessionSubInventories = useMemo(
+    () => Array.from(new Set(sessions.map((session) => session.subInventory).filter(Boolean) as string[])),
+    [sessions]
+  );
+  const sessionLoadMetadataQuery = useSessionLoadMetadata(sessionSubInventories);
+  const sessionLoadMetadata = sessionLoadMetadataQuery.data ?? new Map();
+  const createdByNames = useMemo(
+    () => Array.from(new Set(sessions.map((session) => session.createdBy).filter(Boolean) as string[])),
+    [sessions]
+  );
+  const creatorAvatarsQuery = useSessionCreatorAvatars(createdByNames);
+  const creatorAvatars = creatorAvatarsQuery.data ?? {};
+  const loading = createSessionMutation.isPending;
 
   // Auto-generate session name when inventory type or sub-inventory changes
   useEffect(() => {
     const name = generateSessionName(inventoryType, subInventory !== 'all' ? subInventory : undefined);
     setSessionName(name);
   }, [inventoryType, subInventory]);
-
-  // Preview count
-  useEffect(() => {
-
-    const fetchPreview = async () => {
-      let query = supabase
-        .from('inventory_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('location_id', locationId)
-        .eq('inventory_type', inventoryType);
-
-      if (subInventory !== 'all') {
-        query = query.eq('sub_inventory', subInventory);
-      }
-
-      const { count } = await query;
-      setPreviewCount(count || 0);
-    };
-
-    fetchPreview();
-  }, [inventoryType, subInventory, locationId]);
-
-  const fetchSessions = useCallback(async () => {
-    setSessionsLoading(true);
-    setSessionsError(null);
-    const { data, error: sessionsFetchError } = await getSessionSummaries();
-    if (sessionsFetchError) {
-      setSessionsError(sessionsFetchError.message || 'Failed to load sessions');
-      setSessions([]);
-    } else {
-      const summaries = data ?? [];
-      setSessions(summaries);
-
-      const createdByNames = Array.from(
-        new Set(summaries.map(session => session.createdBy).filter(Boolean) as string[])
-      );
-
-      if (createdByNames.length > 0) {
-        const { data: usersData, error: usersError } = await supabase
-          .from('profiles')
-          .select('username, email, image')
-          .in('username', createdByNames);
-
-        const { data: usersByEmail, error: emailError } = await supabase
-          .from('profiles')
-          .select('username, email, image')
-          .in('email', createdByNames);
-
-        if (!usersError && !emailError) {
-          const nextMap: Record<string, string | null> = {};
-          [...(usersData ?? []), ...(usersByEmail ?? [])].forEach((userRecord) => {
-            if (userRecord.username) nextMap[userRecord.username] = userRecord.image ?? null;
-            if (userRecord.email) nextMap[userRecord.email] = userRecord.image ?? null;
-          });
-          setCreatorAvatars(prev => ({ ...prev, ...nextMap }));
-        }
-      }
-    }
-    setSessionsLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
-
-  // Fetch load metadata for all sessions with sub_inventory
-  useEffect(() => {
-    const fetchSessionLoadMetadata = async () => {
-      const subInventoryNames = Array.from(
-        new Set(sessions.map(s => s.subInventory).filter(Boolean) as string[])
-      );
-
-      if (subInventoryNames.length === 0) {
-        setSessionLoadMetadata(new Map());
-        return;
-      }
-
-      const { data } = await supabase
-        .from('load_metadata')
-        .select('sub_inventory_name, friendly_name, primary_color, ge_cso')
-        .eq('location_id', locationId)
-        .in('sub_inventory_name', subInventoryNames);
-
-      if (data) {
-        const metadataMap = new Map<string, { friendly_name: string | null; primary_color: string | null; ge_cso: string | null }>();
-        for (const item of data) {
-          metadataMap.set(item.sub_inventory_name, {
-            friendly_name: item.friendly_name,
-            primary_color: item.primary_color,
-            ge_cso: item.ge_cso
-          });
-        }
-        setSessionLoadMetadata(metadataMap);
-      }
-    };
-
-    fetchSessionLoadMetadata();
-  }, [sessions, locationId]);
 
   useEffect(() => {
     setActiveSessionId(sessionId ?? null);
@@ -263,19 +141,21 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
   const handleExitSession = () => {
     setActiveSessionId(null);
     onSessionChange?.(null);
-    fetchSessions();
+    sessionsQuery.refetch();
   };
 
   const handleResumeSession = async (session: SessionSummary) => {
     if (session.status === 'closed') return;
     if (session.status === 'draft') {
-      const { error: statusError } = await updateSessionStatus({
-        sessionId: session.id,
-        status: 'active',
-        updatedBy: userDisplayName ?? undefined
-      });
-      if (statusError) {
-        setSessionsError(statusError.message || 'Failed to start session');
+      setSessionsActionError(null);
+      try {
+        await updateStatusMutation.mutateAsync({
+          sessionId: session.id,
+          status: 'active',
+          updatedBy: userDisplayName ?? undefined
+        });
+      } catch (err) {
+        setSessionsActionError(err instanceof Error ? err.message : 'Failed to start session');
         return;
       }
     }
@@ -290,12 +170,11 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
 
   const handleConfirmDelete = async () => {
     if (!sessionToDelete) return;
-    const { error: deleteError } = await deleteSession(sessionToDelete.id);
-    if (deleteError) {
-      setSessionsError(deleteError.message || 'Failed to delete session');
-    } else {
-      setSessionsError(null);
-      fetchSessions();
+    setSessionsActionError(null);
+    try {
+      await deleteSessionMutation.mutateAsync(sessionToDelete.id);
+    } catch (err) {
+      setSessionsActionError(err instanceof Error ? err.message : 'Failed to delete session');
     }
     setDeleteDialogOpen(false);
     setSessionToDelete(null);
@@ -448,54 +327,18 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
       setError('Please enter a session name');
       return;
     }
-
-    setLoading(true);
     setError(null);
 
     try {
-      let query = supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('location_id', locationId)
-        .eq('inventory_type', inventoryType);
-
-      if (subInventory !== 'all') {
-        query = query.eq('sub_inventory', subInventory);
-      }
-
-      const { data, error: fetchError } = await query;
-
-      if (fetchError) {
-        setError(`Failed to fetch items: ${fetchError.message}`);
-        setLoading(false);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        setError('No items found for this inventory type');
-        setLoading(false);
-        return;
-      }
-
-      const { data: session, error: sessionError } = await createSession({
+      const session = await createSessionMutation.mutateAsync({
         name: sessionName,
         inventoryType,
         subInventory: subInventory !== 'all' ? subInventory : undefined,
-        items: data as InventoryItem[],
         createdBy: userDisplayName ?? undefined
       });
-
-      if (sessionError || !session) {
-        setError(`Failed to create session: ${sessionError?.message || 'Unknown error'}`);
-        setLoading(false);
-        return;
-      }
-
       handleSessionCreated(session);
     } catch (err) {
       setError(`Failed to create session: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -593,9 +436,9 @@ export function CreateSessionView({ onViewChange, onMenuClick, sessionId, onSess
                 </Card>
               )}
 
-              {sessionsError && !sessionsLoading && (
+              {sessionsDisplayError && !sessionsLoading && (
                 <Alert variant="destructive">
-                  <AlertDescription>{sessionsError}</AlertDescription>
+                  <AlertDescription>{sessionsDisplayError}</AlertDescription>
                 </Alert>
               )}
 

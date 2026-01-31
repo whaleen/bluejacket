@@ -40,6 +40,12 @@ export const queryKeys = {
   sessions: {
     all: (locationId: string) => ['sessions', locationId] as const,
     detail: (locationId: string, sessionId: string) => ['sessions', locationId, sessionId] as const,
+    subInventories: (locationId: string, inventoryType: string) =>
+      ['sessions', locationId, 'subinventories', inventoryType] as const,
+    previewCount: (locationId: string, inventoryType: string, subInventory: string) =>
+      ['sessions', locationId, 'preview-count', inventoryType, subInventory] as const,
+    loadMetadata: (locationId: string, inventoryType: string, subInventoryNames: string[]) =>
+      ['sessions', locationId, 'load-metadata', inventoryType, subInventoryNames] as const,
   },
   products: {
     search: (searchTerm: string) => ['products', 'search', searchTerm] as const,
@@ -53,6 +59,7 @@ export const queryKeys = {
   },
   users: {
     all: () => ['users'] as const,
+    avatars: (names: string[]) => ['users', 'avatars', names] as const,
   },
   settings: {
     byKey: (locationKey: string | null) => ['settings', locationKey] as const,

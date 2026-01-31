@@ -13,7 +13,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScanBarcode, CheckCircle2, Loader2, Search, MapPin, X, Scan } from 'lucide-react';
 import type { InventoryItem } from '@/types/inventory';
 import type { ScanningSession } from '@/types/session';
-import { getSession, updateSessionScannedItems } from '@/lib/sessionManager';
 import { findMatchingItemsInSession } from '@/lib/sessionScanner';
 // import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/context/AuthContext';
@@ -26,8 +25,7 @@ import {
   feedbackError,
   feedbackWarning,
 } from '@/lib/feedback';
-import supabase from '@/lib/supabase';
-import { getActiveLocationContext } from '@/lib/tenant';
+import { useSessionDetail, useSessionLoadMetadata, useUpdateSessionScannedItems } from '@/hooks/queries/useSessions';
 
 interface ScanningSessionViewProps {
   sessionId: string;
@@ -101,10 +99,18 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
   // const { toast } = useToast();
   const { user } = useAuth();
   const userDisplayName = user?.username ?? user?.email ?? undefined;
-  const [session, setSession] = useState<ScanningSession | null>(null);
-  const [loadMetadata, setLoadMetadata] = useState<{ friendly_name?: string | null; primary_color?: string | null; ge_cso?: string; ge_source_status?: string } | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const sessionQuery = useSessionDetail(sessionId);
+  const session = sessionQuery.data ?? null;
+  const loadError = sessionQuery.error instanceof Error ? sessionQuery.error.message : null;
+  const shouldLoadMetadata = Boolean(session?.subInventory && session?.inventoryType === 'ASIS');
+  const loadMetadataQuery = useSessionLoadMetadata(
+    shouldLoadMetadata && session?.subInventory ? [session.subInventory] : [],
+    shouldLoadMetadata ? session?.inventoryType : undefined
+  );
+  const loadMetadata = shouldLoadMetadata && session?.subInventory
+    ? loadMetadataQuery.data?.get(session.subInventory) ?? null
+    : null;
+  const updateSessionMutation = useUpdateSessionScannedItems();
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectionDialogOpen, setSelectionDialogOpen] = useState(false);
   const [matchedItems, setMatchedItems] = useState<InventoryItem[]>([]);
@@ -119,46 +125,6 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
   const [processingItemId, setProcessingItemId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const stopProcessingFeedbackRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchSession = async () => {
-      setLoading(true);
-      setLoadError(null);
-      const { data, error } = await getSession(sessionId);
-      if (!isMounted) return;
-      if (error || !data) {
-        setLoadError(error?.message || 'Session not found');
-        setSession(null);
-      } else {
-        setSession(data);
-
-        // Fetch load metadata if session has subInventory
-        if (data.subInventory && data.inventoryType === 'ASIS') {
-          const { locationId } = getActiveLocationContext();
-          const { data: loadData } = await supabase
-            .from('load_metadata')
-            .select('friendly_name, primary_color, ge_cso, ge_source_status')
-            .eq('location_id', locationId)
-            .eq('inventory_type', data.inventoryType)
-            .eq('sub_inventory_name', data.subInventory)
-            .single();
-
-          if (loadData && isMounted) {
-            setLoadMetadata(loadData);
-          }
-        }
-      }
-      setLoading(false);
-    };
-
-    fetchSession();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [sessionId]);
 
   // Clear selection when switching tabs
   useEffect(() => {
@@ -212,32 +178,31 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
       stopProcessingFeedbackRef.current = feedbackProcessing();
 
       const nextScanned = [...session.scannedItemIds, itemId];
-      const { data: updatedSession, error } = await updateSessionScannedItems({
-        sessionId: session.id,
-        scannedItemIds: nextScanned,
-        updatedBy: userDisplayName
-      });
 
-      // Stop processing feedback
-      stopProcessingFeedbackRef.current?.();
-      stopProcessingFeedbackRef.current = null;
-      setIsProcessing(false);
-      setProcessingItemId(null);
-
-      if (error || !updatedSession) {
+      try {
+        await updateSessionMutation.mutateAsync({
+          sessionId: session.id,
+          scannedItemIds: nextScanned,
+          updatedBy: userDisplayName
+        });
+      } catch (err) {
         feedbackError();
         setAlert({
           type: 'error',
-          message: error?.message || 'Failed to update session'
+          message: err instanceof Error ? err.message : 'Failed to update session'
         });
         setTimeout(() => setAlert(null), 4000);
         return;
+      } finally {
+        // Stop processing feedback
+        stopProcessingFeedbackRef.current?.();
+        stopProcessingFeedbackRef.current = null;
+        setIsProcessing(false);
+        setProcessingItemId(null);
       }
 
       // Success!
       feedbackSuccess();
-      setSession(updatedSession);
-
       // Capture position for fog of war map (non-blocking)
       capturePositionForScan(
         result.items[0].products?.id ?? result.items[0].product_fk,
@@ -278,22 +243,22 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     }
 
     const nextScanned = [...session.scannedItemIds, ...uniqueIds];
-    const { data: updatedSession, error } = await updateSessionScannedItems({
-      sessionId: session.id,
-      scannedItemIds: nextScanned,
-      updatedBy: userDisplayName
-    });
+    let updatedSession: ScanningSession;
 
-    if (error || !updatedSession) {
+    try {
+      updatedSession = await updateSessionMutation.mutateAsync({
+        sessionId: session.id,
+        scannedItemIds: nextScanned,
+        updatedBy: userDisplayName
+      });
+    } catch (err) {
       setAlert({
         type: 'error',
-        message: error?.message || 'Failed to update session'
+        message: err instanceof Error ? err.message : 'Failed to update session'
       });
       setTimeout(() => setAlert(null), 4000);
       return;
     }
-
-    setSession(updatedSession);
 
     // Capture position for all selected items (they're at the same location)
     const markedItems = updatedSession.items.filter(item => item.id && uniqueIds.includes(item.id));
@@ -393,7 +358,7 @@ export function ScanningSessionView({ sessionId, onExit }: ScanningSessionViewPr
     setSelectedItemId(null);
   };
 
-  if (loading) {
+  if (sessionQuery.isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen gap-2 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
