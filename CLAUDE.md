@@ -5,6 +5,9 @@
 | Need to... | Go to... |
 |------------|----------|
 | Use CLI tools | `agent-instructions/cli-tools.md` |
+| Explore GE DMS system | `services/ge-sync/docs/EXPLORATION_GUIDE.md` |
+| Look up GE DMS pages | `services/ge-sync/docs/GE_DMS_PAGES.md` |
+| Understand GE workflows | `services/ge-sync/docs/GE_DMS_SYSTEM_OVERVIEW.md` |
 | Add a TODO | `TODO.md` |
 | Plan a feature | `agent-instructions/plans/` |
 | Read human docs | `docs/` or `README.md` |
