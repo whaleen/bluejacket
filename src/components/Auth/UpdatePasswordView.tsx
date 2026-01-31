@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
-import { AuthLayout } from "./AuthLayout";
+import { AppAuthLayout } from "./AppAuthLayout";
 import supabase from "@/lib/supabase";
 
 export function UpdatePasswordView() {
@@ -104,7 +104,7 @@ export function UpdatePasswordView() {
   };
 
   return (
-    <AuthLayout
+    <AppAuthLayout
       title="Set new password"
       description={
         isRecoveryMode
@@ -122,7 +122,7 @@ export function UpdatePasswordView() {
 
           <Button
             onClick={() => (window.location.href = "/login")}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            className="w-full"
           >
             Return to login
           </Button>
@@ -132,7 +132,7 @@ export function UpdatePasswordView() {
           {!isRecoveryMode && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-gray-700">
+                <Label htmlFor="email" >
                   Email
                 </Label>
                 <Input
@@ -141,7 +141,7 @@ export function UpdatePasswordView() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                  className=""
                   autoComplete="email"
                   readOnly={emailPreFilled}
                   required
@@ -149,7 +149,7 @@ export function UpdatePasswordView() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="otp-code" className="text-gray-700">
+                <Label htmlFor="otp-code" >
                   Reset code
                 </Label>
                 <Input
@@ -158,7 +158,7 @@ export function UpdatePasswordView() {
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
                   placeholder="Enter the 6-digit code"
-                  className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                  className=""
                   inputMode="numeric"
                   maxLength={6}
                   required
@@ -168,7 +168,7 @@ export function UpdatePasswordView() {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="new-password" className="text-gray-700">
+            <Label htmlFor="new-password" >
               New password
             </Label>
             <Input
@@ -177,14 +177,14 @@ export function UpdatePasswordView() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="Enter a new password"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              className=""
               autoComplete="new-password"
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="confirm-password" className="text-gray-700">
+            <Label htmlFor="confirm-password" >
               Confirm password
             </Label>
             <Input
@@ -193,22 +193,22 @@ export function UpdatePasswordView() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Re-enter your new password"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              className=""
               autoComplete="new-password"
               required
             />
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3">
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="rounded-lg bg-destructive/15 px-4 py-3">
+              <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
 
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            className="w-full"
           >
             {loading ? "Updating password..." : "Update password"}
           </Button>
@@ -216,13 +216,13 @@ export function UpdatePasswordView() {
           <div className="text-center">
             <a
               href="/login"
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="text-muted-foreground"
             >
               Back to login
             </a>
           </div>
         </form>
       )}
-    </AuthLayout>
+    </AppAuthLayout>
   );
 }

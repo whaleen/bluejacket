@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MarketingLayout, COLORS } from "./MarketingLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,17 +19,20 @@ import {
   Cloud,
   Clock,
 } from "lucide-react";
-import { getAppUrl } from "@/lib/appLinks";
+import { EarlyAccessForm } from "./EarlyAccessForm";
 
 export function FeaturesPage() {
+  const [showEarlyAccess, setShowEarlyAccess] = useState(false);
+
   return (
-    <MarketingLayout>
-      <PageHeader />
+    <MarketingLayout onRequestAccess={() => setShowEarlyAccess(true)}>
+      {showEarlyAccess && <EarlyAccessForm onClose={() => setShowEarlyAccess(false)} />}
+      <PageHeader onRequestAccess={() => setShowEarlyAccess(true)} />
       <CoreFeatures />
       <ReliabilitySection />
       <FloorControls />
       <PwaSection />
-      <CtaSection />
+      <CtaSection onRequestAccess={() => setShowEarlyAccess(true)} />
     </MarketingLayout>
   );
 }
@@ -412,7 +416,7 @@ function PwaSection() {
   );
 }
 
-function CtaSection() {
+function CtaSection({ onRequestAccess }: { onRequestAccess: () => void }) {
   return (
     <section className="py-20 bg-gray-50">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
@@ -424,19 +428,18 @@ function CtaSection() {
           the first to try it.
         </p>
         <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a href={getAppUrl("/signup")}>
-            <Button
-              size="lg"
-              className="text-white shadow-lg px-8 hover:opacity-90"
-              style={{
-                background: `linear-gradient(to right, ${COLORS.blue}, ${COLORS.blueViolet})`,
-                boxShadow: `0 10px 15px -3px ${COLORS.blue}40`,
-              }}
-            >
-              Request Early Access
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </a>
+          <Button
+            size="lg"
+            onClick={onRequestAccess}
+            className="text-white shadow-lg px-8 hover:opacity-90"
+            style={{
+              background: `linear-gradient(to right, ${COLORS.blue}, ${COLORS.blueViolet})`,
+              boxShadow: `0 10px 15px -3px ${COLORS.blue}40`,
+            }}
+          >
+            Request Early Access
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
           <a href="/pricing">
             <Button size="lg" variant="outline" className="px-8">
               View Pricing

@@ -1,14 +1,18 @@
+import { useState } from "react";
 import { MarketingLayout, COLORS } from "./MarketingLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Check, ArrowRight, Sparkles, Map, Users, Rocket } from "lucide-react";
-import { getAppUrl } from "@/lib/appLinks";
+import { EarlyAccessForm } from "./EarlyAccessForm";
 
 export function PricingPage() {
+  const [showEarlyAccess, setShowEarlyAccess] = useState(false);
+
   return (
-    <MarketingLayout>
+    <MarketingLayout onRequestAccess={() => setShowEarlyAccess(true)}>
+      {showEarlyAccess && <EarlyAccessForm onClose={() => setShowEarlyAccess(false)} />}
       <PageHeader />
-      <PricingCards />
+      <PricingCards onRequestAccess={() => setShowEarlyAccess(true)} />
       <OnboardingSection />
       <FaqSection />
     </MarketingLayout>
@@ -68,7 +72,7 @@ function PageHeader() {
   );
 }
 
-function PricingCards() {
+function PricingCards({ onRequestAccess }: { onRequestAccess: () => void }) {
   const features = [
     "Unlimited locations per company",
     "Unlimited team members",
@@ -130,19 +134,18 @@ function PricingCards() {
                 </p>
               </div>
 
-              <a href={getAppUrl("/signup")}>
-                <Button
-                  size="lg"
-                  className="w-full sm:w-auto text-white shadow-lg px-8 hover:opacity-90"
-                  style={{
-                    background: `linear-gradient(to right, ${COLORS.violet}, ${COLORS.redViolet})`,
-                    boxShadow: `0 10px 15px -3px ${COLORS.violet}40`,
-                  }}
-                >
-                  Request Early Access
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </a>
+              <Button
+                size="lg"
+                onClick={onRequestAccess}
+                className="w-full sm:w-auto text-white shadow-lg px-8 hover:opacity-90"
+                style={{
+                  background: `linear-gradient(to right, ${COLORS.violet}, ${COLORS.redViolet})`,
+                  boxShadow: `0 10px 15px -3px ${COLORS.violet}40`,
+                }}
+              >
+                Request Early Access
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </div>
 
             <div className="flex-1 lg:border-l lg:border-gray-200 lg:pl-12">

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthContext";
-import { AuthLayout } from "./AuthLayout";
+import { AppAuthLayout } from "./AppAuthLayout";
 
 export function ResetPasswordView() {
   const { sendPasswordReset } = useAuth();
@@ -30,7 +30,7 @@ export function ResetPasswordView() {
   };
 
   return (
-    <AuthLayout
+    <AppAuthLayout
       title="Reset your password"
       description="We'll send you a recovery email with a link and code"
     >
@@ -45,7 +45,7 @@ export function ResetPasswordView() {
 
           <Button
             onClick={() => (window.location.href = `/update-password?email=${encodeURIComponent(email)}`)}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            className="w-full"
           >
             I have a code - reset now
           </Button>
@@ -61,7 +61,7 @@ export function ResetPasswordView() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-gray-700">
+            <Label htmlFor="email" >
               Email
             </Label>
             <Input
@@ -70,22 +70,22 @@ export function ResetPasswordView() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              className=""
               autoComplete="email"
               required
             />
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3">
-              <p className="text-sm text-red-600">{error}</p>
+            <div className="rounded-lg bg-destructive/15 px-4 py-3">
+              <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
 
           <Button
             type="submit"
             disabled={loading}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            className="w-full"
           >
             {loading ? "Sending..." : "Send reset email"}
           </Button>
@@ -93,13 +93,13 @@ export function ResetPasswordView() {
           <div className="text-center">
             <a
               href="/login"
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="text-muted-foreground"
             >
               Back to login
             </a>
           </div>
         </form>
       )}
-    </AuthLayout>
+    </AppAuthLayout>
   );
 }

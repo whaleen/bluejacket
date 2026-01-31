@@ -37,12 +37,13 @@ export const COLORS = {
 
 interface MarketingLayoutProps {
   children: React.ReactNode;
+  onRequestAccess?: () => void;
 }
 
-export function MarketingLayout({ children }: MarketingLayoutProps) {
+export function MarketingLayout({ children, onRequestAccess }: MarketingLayoutProps) {
   return (
     <div className="min-h-screen flex flex-col bg-white marketing-root">
-      <MarketingHeader />
+      <MarketingHeader onRequestAccess={onRequestAccess} />
       <ColorSwatchBar />
       <main className="flex-1">{children}</main>
       <MarketingFooter />
@@ -68,7 +69,7 @@ function ColorSwatchBar() {
   );
 }
 
-function MarketingHeader() {
+function MarketingHeader({ onRequestAccess }: { onRequestAccess?: () => void }) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/80 backdrop-blur-lg">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -99,17 +100,16 @@ function MarketingHeader() {
                 Sign in
               </Button>
             </a>
-            <a href={getAppUrl("/signup")}>
-              <Button
-                size="sm"
-                style={{
-                  background: `linear-gradient(to right, ${COLORS.blue}, ${COLORS.blueViolet})`,
-                }}
-                className="text-white shadow-lg hover:opacity-90"
-              >
-                Get Started
-              </Button>
-            </a>
+            <Button
+              size="sm"
+              onClick={onRequestAccess}
+              style={{
+                background: `linear-gradient(to right, ${COLORS.blue}, ${COLORS.blueViolet})`,
+              }}
+              className="text-white shadow-lg hover:opacity-90"
+            >
+              Early Access
+            </Button>
           </div>
         </div>
       </div>

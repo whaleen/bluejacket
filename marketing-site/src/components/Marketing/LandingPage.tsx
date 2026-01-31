@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MarketingLayout, COLORS } from "./MarketingLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,21 +17,24 @@ import {
   Truck,
 } from "lucide-react";
 import { WarehouseLogo } from "@/components/Brand/WarehouseLogo";
-import { getAppUrl } from "@/lib/appLinks";
+import { EarlyAccessForm } from "./EarlyAccessForm";
 
 export function LandingPage() {
+  const [showEarlyAccess, setShowEarlyAccess] = useState(false);
+
   return (
-    <MarketingLayout>
-      <HeroSection />
+    <MarketingLayout onRequestAccess={() => setShowEarlyAccess(true)}>
+      {showEarlyAccess && <EarlyAccessForm onClose={() => setShowEarlyAccess(false)} />}
+      <HeroSection onRequestAccess={() => setShowEarlyAccess(true)} />
       <FeaturesOverview />
       <WorkflowSection />
       <AppPreview />
-      <CtaSection />
+      <CtaSection onRequestAccess={() => setShowEarlyAccess(true)} />
     </MarketingLayout>
   );
 }
 
-function HeroSection() {
+function HeroSection({ onRequestAccess }: { onRequestAccess: () => void }) {
   return (
     <section className="relative overflow-hidden">
       {/* Background gradient */}
@@ -91,9 +95,9 @@ function HeroSection() {
               className="mt-10 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 marketing-fade-up"
               style={{ ['--marketing-delay' as string]: "190ms" }}
             >
-            <a href={getAppUrl("/signup")}>
               <Button
                 size="lg"
+                onClick={onRequestAccess}
                 className="text-white shadow-lg px-8 hover:opacity-90"
                 style={{
                   background: `linear-gradient(to right, ${COLORS.blue}, ${COLORS.blueViolet})`,
@@ -103,7 +107,6 @@ function HeroSection() {
                 Request Early Access
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </a>
               <a href="/features">
                 <Button size="lg" variant="outline" className="px-8">
                   See Features
@@ -482,7 +485,7 @@ function AppPreview() {
   );
 }
 
-function CtaSection() {
+function CtaSection({ onRequestAccess }: { onRequestAccess: () => void }) {
   return (
     <section
       className="py-24"
@@ -499,16 +502,15 @@ function CtaSection() {
           warehouse floor management.
         </p>
         <div className="mt-10">
-          <a href={getAppUrl("/signup")}>
-            <Button
-              size="lg"
-              className="bg-white hover:bg-gray-50 shadow-lg px-8"
-              style={{ color: COLORS.blue }}
-            >
-              Request Early Access
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </a>
+          <Button
+            size="lg"
+            onClick={onRequestAccess}
+            className="bg-white hover:bg-gray-50 shadow-lg px-8"
+            style={{ color: COLORS.blue }}
+          >
+            Request Early Access
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </div>
       </div>
     </section>

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { AuthLayout } from "./AuthLayout";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { WarehouseLogo } from "@/components/Brand/WarehouseLogo";
+import { ThemeToggle } from "./ThemeToggle";
 import supabase from "@/lib/supabase";
 
 export function SignupView() {
@@ -65,140 +66,151 @@ export function SignupView() {
   };
 
   return (
-    <AuthLayout title="Request access" description="Join the Warehouse waitlist">
-      {submitted ? (
-        <div className="space-y-4 text-sm text-gray-600">
-          <p className="text-gray-900 text-base font-medium">Request received.</p>
-          <p>
-            {needsEmailConfirm
-              ? "Check your email to confirm your request. We will follow up with access details and timing."
-              : "Thanks for reaching out. We will follow up with access details and timing."}
-          </p>
-          {submittedEmail && (
-            <p className="text-xs text-gray-500">Submitted for {submittedEmail}</p>
-          )}
+    <div className="grid min-h-svh lg:grid-cols-2">
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="flex justify-center gap-2 md:justify-start">
+          <a href="/" className="flex items-center gap-2 font-medium">
+            <WarehouseLogo className="size-6" />
+            Warehouse
+          </a>
         </div>
-      ) : (
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-              <p className="text-sm text-red-600">{error}</p>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-xs">
+            {submitted ? (
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-2 text-center">
+                  <h1 className="text-2xl font-bold">Request received</h1>
+                  <p className="text-balance text-sm text-muted-foreground">
+                    {needsEmailConfirm
+                      ? "Check your email to confirm your request. We will follow up with access details and timing."
+                      : "Thanks for reaching out. We will follow up with access details and timing."}
+                  </p>
+                  {submittedEmail && (
+                    <p className="text-xs text-muted-foreground">Submitted for {submittedEmail}</p>
+                  )}
+                </div>
+                <Button asChild variant="outline">
+                  <a href="/login">Back to login</a>
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                <div className="flex flex-col gap-2 text-center">
+                  <h1 className="text-2xl font-bold">Request access</h1>
+                  <p className="text-balance text-sm text-muted-foreground">
+                    Join the Warehouse waitlist
+                  </p>
+                </div>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="name">Full name</FieldLabel>
+                    <Input
+                      id="name"
+                      name="name"
+                      placeholder="Alex Johnson"
+                      autoComplete="name"
+                      required
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="email">Work email</FieldLabel>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      placeholder="alex@company.com"
+                      autoComplete="email"
+                      required
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
+                    <Input
+                      id="password"
+                      name="password"
+                      type="password"
+                      placeholder="Create a password"
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
+                    <Input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type="password"
+                      placeholder="Re-enter your password"
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="company">Company name</FieldLabel>
+                    <Input
+                      id="company"
+                      name="company"
+                      placeholder="Acme Appliances"
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="locations">Number of locations</FieldLabel>
+                    <Input
+                      id="locations"
+                      name="locations"
+                      placeholder="3"
+                    />
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="notes">Additional notes (optional)</FieldLabel>
+                    <Input
+                      id="notes"
+                      name="notes"
+                      placeholder="Tell us about your needs"
+                    />
+                  </Field>
+
+                  {error && (
+                    <div className="rounded-lg bg-destructive/15 px-4 py-3 text-sm text-destructive">
+                      {error}
+                    </div>
+                  )}
+
+                  <Field>
+                    <Button type="submit" disabled={loading} className="w-full">
+                      {loading ? "Requesting..." : "Request access"}
+                    </Button>
+                    <FieldDescription className="text-center">
+                      Already have an account?{" "}
+                      <a href="/login" className="underline underline-offset-4">
+                        Sign in
+                      </a>
+                    </FieldDescription>
+                  </Field>
+                </FieldGroup>
+              </form>
+            )}
+            <div className="mt-4 flex justify-center">
+              <ThemeToggle />
             </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="waitlist-name" className="text-gray-700">
-              Full name
-            </Label>
-            <Input
-              id="waitlist-name"
-              name="name"
-              placeholder="Alex Johnson"
-              autoComplete="name"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="waitlist-email" className="text-gray-700">
-              Work email
-            </Label>
-            <Input
-              id="waitlist-email"
-              name="email"
-              type="email"
-              placeholder="alex@company.com"
-              autoComplete="email"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-              required
-            />
+        </div>
+      </div>
+      <div className="relative hidden bg-muted lg:block">
+        <div className="absolute inset-0 flex items-center justify-center p-10">
+          <div className="text-center">
+            <WarehouseLogo className="mx-auto size-24 opacity-20" />
           </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="waitlist-password" className="text-gray-700">
-                Password
-              </Label>
-              <Input
-                id="waitlist-password"
-                name="password"
-                type="password"
-                placeholder="Create a password"
-                autoComplete="new-password"
-                className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                minLength={8}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="waitlist-password-confirm" className="text-gray-700">
-                Confirm password
-              </Label>
-              <Input
-                id="waitlist-password-confirm"
-                name="confirmPassword"
-                type="password"
-                placeholder="Re-enter your password"
-                autoComplete="new-password"
-                className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-                minLength={8}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="waitlist-company" className="text-gray-700">
-              Company name
-            </Label>
-            <Input
-              id="waitlist-company"
-              name="company"
-              placeholder="Acme Appliances"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="waitlist-locations" className="text-gray-700">
-              Locations
-            </Label>
-            <Input
-              id="waitlist-locations"
-              name="locations"
-              placeholder="How many locations?"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="waitlist-notes" className="text-gray-700">
-              Notes
-            </Label>
-            <Input
-              id="waitlist-notes"
-              name="notes"
-              placeholder="Any details we should know?"
-              className="h-11 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
-
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
-          >
-            {loading ? "Submitting..." : "Request access"}
-          </Button>
-
-          <div className="flex items-center justify-between text-sm">
-            <a href="/login" className="text-gray-600 hover:text-gray-900">
-              Back to sign in
-            </a>
-          </div>
-        </form>
-      )}
-    </AuthLayout>
+        </div>
+      </div>
+    </div>
   );
 }
