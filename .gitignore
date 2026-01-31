@@ -39,7 +39,6 @@ warehouse.sql
 seed.csv
 SCANNING_SESSIONS.md
 PRODUCT_ENRICHMENT.md
-migrations/
 src/scripts
 GE_SCRAPER.md
 TEST_DATA.md
@@ -51,9 +50,12 @@ dev-dist
 localhost+*.pem
 localhost+*-key.pem
 
-migrations
 IDGAF_About_Auth_Security.md
 warehouse.sql
-supabase
+
+# Supabase - track config and migrations, ignore temp files
+supabase/.temp/
+supabase/.branches/
+supabase/functions/
 # Local Netlify folder
 .netlify

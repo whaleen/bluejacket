@@ -106,7 +106,7 @@ Scaling notes (beta+):
 
 ### 3. Database Setup
 
-Run the SQL in `migrations/` in order, or use `warehouse.sql` as a reference schema.
+Database migrations are managed via Supabase CLI in `supabase/migrations/`. Use `warehouse.sql` as a reference schema.
 
 **Key tables:**
 - `companies`, `locations`, `settings`
