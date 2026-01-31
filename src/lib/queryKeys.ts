@@ -29,6 +29,7 @@ export const queryKeys = {
       ['inventory', locationId, 'subinventories', inventoryType] as const,
     byType: (locationId: string, type: string) => ['inventory', locationId, type] as const,
     stats: (locationId: string) => ['inventory', locationId, 'stats'] as const,
+    asisOverview: (locationId: string) => ['inventory', locationId, 'asis-overview'] as const,
   },
   activity: {
     all: (locationId: string) => ['activity', locationId] as const,

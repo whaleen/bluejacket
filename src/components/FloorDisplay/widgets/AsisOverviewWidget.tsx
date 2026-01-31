@@ -1,8 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import supabase from '@/lib/supabase';
 import { Card } from '@/components/ui/card';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { useInventoryRealtime } from '@/hooks/queries/useRealtimeSync';
+import { useAsisOverview } from '@/hooks/queries/useAsisOverview';
 
 type Props = {
   title?: string;
@@ -11,69 +10,10 @@ type Props = {
   className?: string;
 };
 
-type OverviewStats = {
-  totalItems: number;
-  unassignedItems: number;
-  onFloorLoads: number;
-  forSaleLoads: number;
-  pickedLoads: number;
-};
-
-const normalize = (value?: string | null) => value?.toLowerCase().trim() ?? '';
-
 export function AsisOverviewWidget({ title = 'ASIS Overview', locationId, variant = 'default', className }: Props) {
   const { locationId: activeLocationId } = getActiveLocationContext();
   const effectiveLocationId = locationId ?? activeLocationId;
-
-  const { data: stats, isLoading: loading } = useQuery<OverviewStats | null>({
-    queryKey: ['asis-overview', effectiveLocationId],
-    queryFn: async () => {
-      if (!effectiveLocationId) {
-        return null;
-      }
-
-      const [{ count: totalItems }, { count: unassignedItems }, loadsResult] = await Promise.all([
-        supabase
-          .from('inventory_items')
-          .select('*', { head: true, count: 'exact' })
-          .eq('location_id', effectiveLocationId)
-          .eq('inventory_type', 'ASIS'),
-        supabase
-          .from('inventory_items')
-          .select('*', { head: true, count: 'exact' })
-          .eq('location_id', effectiveLocationId)
-          .eq('inventory_type', 'ASIS')
-          .or('sub_inventory.is.null,sub_inventory.eq.""'),
-        supabase
-          .from('load_metadata')
-          .select('ge_source_status, ge_cso_status')
-          .eq('location_id', effectiveLocationId)
-          .eq('inventory_type', 'ASIS'),
-      ]);
-
-      const loads = loadsResult.data ?? [];
-
-      const forSaleLoads = loads.filter(
-        (load) => normalize(load.ge_source_status) === 'for sale'
-      ).length;
-      const pickedLoads = loads.filter(
-        (load) =>
-          normalize(load.ge_source_status) === 'sold' &&
-          normalize(load.ge_cso_status) === 'picked'
-      ).length;
-
-      const onFloorLoads = forSaleLoads + pickedLoads;
-
-      return {
-        totalItems: totalItems ?? 0,
-        unassignedItems: unassignedItems ?? 0,
-        onFloorLoads,
-        forSaleLoads,
-        pickedLoads,
-      };
-    },
-    enabled: !!effectiveLocationId,
-  });
+  const { data: stats, isLoading: loading } = useAsisOverview(effectiveLocationId);
 
   // Realtime sync for inventory changes
   useInventoryRealtime();
