@@ -85,7 +85,7 @@ Examples:
 
 ### Project Root
 ```
-CLAUDE.md                 # You are here - agent entry point
+AGENT.md                  # You are here - agent entry point
 README.md                 # Human project overview
 TODO.md                   # Project todos
 .agent/                   # Agent-specific documentation

@@ -205,7 +205,7 @@ Some pages couldn't be fully documented:
 
 Next agent should be able to:
 
-1. **Find documentation** via CLAUDE.md
+1. **Find documentation** via AGENT.md
 2. **Understand GE DMS** by reading GE_DMS_PAGES.md
 3. **Start exploration** following EXPLORATION_GUIDE.md
 4. **Run scripts** using scripts/README.md instructions
