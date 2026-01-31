@@ -1,7 +1,7 @@
 # TanStack Query Migration Guide
 
-**Status**: Phase 1 Complete + 1 Phase 3 component (9/19 components migrated)
-**Last Updated**: 2026-01-28
+**Status**: Phase 1 Complete + Phase 2/3 partial (14/19 components migrated)
+**Last Updated**: 2026-01-31
 **Target**: TanStack Query v5
 
 ## Overview
@@ -43,6 +43,10 @@ const queryClient = new QueryClient({
 - [x] `src/hooks/queries/useRealtimeSync.ts` - Realtime subscriptions
 - [x] `src/hooks/queries/useInventory.ts` - Inventory item details
 - [x] `src/hooks/queries/useMap.ts` - 2 hooks (product locations + genesis point)
+- [x] `src/hooks/queries/useProducts.ts` - Product search + upsert
+- [x] `src/hooks/queries/useSettings.ts` - Locations, companies, users, settings
+- [x] `src/hooks/queries/useInventoryImport.ts` - Inventory import mutation hooks
+- [x] `src/hooks/queries/useGeSync.ts` - GE sync mutation hooks
 
 ### ✅ Completed (Phase 1 - Core Inventory Components)
 
@@ -56,6 +60,7 @@ const queryClient = new QueryClient({
 | LoadManagementView | `src/components/Inventory/LoadManagementView.tsx` | Uses `useLoads` hook | Request deduplication |
 | DashboardView | `src/components/Dashboard/DashboardView.tsx` | Uses `useLoads` + `useActivityRealtime` | Shared cache with LoadManagementView |
 | ActivityLogView | `src/components/Activity/ActivityLogView.tsx` | Infinite query + realtime sync | Proper pagination |
+| InventoryView | `src/components/Inventory/InventoryView.tsx` | Uses `useInventoryPages` + export/import hooks | Pagination + filters via query cache |
 
 **Key Achievements:**
 - **Request Deduplication**: DashboardView and LoadManagementView share load data (1 query instead of 2)
@@ -63,28 +68,18 @@ const queryClient = new QueryClient({
 - **Infinite Scroll**: ActivityLogView properly implements pagination with `useInfiniteQuery`
 - **Realtime Integration**: Activity logs and inventory sync via `useActivityRealtime` and `useInventoryRealtime`
 
-### ⏸️ Pending (Phase 1 - Remaining Component)
+**InventoryView migration notes:**
+- Now uses TanStack Query pagination (`useInventoryPages`) with filter-driven query keys
+- Export/import are handled via query-backed hooks (`useInventoryExport`, `useImportInventorySnapshot`, `useNukeInventory`)
 
-| Component | File | Complexity | Notes |
-|-----------|------|------------|-------|
-| InventoryView | `src/components/Inventory/InventoryView.tsx` | Very High | 10+ features, batched fetching, complex filters. Deferred for later. |
-
-**Why InventoryView was deferred:**
-- 8 useEffect hooks with complex dependencies
-- Batched pagination fetching (1000 items at a time)
-- Multiple filter states (type, brand, search, sort)
-- Export/import functionality
-- URL state synchronization
-- Should be migrated after Phase 2 patterns are established
-
-### ❌ Not Started (Phase 2 - Floor Display: 4 components)
+### ✅ / ⏳ Phase 2 - Floor Display
 
 | Component | File | Priority | Estimated Hooks Needed |
 |-----------|------|----------|------------------------|
-| AsisOverviewWidget | `src/components/FloorDisplay/AsisOverviewWidget.tsx` | Medium | `useLoads`, `useInventoryRealtime` |
-| AsisLoadsWidget | `src/components/FloorDisplay/AsisLoadsWidget.tsx` | Medium | `useLoads` with filters |
-| DisplayManager | `src/components/FloorDisplay/DisplayManager.tsx` | Low | New `useDisplays` hook |
-| FloorDisplayView | `src/components/FloorDisplay/FloorDisplayView.tsx` | Medium | Integration test |
+| AsisLoadsWidget | `src/components/FloorDisplay/widgets/AsisLoadsWidget.tsx` | Medium | `useLoads` with filters (done) |
+| AsisOverviewWidget | `src/components/FloorDisplay/widgets/AsisOverviewWidget.tsx` | Medium | Uses inline `useQuery`; could move to `useLoads`/`useInventory` hook |
+| DisplayManager | `src/components/FloorDisplay/DisplayManager.tsx` | Low | Still manual state; needs `useDisplays` hook |
+| FloorDisplayView | `src/components/FloorDisplay/FloorDisplayView.tsx` | Medium | Still manual state + Supabase fetch |
 
 ### ✅ Completed (Phase 3 - Map Component)
 
@@ -92,15 +87,20 @@ const queryClient = new QueryClient({
 |-----------|------|---------|----------|
 | MapView | `src/components/Map/MapView.tsx` | Uses `useProductLocations` + `useGenesisPoint` | Parallel queries, automatic caching |
 
-### ❌ Not Started (Phase 3 - Remaining: 5 components)
+### ✅ Completed (Phase 3 - Other Components)
+
+| Component | File | Changes | Benefits |
+|-----------|------|---------|----------|
+| PartsTrackingDialog | `src/components/Inventory/PartsTrackingDialog.tsx` | Uses `useAvailablePartsToTrack` + `useAddTrackedPart` | Debounced search + cached results |
+| SettingsView | `src/components/Settings/SettingsView.tsx` | Uses `useSettings` hooks | Shared cache for admin data |
+| ProductEnrichment | `src/components/Products/ProductEnrichment.tsx` | Uses `useProductSearch` + `useUpsertProduct` | Debounced search + cache invalidation |
+
+### ❌ Not Started (Phase 3 - Remaining: 2 components)
 
 | Component | File | Priority | Estimated Hooks Needed |
 |-----------|------|----------|------------------------|
-| PartsTrackingDialog | `src/components/Inventory/PartsTrackingDialog.tsx` | High | `useProducts` with debounced search |
-| ProductEnrichment | `src/components/Products/ProductEnrichment.tsx` | Medium | `useProducts` search |
 | CreateSessionView | `src/components/Session/CreateSessionView.tsx` | Medium | New `useSessions` hook |
 | ScanningSessionView | `src/components/Session/ScanningSessionView.tsx` | Medium | `useSessionDetail` hook |
-| SettingsView | `src/components/Settings/SettingsView.tsx` | Low | New `useSettings` hook |
 
 ## Migration Patterns
 
@@ -558,23 +558,18 @@ export function useSessionDetail(sessionId: string) {
 ### 2. Migrate Floor Display Components (Phase 2)
 
 **Priority order:**
-1. AsisOverviewWidget - Uses existing `useLoads` hook
-2. AsisLoadsWidget - Uses existing `useLoads` with filters
-3. DisplayManager - Needs new `useDisplays` hook
-4. FloorDisplayView - Integration test after others
+1. AsisOverviewWidget - Move inline `useQuery` to a dedicated hook or reuse `useLoads`
+2. DisplayManager - Needs new `useDisplays` hook
+3. FloorDisplayView - Replace manual Supabase fetch with query hook
 
 ### 3. Migrate Secondary Components (Phase 3)
 
 **Priority order:**
-1. PartsTrackingDialog - High value (debounced search with `useProductSearch`)
-2. ProductEnrichment - Medium value
-3. CreateSessionView + ScanningSessionView - Related, migrate together
-4. SettingsView - Low priority
-5. MapView - Low priority
+1. CreateSessionView + ScanningSessionView - Related, migrate together
 
-### 4. Optimize InventoryView (Deferred Phase 1 Component)
+### 4. Optimize InventoryView (Post-migration cleanup)
 
-**Recommended approach:**
+**Recommended approach (if needed):**
 1. Extract filter logic to custom hook `useInventoryFilters`
 2. Create `useInventoryItems` hook with filter params
 3. Replace batched fetching with TanStack Query's built-in pagination

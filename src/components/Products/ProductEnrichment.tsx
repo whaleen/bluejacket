@@ -14,34 +14,13 @@ import {
   SelectValue
 } from '@/components/ui/select';
 import { Loader2, Search, Plus, ExternalLink } from 'lucide-react';
-import supabase from '@/lib/supabase';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { decodeHTMLEntities } from '@/lib/htmlUtils';
 import { toast } from 'sonner';
 import { PageContainer } from '@/components/Layout/PageContainer';
+import { useProductSearch, useUpsertProduct, type ProductRecord } from '@/hooks/queries/useProducts';
 
-interface ProductData {
-  id?: string;
-  model: string;
-  product_type: string;
-  brand?: string;
-  description?: string;
-  dimensions?: {
-    width?: number;
-    height?: number;
-    depth?: number;
-  };
-  image_url?: string;
-  product_url?: string;
-  price?: number;
-  msrp?: number;
-  color?: string;
-  capacity?: string;
-  availability?: string;
-  commercial_category?: string;
-  product_category?: string;
-  is_part?: boolean;
-}
+type ProductData = ProductRecord;
 
 interface ProductEnrichmentProps {
   onMenuClick?: () => void;
@@ -49,45 +28,28 @@ interface ProductEnrichmentProps {
 
 export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<ProductData[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [productData, setProductData] = useState<ProductData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const productSearch = useProductSearch(debouncedSearch, !editMode && debouncedSearch.length > 0);
+  const searchResults = productSearch.data ?? [];
+  const searchLoading = productSearch.isLoading;
+  const searchError = productSearch.error instanceof Error ? productSearch.error.message : null;
+  const saveMutation = useUpsertProduct();
+  const saving = saveMutation.isPending;
 
   // Live search effect with debouncing
   useEffect(() => {
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
-      setLoading(false);
+    const trimmed = searchTerm.trim();
+    if (!trimmed) {
+      setDebouncedSearch('');
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    const timeoutId = setTimeout(async () => {
-      try {
-        const { data, error: searchError } = await supabase
-          .from('products')
-          .select('*')
-          .ilike('model', `%${searchTerm.trim()}%`)
-          .limit(20)
-          .order('model');
-
-        if (searchError) {
-          setError(`Search error: ${searchError.message}`);
-          setSearchResults([]);
-        } else {
-          setSearchResults(data || []);
-        }
-      } catch (err) {
-        setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        setSearchResults([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300); // 300ms debounce
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearch(trimmed);
+    }, 300);
 
     return () => clearTimeout(timeoutId);
   }, [searchTerm]);
@@ -95,8 +57,8 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
   const handleSelectProduct = (product: ProductData) => {
     setProductData(product);
     setEditMode(true);
-    setSearchResults([]);
     setSearchTerm('');
+    setError(null);
   };
 
   const handleCreateNew = () => {
@@ -108,47 +70,29 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
       is_part: false
     });
     setEditMode(true);
-    setSearchResults([]);
+    setError(null);
   };
 
   // Save product to database
   const handleSave = async () => {
-    if (!productData || !productData.product_type) {
-      setError('Product type is required');
+    const trimmedModel = productData?.model.trim() ?? '';
+    if (!productData || !productData.product_type || !trimmedModel) {
+      setError('Model and product type are required');
       return;
     }
-
-    setLoading(true);
     setError(null);
 
     try {
-      const { error: saveError } = await supabase
-        .from('products')
-        .upsert({
-          model: productData.model,
-          product_type: productData.product_type,
-          brand: productData.brand || 'GE',
-          description: productData.description || null,
-          dimensions: productData.dimensions || null,
-          product_category: productData.product_category || null,
-          is_part: productData.is_part ?? false
-        }, {
-          onConflict: 'model'
-        });
-
-      if (saveError) {
-        setError(`Failed to save: ${saveError.message}`);
-      } else {
-        setError(null);
-        toast.success('Product saved successfully.');
-        setSearchTerm('');
-        setProductData(null);
-        setEditMode(false);
-      }
+      await saveMutation.mutateAsync({
+        ...productData,
+        model: trimmedModel,
+      });
+      toast.success('Product saved successfully.');
+      setSearchTerm('');
+      setProductData(null);
+      setEditMode(false);
     } catch (err) {
-      setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
+      setError(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -178,21 +122,21 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
             </div>
           </div>
 
-          {error && (
+          {(error || (searchTerm.trim() && searchError)) && (
             <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{error ?? `Search error: ${searchError}`}</AlertDescription>
             </Alert>
           )}
 
           {/* Loading State */}
-          {loading && searchTerm.trim() && (
+          {searchLoading && searchTerm.trim() && (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           )}
 
           {/* Search Results */}
-          {!loading && searchTerm.trim() && searchResults.length > 0 && (
+          {!searchLoading && searchTerm.trim() && searchResults.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-sm text-muted-foreground">
@@ -305,7 +249,7 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
           )}
 
           {/* No Results */}
-          {!loading && searchTerm.trim() && searchResults.length === 0 && (
+          {!searchLoading && searchTerm.trim() && searchResults.length === 0 && (
             <div className="py-8 text-center space-y-4">
               <p className="text-muted-foreground">No products found matching "{searchTerm}"</p>
               <Button onClick={handleCreateNew}>
@@ -475,8 +419,8 @@ export function ProductEnrichment({ onMenuClick }: ProductEnrichmentProps) {
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={loading || !productData.product_type}>
-              {loading ? (
+            <Button onClick={handleSave} disabled={saving || !productData.product_type}>
+              {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Saving...
