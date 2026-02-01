@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ComponentProps } from "react"
 import type { ComponentType } from "react"
 import {
   Building2,
+  Bot,
   ClipboardList,
   Database,
   History,
@@ -71,6 +72,13 @@ const baseNavSections: NavSection[] = [
         view: "dashboard",
         applyParams: clearPartsParams,
         isActive: (currentView) => currentView === "dashboard",
+      },
+      {
+        label: "Agent",
+        icon: Bot,
+        view: "agent",
+        applyParams: clearPartsParams,
+        isActive: (currentView) => currentView === "agent",
       },
       {
         label: "Activity Log",

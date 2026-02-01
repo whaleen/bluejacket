@@ -29,6 +29,7 @@ const ResetPasswordView = lazy(() => import("@/components/Auth/ResetPasswordView
 const UpdatePasswordView = lazy(() => import("@/components/Auth/UpdatePasswordView").then(m => ({ default: m.UpdatePasswordView })));
 const ActivityLogView = lazy(() => import("@/components/Activity/ActivityLogView").then(m => ({ default: m.ActivityLogView })));
 const MapView = lazy(() => import("@/components/Map/MapView").then(m => ({ default: m.MapView })));
+const AgentView = lazy(() => import("@/components/Agent/AgentView").then(m => ({ default: m.AgentView })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -306,6 +307,9 @@ function App() {
                     {currentView === "map" && (
                       <MapView />
                     )}
+                    {currentView === "agent" && (
+                      <AgentView />
+                    )}
                     {currentView === "create-session" && (
                       <CreateSessionView
                         onViewChange={handleViewChange}
@@ -375,6 +379,9 @@ function App() {
                     )}
                     {currentView === "map" && (
                       <MapView />
+                    )}
+                    {currentView === "agent" && (
+                      <AgentView />
                     )}
                     {currentView === "create-session" && (
                       <CreateSessionView

@@ -1,0 +1,313 @@
+import { useEffect, useState } from 'react';
+import { AppHeader } from '@/components/Navigation/AppHeader';
+import { PageContainer } from '@/components/Layout/PageContainer';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Check, ChevronDown } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
+import type { AgentProvider } from '@/lib/agent/client';
+import { useAgentKeys, useUpsertAgentKey } from '@/hooks/queries/useAgentKeys';
+import { AssistantRuntimeProvider, useLocalRuntime } from '@assistant-ui/react';
+import { Thread } from '@assistant-ui/react';
+import { makeMarkdownText } from '@assistant-ui/react-markdown';
+import { useAgentRuntime } from '@/lib/agent/runtime';
+
+const providerLabel: Record<AgentProvider, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  groq: 'Groq',
+  gemini: 'Google Gemini',
+};
+
+const defaultModels: Record<AgentProvider, string> = {
+  openai: 'gpt-4o-mini',
+  anthropic: 'claude-3-5-sonnet-20241022',
+  groq: 'llama-3.3-70b-versatile',
+  gemini: 'gemini-1.5-flash',
+};
+
+type ChatMessage = AgentMessage & {
+  citations?: Array<{ path: string; section: string }>;
+};
+
+export function AgentView({ onMenuClick }: { onMenuClick?: () => void }) {
+  const isMobile = useIsMobile();
+  const agentKeysQuery = useAgentKeys();
+  const upsertKeyMutation = useUpsertAgentKey();
+
+  const [provider, setProvider] = useState<AgentProvider>('groq');
+  const [model, setModel] = useState('');
+  const [showKeyInstructions, setShowKeyInstructions] = useState(false);
+
+  // Local state for key inputs (before saving to DB)
+  const [openaiKeyInput, setOpenaiKeyInput] = useState('');
+  const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
+  const [groqKeyInput, setGroqKeyInput] = useState('');
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+
+  // Load keys from database into input fields
+  useEffect(() => {
+    if (agentKeysQuery.data) {
+      const keys = agentKeysQuery.data;
+      keys.forEach((key) => {
+        if (key.provider === 'openai') setOpenaiKeyInput(key.api_key);
+        if (key.provider === 'anthropic') setAnthropicKeyInput(key.api_key);
+        if (key.provider === 'groq') setGroqKeyInput(key.api_key);
+        if (key.provider === 'gemini') setGeminiKeyInput(key.api_key);
+      });
+    }
+  }, [agentKeysQuery.data]);
+
+  // Auto-save key when user stops typing (debounced)
+  const handleKeyChange = (provider: AgentProvider, value: string) => {
+    // Update local state immediately
+    if (provider === 'openai') setOpenaiKeyInput(value);
+    else if (provider === 'anthropic') setAnthropicKeyInput(value);
+    else if (provider === 'groq') setGroqKeyInput(value);
+    else setGeminiKeyInput(value);
+
+    // Save to database if not empty
+    if (value.trim()) {
+      upsertKeyMutation.mutate({ provider, apiKey: value });
+    }
+  };
+
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  const activeKey =
+    provider === 'openai' ? openaiKeyInput :
+    provider === 'anthropic' ? anthropicKeyInput :
+    provider === 'groq' ? groqKeyInput :
+    geminiKeyInput;
+  const resolvedModel = model.trim() || defaultModels[provider];
+  const canSend = !isMobile && inputValue.trim() && activeKey.trim() && !isSending;
+
+  const handleSend = async () => {
+    const query = inputValue.trim();
+    if (!query || !activeKey.trim()) return;
+
+    const nextMessages: ChatMessage[] = [...messages, { role: 'user', content: query }];
+    setMessages(nextMessages);
+    setInputValue('');
+    setIsSending(true);
+    setError(null);
+
+    try {
+      const context = searchDocChunks(query, 6);
+      const response = await createAgentReply({
+        provider,
+        apiKey: activeKey.trim(),
+        model: resolvedModel,
+        messages: nextMessages,
+        context,
+      });
+      const citations = response.citations.map((chunk) => ({
+        path: chunk.path,
+        section: chunk.section,
+      }));
+      setMessages((prev) => [...prev, { role: 'assistant', content: response.content, citations }]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Agent request failed.';
+      setError(message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (canSend) handleSend();
+    }
+  };
+
+  const assistantIntro = useMemo(() => {
+    return 'Ask about workflows, map usage, scanning sessions, or GE DMS navigation.';
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-background">
+      {!isMobile && <AppHeader title="Agent" onMenuClick={onMenuClick} />}
+      <PageContainer className="py-6 pb-24">
+        <div className="max-w-3xl mx-auto space-y-6">
+          <Card className="p-6 space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">Agent Setup</h2>
+              <p className="text-sm text-muted-foreground">
+                Bring your own API key. Keys are stored locally in your browser.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Provider</Label>
+                <Select value={provider} onValueChange={(value) => setProvider(value as AgentProvider)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="groq">{providerLabel.groq} (FREE)</SelectItem>
+                    <SelectItem value="gemini">{providerLabel.gemini} (FREE)</SelectItem>
+                    <SelectItem value="openai">{providerLabel.openai}</SelectItem>
+                    <SelectItem value="anthropic">{providerLabel.anthropic}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Model (optional)</Label>
+                <Input
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                  placeholder={defaultModels[provider]}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label>{providerLabel[provider]} API Key</Label>
+                {upsertKeyMutation.isPending && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span>Saving...</span>
+                  </div>
+                )}
+                {upsertKeyMutation.isSuccess && !upsertKeyMutation.isPending && (
+                  <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-500">
+                    <Check className="h-3 w-3" />
+                    <span>Saved</span>
+                  </div>
+                )}
+              </div>
+              <Input
+                type="password"
+                value={
+                  provider === 'openai' ? openaiKeyInput :
+                  provider === 'anthropic' ? anthropicKeyInput :
+                  provider === 'groq' ? groqKeyInput :
+                  geminiKeyInput
+                }
+                onChange={(event) => handleKeyChange(provider, event.target.value)}
+                placeholder={
+                  provider === 'openai' ? 'sk-...' :
+                  provider === 'anthropic' ? 'sk-ant-...' :
+                  provider === 'groq' ? 'gsk_...' :
+                  'AIza...'
+                }
+              />
+            </div>
+            <Collapsible open={showKeyInstructions} onOpenChange={setShowKeyInstructions}>
+              <CollapsibleTrigger className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronDown className={`h-3 w-3 transition-transform ${showKeyInstructions ? 'rotate-180' : ''}`} />
+                How to get API keys
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-3 space-y-3 text-xs text-muted-foreground">
+                <div className="space-y-1">
+                  <div className="font-semibold text-foreground">Groq (FREE - Recommended)</div>
+                  <div>1. Visit <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">console.groq.com</a></div>
+                  <div>2. Sign up / log in</div>
+                  <div>3. Click "API Keys" → "Create API Key"</div>
+                  <div>4. Copy key (starts with gsk_)</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="font-semibold text-foreground">Google Gemini (FREE)</div>
+                  <div>1. Visit <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">aistudio.google.com/apikey</a></div>
+                  <div>2. Sign in with Google</div>
+                  <div>3. Click "Create API Key"</div>
+                  <div>4. Copy key (starts with AIza)</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="font-semibold text-foreground">OpenAI</div>
+                  <div>1. Visit <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">platform.openai.com/api-keys</a></div>
+                  <div>2. Sign up / log in</div>
+                  <div>3. Click "Create new secret key"</div>
+                  <div>4. Copy key (starts with sk-)</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="font-semibold text-foreground">Anthropic (Claude)</div>
+                  <div>1. Visit <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">console.anthropic.com</a></div>
+                  <div>2. Sign up / log in ($5 free credits)</div>
+                  <div>3. Click "API Keys" → "Create Key"</div>
+                  <div>4. Copy key (starts with sk-ant-)</div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </Card>
+
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Chat</h2>
+                <p className="text-sm text-muted-foreground">{assistantIntro}</p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setMessages([])}
+                disabled={messages.length === 0 || isSending}
+              >
+                Clear
+              </Button>
+            </div>
+
+            {isMobile && (
+              <div className="rounded-lg border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground">
+                Agent chat is designed for desktop use.
+              </div>
+            )}
+
+            <div
+              ref={listRef}
+              className="space-y-4 max-h-[60vh] overflow-y-auto pr-2"
+            >
+              {messages.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border/70 p-6 text-sm text-muted-foreground">
+                  Ask how to use Warehouse, the scanner, or GE DMS pages.
+                </div>
+              )}
+              {messages.map((message, index) => (
+                <div key={`${message.role}-${index}`} className="space-y-2">
+                  <div className={message.role === 'user' ? 'text-sm font-semibold' : 'text-sm font-semibold text-primary'}>
+                    {message.role === 'user' ? 'You' : 'Agent'}
+                  </div>
+                  <div className="rounded-lg border border-border/60 bg-background/60 p-4 text-sm whitespace-pre-line">
+                    {message.content}
+                  </div>
+                  {message.role === 'assistant' && message.citations && message.citations.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {message.citations.map((citation) => (
+                        <Badge key={`${citation.path}-${citation.section}`} variant="outline">
+                          {citation.path}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {error && (
+              <div className="text-sm text-destructive">{error}</div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <Input
+                value={inputValue}
+                onChange={(event) => setInputValue(event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about scanning sessions, map markers, or GE DMS pages..."
+                disabled={isSending || isMobile}
+                className="h-12"
+              />
+              <Button onClick={handleSend} disabled={!canSend} className="h-12 px-6">
+                {isSending ? 'Sending...' : 'Send'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </PageContainer>
+    </div>
+  );
+}
