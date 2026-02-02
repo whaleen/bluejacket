@@ -8,11 +8,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Map as MapComponent, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, type MapRef } from '@/components/ui/map';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Globe, Package, Pencil, ScanLine, Trash2, X, Layers, ClipboardList, Loader2 } from 'lucide-react';
+import { Globe, Package, Pencil, ScanLine, Trash2, X, Layers, Zap, Map as MapIcon } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import { useDeleteProductLocation, useClearAllScans, useDeleteSessionScans } from '@/hooks/queries/useMap';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
@@ -23,7 +23,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { feedbackScanDetected, feedbackSuccess, feedbackError } from '@/lib/feedback';
-import { MinimalScanOverlay } from '@/components/Scanner/MinimalScanOverlay';
+import { MinimalScanOverlay, type SessionOption } from '@/components/Scanner/MinimalScanOverlay';
 import { BarcodeScanner } from '@/components/Scanner/BarcodeScanner';
 import type { ProductLocationForMap } from '@/types/map';
 import { blankMapStyle } from './BlankMapStyle';
@@ -51,7 +51,10 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const { locationId } = getActiveLocationContext();
   const userDisplayName = user?.username ?? user?.email ?? undefined;
   const sessionSummariesQuery = useSessionSummaries();
-  const allSessions = sessionSummariesQuery.data?.filter(s => s.status === 'active') ?? [];
+  const allSessions = useMemo(
+    () => sessionSummariesQuery.data?.filter(s => s.status === 'active') ?? [],
+    [sessionSummariesQuery.data]
+  );
 
   const [mapInstance, setMapInstance] = useState<MapRef | null>(null);
   const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set());
@@ -67,7 +70,8 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   });
   const [scanOverlayOpen, setScanOverlayOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [inventoryDrawerOpen, setInventoryDrawerOpen] = useState(false);
+  const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanAlert, setScanAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -131,6 +135,10 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       return !hiddenSessions.has(sessionId);
     });
   }, [validLocations, hiddenSessions]);
+
+  const totalScanCount = validLocations.length;
+  const visibleScanCount = visibleLocations.length;
+  const hiddenScanCount = Math.max(0, totalScanCount - visibleScanCount);
 
   // Get current GPS position
   useEffect(() => {
@@ -270,39 +278,27 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   };
 
   const handleSessionSelect = (sessionId: string) => {
-    const session = allSessions.find(s => s.id === sessionId);
-    const isSpecialSession = session?.name === '🧪 Ad-hoc Scans' || session?.name === '🗺️ Fog of War';
-
-    if (isSpecialSession) {
-      // Special sessions: set as active for map scanning
-      setActiveSessionId(sessionId);
-      setSessionsOpen(false);
-    } else {
-      // Regular sessions: navigate to session view
-      setSessionsOpen(false);
-      window.location.hash = `#session/${sessionId}`;
-    }
+    // All sessions can be set as active for map scanning
+    setActiveSessionId(sessionId);
   };
 
-  const handleActivateAdHoc = async () => {
+  const handleActivateAdHoc = useCallback(async () => {
     const { sessionId, error } = await getOrCreateAdHocSession();
     if (sessionId) {
       setActiveSessionId(sessionId);
-      setSessionsOpen(false);
     } else {
       console.error('Failed to create ad-hoc session:', error);
     }
-  };
+  }, []);
 
-  const handleActivateFogOfWar = async () => {
+  const handleActivateFogOfWar = useCallback(async () => {
     const { sessionId, error } = await getOrCreateFogOfWarSession();
     if (sessionId) {
       setActiveSessionId(sessionId);
-      setSessionsOpen(false);
     } else {
       console.error('Failed to create fog-of-war session:', error);
     }
-  };
+  }, []);
 
   const toggleSessionVisibility = (sessionId: string) => {
     setHiddenSessions(prev => {
@@ -315,6 +311,13 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       return next;
     });
   };
+
+  // Auto-activate Fog of War if no session is active
+  useEffect(() => {
+    if (!activeSessionId && !sessionSummariesQuery.isLoading) {
+      handleActivateFogOfWar();
+    }
+  }, [activeSessionId, sessionSummariesQuery.isLoading, handleActivateFogOfWar]);
 
   const sessionIds = useMemo(
     () =>
@@ -404,6 +407,117 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     return result;
   }, [validLocations, sessionMetadata, loadMetadata]);
 
+  // Build session options for scanner overlay
+  const sessionOptions = useMemo<SessionOption[]>(() => {
+    const options: SessionOption[] = [];
+
+    // Special sessions
+    options.push({
+      id: 'adhoc',
+      name: 'Ad-hoc Scans',
+      icon: Zap,
+      isActive: activeSession?.name === '🧪 Ad-hoc Scans',
+      isSpecial: true,
+      onClick: handleActivateAdHoc,
+    });
+    options.push({
+      id: 'fogofwar',
+      name: 'Fog of War',
+      icon: MapIcon,
+      isActive: activeSession?.name === '🗺️ Fog of War',
+      isSpecial: true,
+      onClick: handleActivateFogOfWar,
+    });
+
+    // Regular sessions
+    const regularSessions = allSessions.filter(
+      s => s.name !== '🧪 Ad-hoc Scans' && s.name !== '🗺️ Fog of War'
+    );
+    regularSessions.forEach(session => {
+      // ASIS sessions: show friendly name, color, and total only
+      if (session.inventoryType === 'ASIS' && session.subInventory) {
+        const load = loadMetadata.get(session.subInventory);
+        const friendlyName = load?.friendly_name || session.subInventory;
+        const color = load?.primary_color || '#94a3b8';
+        const csoLast4 = load?.ge_cso ? load.ge_cso.slice(-4) : null;
+
+        const details = csoLast4
+          ? `${session.totalItems} items • [${csoLast4}]`
+          : `${session.totalItems} items`;
+
+        options.push({
+          id: session.id,
+          name: friendlyName,
+          isActive: session.id === activeSessionId,
+          isSpecial: false,
+          color: color,
+          showAsBox: true,
+          details: details,
+          onClick: () => handleSessionSelect(session.id),
+        });
+      } else if (session.inventoryType === 'FG') {
+        // FG sessions: show in box without color
+        options.push({
+          id: session.id,
+          name: session.subInventory || 'FG',
+          isActive: session.id === activeSessionId,
+          isSpecial: false,
+          showAsBox: true,
+          details: `${session.totalItems} items`,
+          onClick: () => handleSessionSelect(session.id),
+        });
+      } else {
+        // Other sessions: show full details
+        options.push({
+          id: session.id,
+          name: session.name,
+          isActive: session.id === activeSessionId,
+          isSpecial: false,
+          details: `${session.inventoryType} • ${session.subInventory || 'All'} • ${session.scannedCount}/${session.totalItems}`,
+          onClick: () => handleSessionSelect(session.id),
+        });
+      }
+    });
+
+    return options;
+  }, [activeSession, activeSessionId, allSessions, handleActivateAdHoc, handleActivateFogOfWar, loadMetadata]);
+
+  // Get display name and color for active session
+  const activeSessionDisplay = useMemo(() => {
+    if (!activeSession) return { displayName: undefined, color: undefined };
+
+    // ASIS sessions: use friendly name and color from load metadata
+    if (activeSession.inventoryType === 'ASIS' && activeSession.subInventory) {
+      const load = loadMetadata.get(activeSession.subInventory);
+      const friendlyName = load?.friendly_name || activeSession.subInventory;
+
+      return {
+        displayName: friendlyName,
+        color: load?.primary_color || '#94a3b8',
+      };
+    }
+
+    // Special sessions: strip emoji from name
+    if (activeSession.name === '🧪 Ad-hoc Scans') {
+      return {
+        displayName: 'Ad-hoc Scans',
+        color: undefined,
+      };
+    }
+    if (activeSession.name === '🗺️ Fog of War') {
+      return {
+        displayName: 'Fog of War',
+        color: undefined,
+      };
+    }
+
+    // Other sessions: use session name, no color
+    return {
+      displayName: activeSession.name,
+      color: undefined,
+    };
+  }, [activeSession, loadMetadata]);
+
   const mapStyles = useMemo(
     () => ({
       light: blankMapStyle(false),
@@ -468,9 +582,9 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     setMapInstance(instance);
   }, []);
 
-  const handleClearAllScans = () => {
-    if (!confirm('Clear all GPS scans from the map? This cannot be undone.')) return;
-    clearAllScans.mutate();
+  const handleRequestClearAllScans = () => {
+    if (clearAllScans.isPending || totalScanCount === 0) return;
+    setClearAllConfirmOpen(true);
   };
 
   useEffect(() => {
@@ -527,7 +641,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         styles={showWorldMap ? undefined : mapStyles}
       >
         <MapControls
-          position="top-right"
+          position="top-left"
           showZoom={!isMobile}
           showCompass
           showLocate
@@ -663,135 +777,154 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         )}
       </MapComponent>
 
-      {/* Session name - top center (when scanning) */}
-      {scanOverlayOpen && activeSession && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2">
-          <div className="bg-background/95 backdrop-blur-sm rounded-lg shadow-lg border px-4 py-2">
-            <div className="text-sm font-semibold text-center">
-              {activeSession.name}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Inventory button with dropdown menu */}
+      {/* Inventory button */}
       <div className="absolute bottom-10 left-4">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" className="h-14 gap-2 shadow-lg min-w-[140px]">
-              <Layers className="h-5 w-5" />
-              <div className="flex flex-col items-start leading-tight">
-                <span className="text-xs opacity-90">Inventory</span>
-                <span className="text-lg font-bold">{visibleLocations.length}</span>
-              </div>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-72 max-h-[60vh] overflow-y-auto">
-            {/* Session legend */}
-            {sessionGroups.length > 0 && (
-              <div className="p-2 space-y-1">
-                <div className="text-xs text-muted-foreground font-medium px-2">Sessions (tap to toggle)</div>
-                {sessionGroups.map((group) => {
-                  const isHidden = hiddenSessions.has(group.sessionId);
-                  return (
-                    <div key={group.sessionId} className="flex items-center gap-2 group">
-                      <button
-                        type="button"
-                        className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-1.5"
-                        onClick={() => toggleSessionVisibility(group.sessionId)}
-                      >
-                        <div
-                          className="size-3 rounded-sm shrink-0"
-                          style={{
-                            backgroundColor: group.color,
-                            opacity: isHidden ? 0.3 : 1
-                          }}
-                        />
-                        <span className={`truncate flex-1 text-left text-xs ${isHidden ? 'opacity-40 line-through' : ''}`}>
-                          {group.name}
-                        </span>
-                        <span className={`text-muted-foreground shrink-0 text-xs ${isHidden ? 'opacity-40' : ''}`}>
-                          ({group.count})
-                        </span>
-                      </button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`Delete ${group.count} scans from "${group.name}"?`)) {
-                            deleteSessionScans.mutate(group.sessionId);
-                          }
-                        }}
-                        disabled={deleteSessionScans.isPending}
-                        aria-label={`Delete session ${group.name}`}
-                      >
-                        {deleteSessionScans.isPending ? (
-                          <Spinner size="sm" />
-                        ) : (
-                          <X className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        <Button
+          type="button"
+          variant="outline"
+          className="h-14 w-14 p-0 shadow-lg"
+          onClick={() => setInventoryDrawerOpen(true)}
+          aria-label="Open inventory"
+        >
+          <Layers className="h-5 w-5" />
+        </Button>
 
-            <div className="border-t p-2 space-y-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-                onClick={() => {
-                  setShowWorldMap((prev) => {
-                    const next = !prev;
-                    if (typeof window !== 'undefined') {
-                      window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
-                    }
-                    return next;
-                  });
-                }}
-              >
-                <Globe className="h-4 w-4" />
-                {showWorldMap ? 'Hide' : 'Show'} World Map
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-2"
-                onClick={handleClearAllScans}
-                disabled={clearAllScans.isPending || validLocations.length === 0}
-              >
-                {clearAllScans.isPending ? (
-                  <Spinner size="sm" />
-                ) : (
-                  <>
-                    <Trash2 className="h-4 w-4" />
-                    Clear All Scans
-                  </>
-                )}
-              </Button>
+        <Drawer open={inventoryDrawerOpen} onOpenChange={setInventoryDrawerOpen} direction="left">
+          <DrawerContent className="h-full">
+            <div className="flex h-full flex-col">
+              <DrawerHeader className="border-b pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <DrawerTitle>Inventory</DrawerTitle>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">Visible {visibleScanCount}</Badge>
+                      <Badge variant="outline">Hidden {hiddenScanCount}</Badge>
+                      <Badge variant="outline">Total {totalScanCount}</Badge>
+                    </div>
+                  </div>
+                  <DrawerClose asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      aria-label="Close inventory"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
+                  </DrawerClose>
+                </div>
+              </DrawerHeader>
+
+              <div className="flex-1 overflow-y-auto px-4 py-3">
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground font-medium">Sessions (tap to toggle)</div>
+
+                    {sessionGroups.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No scans yet.</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {sessionGroups.map((group) => {
+                          const isHidden = hiddenSessions.has(group.sessionId);
+                          return (
+                            <div key={group.sessionId} className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-2"
+                                onClick={() => toggleSessionVisibility(group.sessionId)}
+                              >
+                                <div
+                                  className="size-3 rounded-sm shrink-0"
+                                  style={{
+                                    backgroundColor: group.color,
+                                    opacity: isHidden ? 0.3 : 1,
+                                  }}
+                                />
+                                <span className={`truncate flex-1 text-left text-sm ${isHidden ? 'opacity-40 line-through' : ''}`}>
+                                  {group.name}
+                                </span>
+                                <span className={`text-muted-foreground shrink-0 text-xs tabular-nums ${isHidden ? 'opacity-40' : ''}`}>
+                                  {group.count}
+                                </span>
+                              </button>
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => {
+                                  if (deleteSessionScans.isPending) return;
+                                  if (confirm(`Delete ${group.count} scans from "${group.name}"?`)) {
+                                    deleteSessionScans.mutate(group.sessionId);
+                                  }
+                                }}
+                                disabled={deleteSessionScans.isPending}
+                                aria-label={`Delete session ${group.name}`}
+                              >
+                                {deleteSessionScans.isPending ? (
+                                  <Spinner size="sm" />
+                                ) : (
+                                  <X className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-3 space-y-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      onClick={() => {
+                        setShowWorldMap((prev) => {
+                          const next = !prev;
+                          if (typeof window !== 'undefined') {
+                            window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <Globe className="h-4 w-4" />
+                      {showWorldMap ? 'Hide' : 'Show'} World Map
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      onClick={handleRequestClearAllScans}
+                      disabled={clearAllScans.isPending || totalScanCount === 0}
+                    >
+                      {clearAllScans.isPending ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        <>
+                          <Trash2 className="h-4 w-4" />
+                          Clear All Scans
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </DrawerContent>
+        </Drawer>
       </div>
+
 
       {/* Scanner controls */}
       <div className="absolute bottom-10 right-4 flex gap-2">
-        {/* Sessions button */}
-        <Button
-          variant="outline"
-          className="h-14 gap-2 shadow-lg"
-          onClick={() => setSessionsOpen(true)}
-        >
-          <ClipboardList className="h-5 w-5" />
-        </Button>
-
         {/* Keyboard scan button */}
         <Button
           className="h-14 gap-2 shadow-lg"
@@ -813,6 +946,10 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         }}
         isProcessing={isProcessing}
         alert={scanAlert}
+        activeSessionName={activeSession?.name}
+        activeSessionDisplayName={activeSessionDisplay.displayName}
+        activeSessionColor={activeSessionDisplay.color}
+        sessionOptions={sessionOptions}
       />
 
       {/* Camera scanner */}
@@ -824,83 +961,19 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         />
       )}
 
-      {/* Sessions sheet */}
-      <Sheet open={sessionsOpen} onOpenChange={setSessionsOpen}>
-        <SheetContent side="bottom" className="h-[80vh]">
-          <SheetHeader>
-            <SheetTitle>Sessions</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 space-y-3 overflow-y-auto max-h-[calc(80vh-80px)]">
-            {/* Special sessions - always visible */}
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant={activeSession?.name === '🧪 Ad-hoc Scans' ? 'default' : 'outline'}
-                className="h-20 flex-col gap-1"
-                onClick={handleActivateAdHoc}
-              >
-                <span className="text-2xl">🧪</span>
-                <span className="font-semibold text-xs">Ad-hoc Scans</span>
-              </Button>
-              <Button
-                variant={activeSession?.name === '🗺️ Fog of War' ? 'default' : 'outline'}
-                className="h-20 flex-col gap-1"
-                onClick={handleActivateFogOfWar}
-              >
-                <span className="text-2xl">🗺️</span>
-                <span className="font-semibold text-xs">Fog of War</span>
-              </Button>
-            </div>
-
-            {/* Regular sessions */}
-            {sessionSummariesQuery.isLoading && (
-              <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Loading sessions...
-              </div>
-            )}
-
-            {allSessions.length > 0 && (
-              <>
-                <div className="border-t pt-3">
-                  <div className="text-xs text-muted-foreground font-medium px-2 mb-2">
-                    Scanning Sessions
-                  </div>
-                </div>
-                {allSessions
-                  .filter(s => s.name !== '🧪 Ad-hoc Scans' && s.name !== '🗺️ Fog of War')
-                  .map(session => {
-                    const isActive = session.id === activeSessionId;
-
-                    return (
-                      <Button
-                        key={session.id}
-                        variant={isActive ? 'default' : 'outline'}
-                        className="w-full h-auto py-4 justify-between"
-                        onClick={() => handleSessionSelect(session.id)}
-                      >
-                        <div className="flex flex-col items-start gap-1">
-                          <span className="font-semibold">{session.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {session.inventoryType} • {session.subInventory || 'All'}
-                          </span>
-                        </div>
-                        <Badge variant="outline">
-                          {session.scannedCount} / {session.totalItems}
-                        </Badge>
-                      </Button>
-                    );
-                  })}
-              </>
-            )}
-
-            {allSessions.filter(s => s.name !== '🧪 Ad-hoc Scans' && s.name !== '🗺️ Fog of War').length === 0 && !sessionSummariesQuery.isLoading && (
-              <div className="text-center py-4 text-sm text-muted-foreground border-t">
-                No scanning sessions
-              </div>
-            )}
-          </div>
-        </SheetContent>
-      </Sheet>
+      <ConfirmDialog
+        open={clearAllConfirmOpen}
+        onOpenChange={setClearAllConfirmOpen}
+        title="Clear all scans?"
+        description="This removes all GPS scans from the map. This cannot be undone."
+        confirmText={clearAllScans.isPending ? 'Clearing...' : 'Clear all'}
+        cancelText="Cancel"
+        destructive
+        onConfirm={() => {
+          if (clearAllScans.isPending) return;
+          clearAllScans.mutate();
+        }}
+      />
     </div>
   );
 }

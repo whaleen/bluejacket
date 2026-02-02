@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'reac
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Loader2, Search, X, Trash2, Printer, ChevronDown, Maximize2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2, Search, X, Trash2, Printer, Maximize2 } from 'lucide-react';
 import { updateLoadMetadata } from '@/lib/loadManager';
 import { useLoadDetail, useLoadConflicts } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -68,7 +69,6 @@ export function LoadDetailPanel({
   const [savingMeta, setSavingMeta] = useState(false);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [savePulse, setSavePulse] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const metaSaveTimeoutRef = useRef<number | null>(null);
   const COLOR_OPTIONS = [
     { label: 'Red', value: '#E53935' },
@@ -85,13 +85,9 @@ export function LoadDetailPanel({
     { label: 'Red-Violet', value: '#D81B60' },
   ];
   const recentWindowSize = 20;
-  const colorLabel = primaryColor
-    ? COLOR_OPTIONS.find((option) => option.value === primaryColor)?.label ?? primaryColor
-    : 'No color';
 
   useEffect(() => {
     setSearchTerm('');
-    setDetailsOpen(false);
   }, [load.inventory_type, load.sub_inventory_name]);
 
   useEffect(() => {
@@ -162,12 +158,6 @@ export function LoadDetailPanel({
     }
   };
 
-  const formatPickupDate = (value: string) => {
-    const [year, month, day] = value.split('-').map(Number);
-    if (!year || !month || !day) return value;
-    return new Date(year, month - 1, day).toLocaleDateString();
-  };
-
   const formatSanityTimestamp = (value?: string | null) => {
     if (!value) return '';
     return new Date(value).toLocaleString(undefined, {
@@ -178,18 +168,8 @@ export function LoadDetailPanel({
     });
   };
 
-  const createdDate = load.created_at ? new Date(load.created_at).toLocaleDateString() : null;
   const displayName = load.friendly_name || load.sub_inventory_name;
-  const normalizedGeStatus = load.ge_source_status?.toLowerCase().trim() ?? '';
-  const isSold = normalizedGeStatus.includes('sold');
   const prepCount = (prepTagged ? 1 : 0) + (prepWrapped ? 1 : 0);
-  const pickupLabel = pickupTba
-    ? 'Pickup: TBA'
-    : pickupDate
-      ? `Pickup: ${formatPickupDate(pickupDate)}`
-      : null;
-  const isReadyForPickup =
-    isSold && prepTagged && prepWrapped && Boolean(pickupDate || pickupTba);
 
   const escapeHtml = (value: string) =>
     value
@@ -510,24 +490,6 @@ export function LoadDetailPanel({
     return result;
   };
 
-  const formatGeSubmitted = (value?: string | null) => {
-    if (!value) return '';
-    const trimmed = value.trim();
-    const date = new Date(trimmed);
-    if (!Number.isNaN(date.getTime())) {
-      return date.toLocaleDateString();
-    }
-    return trimmed;
-  };
-
-  const formatGeScanned = (value?: string | null) => {
-    if (!value) return '';
-    const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
-    if (!match) return value;
-    const [, year, month, day, hour, minute, second] = match;
-    return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`).toLocaleString();
-  };
-
   const isSyntheticSerial = (serial?: string | null) => {
     if (!serial) return false;
     return serial.startsWith('ASIS-NS:') || serial.startsWith('ASIS-INV-NS:');
@@ -790,47 +752,13 @@ export function LoadDetailPanel({
   return (
     <>
       <div className="rounded-lg border bg-background p-4 space-y-4">
+        {/* Simplified Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-semibold">{displayName}</h2>
-              {load.category && <Badge variant="secondary">{load.category}</Badge>}
-              {load.ge_source_status && (
-                <Badge variant="outline">GE: {load.ge_source_status}</Badge>
-              )}
-              {isReadyForPickup && (
-                <Badge className="bg-green-500 text-white">Ready for pickup</Badge>
-              )}
+            <h2 className="text-lg font-semibold">{displayName}</h2>
+            <div className="text-sm text-muted-foreground mt-1">
+              {load.ge_cso ? `CSO ${load.ge_cso}` : `Load # ${load.sub_inventory_name}`}
             </div>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <Badge variant="outline">{load.inventory_type}</Badge>
-              {isSold && <Badge variant="outline">Prep {prepCount}/2</Badge>}
-              {load.ge_submitted_date && (
-                <span className="text-xs text-muted-foreground">GE Submitted {formatGeSubmitted(load.ge_submitted_date)}</span>
-              )}
-              {load.ge_scanned_at && (
-                <span className="text-xs text-muted-foreground">GE Scanned {formatGeScanned(load.ge_scanned_at)}</span>
-              )}
-              {createdDate && (
-                <span className="text-xs text-muted-foreground">Local Created {createdDate}</span>
-              )}
-              {load.ge_cso ? (
-                <span className="text-xs text-muted-foreground">CSO {load.ge_cso}</span>
-              ) : (
-                <span className="text-xs text-muted-foreground">Load # {load.sub_inventory_name}</span>
-              )}
-              {pickupLabel && (
-                <span className="text-xs text-muted-foreground">{pickupLabel}</span>
-              )}
-            </div>
-            {load.ge_cso && (
-              <div className="text-xs text-muted-foreground mt-1">
-                Load # {load.sub_inventory_name}
-              </div>
-            )}
-            {load.notes && (
-              <p className="text-sm text-muted-foreground mt-2">{load.notes}</p>
-            )}
           </div>
           {(onClose || onOpenStandalone) && (
             <div className="flex items-center gap-2">
@@ -860,42 +788,17 @@ export function LoadDetailPanel({
           )}
         </div>
 
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm text-muted-foreground">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Inv Org</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_inv_org || '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Units</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_units ?? '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE CSO</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_cso || '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE CSO Status</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_cso_status || '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Pricing</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_pricing || '—'}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Status</div>
-              <div className="text-sm font-medium text-foreground">{load.ge_source_status || '—'}</div>
-            </div>
-            {load.ge_notes && (
-              <div className="sm:col-span-2 lg:col-span-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground/70">GE Notes</div>
-                <div className="text-sm font-medium text-foreground break-words">{load.ge_notes}</div>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Tabs */}
+        <Tabs defaultValue="progress" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="progress">Work Progress</TabsTrigger>
+            <TabsTrigger value="editor">Load Editor</TabsTrigger>
+          </TabsList>
 
-        <div className="rounded-lg border bg-muted/20 p-3">
+          {/* Work Progress Tab */}
+          <TabsContent value="progress" className="space-y-4 mt-4">
+            {/* Prep Checklist */}
+            <div className="rounded-lg border bg-muted/20 p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
               <p className="text-sm font-medium">Prep checklist</p>
@@ -963,42 +866,135 @@ export function LoadDetailPanel({
             </div>
           </div>
         </div>
-        <div className="rounded-lg border bg-muted/20 p-3 space-y-4">
-          <div className="flex items-start justify-between gap-2">
-            <button
-              type="button"
-              className="flex items-start gap-2 text-left"
-              onClick={() => setDetailsOpen((prev) => !prev)}
-            >
-              <ChevronDown className={`mt-0.5 h-4 w-4 transition-transform ${detailsOpen ? '' : '-rotate-90'}`} />
-              <div>
-                <p className="text-sm font-medium">Load details</p>
-                <p className="text-xs text-muted-foreground">Local metadata you can edit.</p>
-                {!detailsOpen && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Name: {friendlyName.trim() || '—'} • Color: {colorLabel}
-                    {isSalvage ? ' • Salvage' : ''}
-                  </p>
-                )}
-              </div>
-            </button>
-            {detailsOpen && (
-              <Button
-                type="button"
-                size="responsive"
-                variant="outline"
-                onClick={handleSaveMeta}
-                disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
-                className={savePulse ? 'animate-pulse' : undefined}
-              >
-                {savingMeta && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {savingMeta ? 'Saving...' : savePulse && !savingMeta ? 'Saved' : 'Save changes'}
-              </Button>
-            )}
-          </div>
 
-          {detailsOpen && (
-            <>
+            {/* Summary */}
+            <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-2">
+              <div>
+                <div className="text-sm text-muted-foreground">Total Items</div>
+                <div className="text-2xl font-bold">{items.length}</div>
+              </div>
+              <div>
+                <div className="text-sm text-muted-foreground">Product Types</div>
+                <div className="text-sm mt-1">
+                  {Object.entries(productTypeBreakdown).map(([type, count]) => (
+                    <div key={type}>
+                      {type}: {count}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Conflicts */}
+            {conflicts && conflicts.length > 0 && (
+              <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <div className="font-semibold text-destructive">
+                  {conflicts.length} serial conflict{conflicts.length === 1 ? '' : 's'}
+                </div>
+                <p className="text-muted-foreground">
+                  These serials also appear in another load.
+                </p>
+                <div className="mt-2 space-y-1">
+                  {conflicts.slice(0, 6).map(conflict => (
+                    <div key={conflict.id ?? `${conflict.serial}-${conflict.load_number}`}>
+                      <span className="font-medium">{conflict.serial}</span> already in{' '}
+                      <span className="font-medium">{conflict.conflicting_load}</span>
+                    </div>
+                  ))}
+                  {conflicts.length > 6 && (
+                    <div className="text-xs text-muted-foreground">
+                      +{conflicts.length - 6} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Search */}
+            <div className="flex flex-wrap items-center gap-2 border-b pb-3">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search items..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {/* Items list */}
+            <div className="space-y-2">
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="flex items-center justify-center h-64 text-muted-foreground">
+                  No items found
+                </div>
+              ) : (
+                filteredItems.map((item) => {
+                  const syntheticSerial = isSyntheticSerial(item.serial);
+                  const normalizedItem =
+                    item.products?.description
+                      ? {
+                          ...item,
+                          products: {
+                            ...item.products,
+                            description: decodeHTMLEntities(item.products.description)
+                          }
+                        }
+                      : item;
+
+                  const statusValue = item.ge_availability_status?.trim() || '';
+                  const statusBadge = statusValue ? (
+                    <Badge className={getItemStatusColor(statusValue)}>
+                      {statusValue}
+                    </Badge>
+                  ) : null;
+
+                  const badges = (
+                    <>
+                      {statusBadge}
+                      {syntheticSerial && (
+                        <Badge variant="outline">No serial</Badge>
+                      )}
+                    </>
+                  );
+
+                  return (
+                    <InventoryItemCard
+                      key={item.id}
+                      item={normalizedItem}
+                      badges={badges}
+                    />
+                  );
+                })
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Load Editor Tab */}
+          <TabsContent value="editor" className="space-y-4 mt-4">
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">Load metadata</p>
+                  <p className="text-xs text-muted-foreground">Edit load name, color, and category.</p>
+                </div>
+                <Button
+                  type="button"
+                  size="responsive"
+                  variant="outline"
+                  onClick={handleSaveMeta}
+                  disabled={savingMeta || !hasMetaChanges || Boolean(friendlyNameError)}
+                  className={savePulse ? 'animate-pulse' : undefined}
+                >
+                  {savingMeta && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {savingMeta ? 'Saving...' : savePulse && !savingMeta ? 'Saved' : 'Save changes'}
+                </Button>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Friendly name</label>
@@ -1080,9 +1076,9 @@ export function LoadDetailPanel({
               {metaError && (
                 <div className="text-sm text-destructive">{metaError}</div>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
 
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -1103,119 +1099,6 @@ export function LoadDetailPanel({
             <Trash2 className="h-4 w-4" />
             Delete
           </Button>
-        </div>
-
-        {/* Summary */}
-        <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-2">
-          <div>
-            <div className="text-sm text-muted-foreground">Total Items</div>
-            <div className="text-2xl font-bold">{items.length}</div>
-          </div>
-          <div>
-            <div className="text-sm text-muted-foreground">Product Types</div>
-            <div className="text-sm mt-1">
-              {Object.entries(productTypeBreakdown).map(([type, count]) => (
-                <div key={type}>
-                  {type}: {count}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        {conflicts && conflicts.length > 0 && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <div className="font-semibold text-destructive">
-              {conflicts.length} serial conflict{conflicts.length === 1 ? '' : 's'}
-            </div>
-            <p className="text-muted-foreground">
-              These serials also appear in another load.
-            </p>
-            <div className="mt-2 space-y-1">
-              {conflicts.slice(0, 6).map(conflict => (
-                <div key={conflict.id ?? `${conflict.serial}-${conflict.load_number}`}>
-                  <span className="font-medium">{conflict.serial}</span> already in{' '}
-                  <span className="font-medium">{conflict.conflicting_load}</span>
-                </div>
-              ))}
-              {conflicts.length > 6 && (
-                <div className="text-xs text-muted-foreground">
-                  +{conflicts.length - 6} more
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Search and selection */}
-        <div className="flex flex-wrap items-center gap-2 border-b pb-3">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search items..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        {/* Items list */}
-        <div className="space-y-2">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="flex items-center justify-center h-64 text-muted-foreground">
-              No items found
-            </div>
-          ) : (
-            filteredItems.map((item) => {
-              const syntheticSerial = isSyntheticSerial(item.serial);
-              const normalizedItem =
-                item.products?.description
-                  ? {
-                      ...item,
-                      products: {
-                        ...item.products,
-                        description: decodeHTMLEntities(item.products.description)
-                      }
-                    }
-                  : item;
-
-              const statusValue = item.ge_availability_status?.trim() || '';
-              const statusBadge = statusValue ? (
-                <Badge className={getItemStatusColor(statusValue)}>
-                  {statusValue}
-                </Badge>
-              ) : null;
-
-              const badges = (
-                <>
-                  {statusBadge}
-                  {syntheticSerial && (
-                    <Badge variant="outline">No serial</Badge>
-                  )}
-                </>
-              );
-
-              return (
-                <InventoryItemCard
-                  key={item.id}
-                  item={{
-                    ...normalizedItem,
-                    status: undefined,
-                    ge_availability_status: undefined,
-                  }}
-                  showInventoryTypeBadge={false}
-                  showRouteBadge={false}
-                  showProductMeta
-                  showImage={Boolean(normalizedItem.products?.image_url)}
-                  badges={badges}
-                />
-              );
-            })
-          )}
         </div>
       </div>
 

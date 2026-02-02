@@ -35,7 +35,7 @@ export function useSessionMetadata(sessionIds: string[]) {
 export function useLoadMetadata(loadNames: string[]) {
   const { locationId } = getActiveLocationContext();
 
-  return useQuery<Map<string, { friendly_name: string | null; ge_cso: string | null }>>({
+  return useQuery<Map<string, { friendly_name: string | null; ge_cso: string | null; primary_color: string | null }>>({
     queryKey: queryKeys.map.loadMetadata(locationId ?? 'missing', loadNames),
     queryFn: async () => {
       if (!locationId || loadNames.length === 0) {
@@ -44,17 +44,18 @@ export function useLoadMetadata(loadNames: string[]) {
 
       const { data, error } = await supabase
         .from('load_metadata')
-        .select('sub_inventory_name, friendly_name, ge_cso')
+        .select('sub_inventory_name, friendly_name, ge_cso, primary_color')
         .eq('location_id', locationId)
         .in('sub_inventory_name', loadNames);
 
       if (error) throw error;
 
-      const metadata = new Map<string, { friendly_name: string | null; ge_cso: string | null }>();
-      (data ?? []).forEach((load: { sub_inventory_name: string; friendly_name: string | null; ge_cso: string | null }) => {
+      const metadata = new Map<string, { friendly_name: string | null; ge_cso: string | null; primary_color: string | null }>();
+      (data ?? []).forEach((load: { sub_inventory_name: string; friendly_name: string | null; ge_cso: string | null; primary_color: string | null }) => {
         metadata.set(load.sub_inventory_name, {
           friendly_name: load.friendly_name,
           ge_cso: load.ge_cso,
+          primary_color: load.primary_color,
         });
       });
 

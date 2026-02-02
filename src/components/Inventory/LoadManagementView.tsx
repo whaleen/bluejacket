@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Info } from 'lucide-react';
 import { getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
 import { useLoads } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
 import { LoadDetailPanel } from './LoadDetailPanel';
+import { LoadInfoModal } from './LoadInfoModal';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { toast } from 'sonner';
@@ -43,6 +44,8 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const [loadDetailSource, setLoadDetailSource] = useState<'loads' | 'dashboard' | 'external'>('external');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState<LoadMetadata | null>(null);
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoModalLoad, setInfoModalLoad] = useState<LoadWithCount | null>(null);
 
   const fetchLoadCounts = async (baseLoads: LoadMetadata[]) => {
     // Fetch item counts for each load
@@ -204,9 +207,6 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     setLoadPendingDelete(null);
   };
 
-  const getPrepCount = (load: LoadMetadata) =>
-    (load.prep_tagged ? 1 : 0) + (load.prep_wrapped ? 1 : 0);
-
   const isAwayStatus = (status?: string | null) => {
     const normalized = normalizeGeStatus(status);
     return normalized === 'shipped' || normalized === 'delivered';
@@ -218,12 +218,6 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     if (!showAway && isAwayStatus(load.ge_cso_status)) return false;
     return true;
   };
-
-  const isReadyForPickup = (load: LoadMetadata) =>
-    isSoldStatus(load.ge_source_status) &&
-    Boolean(load.prep_tagged) &&
-    Boolean(load.prep_wrapped) &&
-    (Boolean(load.pickup_date) || Boolean(load.pickup_tba));
 
   useEffect(() => {
     if (!showAway && (loadFilter === 'shipped' || loadFilter === 'delivered')) {
@@ -371,133 +365,83 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                       })
                       .map((load) => {
                       const isSold = isSoldStatus(load.ge_source_status);
-                      const prepCount = getPrepCount(load);
-                      const readyForPickup = isReadyForPickup(load);
-                      const pickupLabel = load.pickup_tba
-                        ? 'Pickup: TBA'
-                        : load.pickup_date
-                          ? `Pickup: ${formatPickupDate(load.pickup_date)}`
-                          : '';
                       const csoValue = load.ge_cso?.trim() || '';
-                      const csoHead = csoValue.length > 4 ? csoValue.slice(0, -4) : '';
-                      const csoTail = csoValue.length > 4 ? csoValue.slice(-4) : csoValue;
+                      const csoTail = csoValue.slice(-4) || load.sub_inventory_name.slice(-4);
                       const listTitle = load.friendly_name || load.sub_inventory_name;
-                      const notesValue = load.notes?.trim() ? { label: null, value: load.notes } : null;
+                      const needsWrap = isSold && !load.prep_wrapped;
+                      const needsTag = isSold && !load.prep_tagged;
+                      const needsCheck = load.sanity_check_requested;
+                      const pickupDate = load.pickup_date ? formatPickupDate(load.pickup_date) : null;
 
                       return (
                       <Card
                         key={load.id}
-                        className={`p-4 transition cursor-pointer ${
+                        className={`p-3 transition cursor-pointer ${
                           selectedLoadForDetail?.id === load.id
                             ? 'border-primary/50 bg-primary/5'
-                            : 'hover:bg-accent/30'
+                            : 'hover:bg-accent'
                         }`}
                         onClick={() => handleLoadClick(load)}
                         role="button"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1">
-                            <div className="flex items-start gap-2 flex-wrap">
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  {load.primary_color && (
-                                    <span
-                                      className="h-4 w-4 rounded-sm border border-border/60"
-                                      style={{ backgroundColor: load.primary_color }}
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                  <h3 className="font-semibold">{listTitle}</h3>
-                                </div>
-                                {csoValue && (
-                                  <div className="text-sm font-medium text-foreground">
-                                    <span className="text-muted-foreground">CSO </span>
-                                    {csoHead && <span className="font-light text-muted-foreground">{csoHead}</span>}
-                                    <span className="font-semibold underline decoration-dotted underline-offset-2">
-                                      {csoTail}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <Badge variant="outline">{load.inventory_type}</Badge>
-                              {load.category && (
-                                <Badge variant="secondary">{load.category}</Badge>
-                              )}
-                              {load.ge_source_status && (
-                                <Badge variant="outline">GE: {load.ge_source_status}</Badge>
-                              )}
-                              {isSold && (
-                                <Badge variant="outline">Prep {prepCount}/2</Badge>
-                              )}
-                              {readyForPickup && (
-                                <Badge className="bg-green-500 text-white">Ready for pickup</Badge>
-                              )}
-                              {load.conflict_count > 0 && (
-                                <Badge variant="destructive">
-                                  {load.conflict_count} conflict{load.conflict_count === 1 ? '' : 's'}
-                                </Badge>
+                        <div className="flex items-center gap-3">
+                          {/* Color dot */}
+                          <div
+                            className="h-3 w-3 rounded-full flex-shrink-0"
+                            style={{
+                              backgroundColor: load.primary_color || '#9CA3AF',
+                            }}
+                          />
+
+                          {/* Load info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-base truncate">{listTitle}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {csoValue ? 'CSO' : 'Load'} {csoTail}
+                              {pickupDate && (
+                                <span className="ml-2">· Pickup {pickupDate}</span>
                               )}
                             </div>
-                            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                              <span>{load.item_count} items</span>
-                              <span>Load # {load.sub_inventory_name}</span>
-                              <span>Created {new Date(load.created_at!).toLocaleDateString()}</span>
-                              {pickupLabel && <span>{pickupLabel}</span>}
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                              <div className="flex items-center gap-1">
-                                <span
-                                  className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                                    load.prep_wrapped
-                                      ? 'border-foreground/30 text-foreground'
-                                      : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                                  }`}
-                                >
-                                  {load.prep_wrapped && <Check className="h-2.5 w-2.5" />}
-                                </span>
-                                <span className={load.prep_wrapped ? '' : 'opacity-60'}>Wrapped</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span
-                                  className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                                    load.prep_tagged
-                                      ? 'border-foreground/30 text-foreground'
-                                      : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                                  }`}
-                                >
-                                  {load.prep_tagged && <Check className="h-2.5 w-2.5" />}
-                                </span>
-                                <span className={load.prep_tagged ? '' : 'opacity-60'}>Tagged</span>
-                              </div>
-                              {!load.sanity_check_requested && (
-                                <div className="flex items-center gap-1">
-                                  <span
-                                    className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                                      load.conflict_count === 0
-                                        ? 'border-foreground/30 text-foreground'
-                                        : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                                    }`}
-                                  >
-                                    {load.conflict_count === 0 && <Check className="h-2.5 w-2.5" />}
-                                  </span>
-                                  <span className={load.conflict_count === 0 ? '' : 'opacity-60'}>
-                                    Sanity check
-                                  </span>
-                                </div>
-                              )}
-                          {load.sanity_check_requested && (
-                            <div className="flex items-center gap-1">
-                              <AlertTriangle className="h-3 w-3 text-amber-500" />
-                              <span>Sanity requested</span>
-                            </div>
-                          )}
-                        </div>
-                            {notesValue && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {notesValue.value}
-                              </p>
+                          </div>
+
+                          {/* Action badges */}
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            {needsCheck && (
+                              <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
+                                Check
+                              </Badge>
+                            )}
+                            {needsWrap && (
+                              <Badge variant="secondary" className="bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20">
+                                Wrap
+                              </Badge>
+                            )}
+                            {needsTag && (
+                              <Badge variant="secondary" className="bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20">
+                                Tag
+                              </Badge>
+                            )}
+                            {load.conflict_count > 0 && (
+                              <Badge variant="destructive">
+                                {load.conflict_count}
+                              </Badge>
                             )}
                           </div>
+
+                          {/* Info icon */}
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 flex-shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInfoModalLoad(load);
+                              setInfoModalOpen(true);
+                            }}
+                          >
+                            <Info className="h-4 w-4" />
+                          </Button>
                         </div>
                       </Card>
                     );
@@ -578,6 +522,13 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
         cancelText="Keep Load"
         destructive
         onConfirm={confirmDelete}
+      />
+
+      <LoadInfoModal
+        load={infoModalLoad}
+        open={infoModalOpen}
+        onOpenChange={setInfoModalOpen}
+        itemCount={infoModalLoad?.item_count}
       />
     </>
   );

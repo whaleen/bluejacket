@@ -44,6 +44,7 @@ export const queryKeys = {
       ['map', locationId, 'sessions', sessionIds] as const,
     loadMetadata: (locationId: string, loadNames: string[]) =>
       ['map', locationId, 'loads', loadNames] as const,
+    fogOfWar: (locationId: string) => ['map', locationId, 'fog-of-war'] as const,
   },
   displays: {
     all: (locationId: string) => ['displays', locationId] as const,

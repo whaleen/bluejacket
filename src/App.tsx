@@ -13,6 +13,7 @@ import { PageTransition } from "@/components/ui/page-transition";
 import { OverlayStack } from "@/components/Layout/OverlayStack";
 import { ScannerOverlayProvider } from "@/context/ScannerOverlayContext";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+// import { BreakpointIndicator } from "@/components/Dev/BreakpointIndicator";
 
 // Lazy load heavy components for code splitting
 const LoadManagementView = lazy(() => import("@/components/Inventory/LoadManagementView").then(m => ({ default: m.LoadManagementView })));
@@ -422,6 +423,7 @@ function App() {
       </ThemeProvider>
       </ScannerOverlayProvider>
       <SpeedInsights />
+      
     </QueryClientProvider>
   );
 }

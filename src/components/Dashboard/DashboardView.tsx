@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Package, TruckIcon, PackageOpen, User, ScanBarcode, ArrowRight, Check, AlertTriangle } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Package, TruckIcon, PackageOpen, ScanBarcode, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { useLoads } from '@/hooks/queries/useLoads';
 import { useRecentActivityRealtime } from '@/hooks/queries/useRealtimeSync';
 import { useDashboardInventoryItems, useDashboardLoadConflicts, useRecentActivity } from '@/hooks/queries/useDashboard';
+import { useSessionSummaries } from '@/hooks/queries/useSessions';
+import { useFogOfWar } from '@/hooks/queries/useFogOfWar';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ReorderAlertsCard } from './ReorderAlertsCard';
-import { useAuth } from '@/context/AuthContext';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { getPathForView } from '@/lib/routes';
 import type { AppView } from '@/lib/routes';
@@ -127,8 +129,6 @@ type ActivityLogEntry = {
 };
 
 export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps) {
-  const { user } = useAuth();
-  const userDisplayName = user?.username ?? user?.email ?? "User";
   const isMobile = useIsMobile();
 
   const { data: loadsData, isLoading: loadsLoading } = useLoads();
@@ -136,6 +136,8 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   const inventoryItemsQuery = useDashboardInventoryItems();
   const conflictsQuery = useDashboardLoadConflicts();
   const recentActivityQuery = useRecentActivity(20);
+  const sessionsQuery = useSessionSummaries();
+  const fogOfWarQuery = useFogOfWar();
 
   const [selectedChartType, setSelectedChartType] = useState<'overview' | 'LocalStock' | 'FG' | 'ASIS'>('overview');
   const [selectedDrilldown, setSelectedDrilldown] = useState<string | null>(null);
@@ -194,14 +196,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     onViewChange?.('activity');
   };
 
-  // Mock user - replace with actual auth later
-  const currentUser = {
-    name: 'Josh Vaage',
-    role: 'Warehouse Floor',
-    lastActive: new Date().toLocaleTimeString(),
-  };
-
-
   // useEffect(() => {
   //   const updateLayout = () => {
   //     setIsCompact(window.innerWidth < 640);
@@ -223,10 +217,27 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
       return { stats: EMPTY_STATS, loadDetails: EMPTY_LOAD_DETAILS, asisActionLoads: EMPTY_ASIS_ACTION_LOADS };
     }
 
+    // Count only active items (exclude ASIS items that are "away"/orphaned)
+    const activeItemCount = itemsData.filter(
+      item => !(item.inventory_type === 'ASIS' && item.ge_orphaned === true)
+    ).length;
+
     const newStats: DetailedStats = {
-      ...EMPTY_STATS,
-      totalItems: itemsData.length,
-      loads: { ...EMPTY_STATS.loads, total: loads.length || 0 },
+      totalItems: activeItemCount,
+      localStock: { total: 0, unassigned: 0, staged: 0, inbound: 0, routes: 0 },
+      fg: { total: 0, regular: 0, backhaul: 0 },
+      asis: { total: 0, unassigned: 0, regular: 0, salvage: 0, scrap: 0 },
+      asisLoads: {
+        total: 0,
+        forSale: 0,
+        sold: 0,
+        forSaleNeedsWrap: 0,
+        soldNeedsTag: 0,
+        soldNeedsWrap: 0,
+        soldNeedsBoth: 0,
+        pickupSoonNeedsPrep: 0,
+      },
+      loads: { total: loads.length || 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
     };
 
     const loadCategoryMap = new Map<string, string>();
@@ -253,18 +264,27 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         newStats.fg.total++;
         newStats.fg.backhaul++;
       } else if (item.inventory_type === 'ASIS') {
+        // Skip "away" items (ge_orphaned) - items that were in the warehouse but are no longer here
+        // NOTE: This field should be renamed to 'ge_away' in the future - better semantic meaning
+        // (was at one time in the warehouse, but is no longer. if it should return we have our
+        // track record of it from when it was here last)
+        if (item.ge_orphaned === true) {
+          return;
+        }
+
         newStats.asis.total++;
 
         if (!item.sub_inventory) {
           newStats.asis.unassigned++;
         } else {
           const category = loadCategoryMap.get(item.sub_inventory);
-          if (category === 'Regular') {
-            newStats.asis.regular++;
-          } else if (category === 'Salvage') {
+          if (category === 'Salvage') {
             newStats.asis.salvage++;
           } else if (category === 'Scrap') {
             newStats.asis.scrap++;
+          } else {
+            // Regular = any load that is NOT marked Salvage or Scrap (includes null/undefined category)
+            newStats.asis.regular++;
           }
         }
       }
@@ -314,7 +334,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         const csoStatus = normalizeStatus(load.ge_cso_status);
         const isShippedOrDelivered = csoStatus === 'delivered' || csoStatus === 'shipped';
 
-        if (load.sanity_check_requested && !isShippedOrDelivered) {
+        if (load.sanity_check_requested) {
           nextAsisActions.sanityCheckRequested.push(load as AsisActionLoad);
         }
 
@@ -433,125 +453,132 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     },
   };
 
-  const formatPickupDate = (value?: string | null) => {
+  const formatPickupDate = useCallback((value?: string | null) => {
     if (!value) return '';
     const base = value.slice(0, 10);
     const [year, month, day] = base.split('-').map(Number);
     if (!year || !month || !day) return base;
     return new Date(year, month - 1, day).toLocaleDateString();
-  };
+  }, []);
 
-  const renderLoadChips = (loads: AsisActionLoad[], onSelect: (load: AsisActionLoad) => void) => {
-    if (!loads.length) {
-      return (
-        <div className="text-xs text-muted-foreground">
-          All caught up.
-        </div>
-      );
-    }
+  // Generate action items from various sources
+  const actionItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      type: 'sanity' | 'wrap' | 'tag' | 'pickup' | 'session';
+      priority: number;
+      title: string;
+      subtitle?: string;
+      load?: AsisActionLoad;
+      sessionId?: string;
+      icon: typeof AlertTriangle;
+      color: string;
+    }> = [];
 
-    const sorted = [...loads].sort((a, b) => {
-      const aDate = a.pickup_date ? Date.parse(a.pickup_date) : 0;
-      const bDate = b.pickup_date ? Date.parse(b.pickup_date) : 0;
-      if (aDate && bDate) return aDate - bDate;
-      if (aDate) return -1;
-      if (bDate) return 1;
-      return a.sub_inventory_name.localeCompare(b.sub_inventory_name);
+    // Unfinished scanning sessions for sold/for sale loads (high priority)
+    const sessions = sessionsQuery.data ?? [];
+    const activeSessions = sessions.filter(s => s.status === 'active' || s.status === 'draft');
+    const loadsMap = new Map((loadsData ?? []).map(l => [l.sub_inventory_name, l]));
+
+    activeSessions.forEach((session) => {
+      // Only show sessions for ASIS loads that are for sale or sold
+      if (session.subInventory) {
+        const load = loadsMap.get(session.subInventory);
+        const status = load?.ge_source_status?.toLowerCase().trim();
+        if (!status || (status !== 'for sale' && status !== 'sold')) {
+          return; // Skip this session
+        }
+      }
+
+      const progress = session.totalItems > 0
+        ? Math.round((session.scannedCount / session.totalItems) * 100)
+        : 0;
+      items.push({
+        id: `session-${session.id}`,
+        type: 'session',
+        priority: 2,
+        title: `Continue ${session.name}`,
+        subtitle: `${session.scannedCount}/${session.totalItems} scanned (${progress}%)`,
+        sessionId: session.id,
+        icon: ScanBarcode,
+        color: 'text-blue-600 dark:text-blue-400',
+      });
     });
 
-    return (
-      <div className="grid gap-2">
-        {sorted.slice(0, 5).map((load) => {
-          const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
-          const csoValue = load.ge_cso?.trim() || '';
-          const hasCso = Boolean(csoValue);
-          const tailValue = hasCso ? csoValue.slice(-4) : load.sub_inventory_name;
-          const wrapped = Boolean(load.prep_wrapped);
-          const tagged = Boolean(load.prep_tagged);
-          const sanityOk = (load.conflict_count ?? 0) === 0;
-          const sanityRequested = Boolean(load.sanity_check_requested);
-          return (
-            <button
-              key={load.sub_inventory_name}
-              type="button"
-              onClick={() => onSelect(load)}
-              className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-left transition hover:bg-muted/60"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  {load.primary_color && (
-                    <span
-                      className="h-3 w-3 rounded-sm border border-border/60"
-                      style={{ backgroundColor: load.primary_color }}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <span className="truncate text-sm font-medium">{friendly}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {hasCso ? 'CSO' : 'Load'}{' '}
-                  <span className="font-semibold underline decoration-dotted underline-offset-2 text-foreground">
-                    {tailValue}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <span
-                      className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                        wrapped
-                          ? 'border-foreground/30 text-foreground'
-                          : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                      }`}
-                    >
-                      {wrapped && <Check className="h-2.5 w-2.5" />}
-                    </span>
-                    <span className={wrapped ? '' : 'opacity-60'}>Wrapped</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span
-                      className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                        tagged
-                          ? 'border-foreground/30 text-foreground'
-                          : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                      }`}
-                    >
-                      {tagged && <Check className="h-2.5 w-2.5" />}
-                    </span>
-                    <span className={tagged ? '' : 'opacity-60'}>Tagged</span>
-                  </div>
-                  {!sanityRequested && (
-                    <div className="flex items-center gap-1">
-                      <span
-                        className={`inline-flex h-3 w-3 items-center justify-center rounded-[3px] border ${
-                          sanityOk
-                            ? 'border-foreground/30 text-foreground'
-                            : 'border-muted-foreground/40 bg-muted/40 text-muted-foreground/60'
-                        }`}
-                      >
-                        {sanityOk && <Check className="h-2.5 w-2.5" />}
-                      </span>
-                      <span className={sanityOk ? '' : 'opacity-60'}>Sanity check</span>
-                    </div>
-                  )}
-                  {sanityRequested && (
-                    <div className="flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3 text-amber-500" />
-                      <span>Sanity requested</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {load.pickup_date && (
-                <div className="text-xs text-muted-foreground">
-                  Pickup {formatPickupDate(load.pickup_date)}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
+    // Sanity checks (highest priority)
+    asisActionLoads.sanityCheckRequested.forEach((load) => {
+      const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
+      const csoValue = load.ge_cso?.trim() || '';
+      items.push({
+        id: `sanity-${load.sub_inventory_name}`,
+        type: 'sanity',
+        priority: 1,
+        title: `Sanity check ${friendly}`,
+        subtitle: `${csoValue ? 'CSO' : 'Load'} ${csoValue ? csoValue.slice(-4) : load.sub_inventory_name}`,
+        load,
+        icon: AlertTriangle,
+        color: 'text-amber-600 dark:text-amber-400',
+      });
+    });
+
+    // Pickup soon needs prep (high priority)
+    asisActionLoads.pickupSoonNeedsPrep.forEach((load) => {
+      const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
+      const needsWrap = !load.prep_wrapped;
+      const needsTag = !load.prep_tagged;
+      const actions = [needsWrap && 'wrap', needsTag && 'tag'].filter(Boolean).join(' & ');
+      items.push({
+        id: `pickup-${load.sub_inventory_name}`,
+        type: 'pickup',
+        priority: 2,
+        title: `Prep ${friendly} for pickup`,
+        subtitle: `Needs ${actions} · Pickup ${formatPickupDate(load.pickup_date)}`,
+        load,
+        icon: TruckIcon,
+        color: 'text-red-600 dark:text-red-400',
+      });
+    });
+
+    // Tag sold loads (medium priority)
+    asisActionLoads.soldNeedsPrep.forEach((load) => {
+      if (asisActionLoads.pickupSoonNeedsPrep.some(p => p.sub_inventory_name === load.sub_inventory_name)) {
+        return; // Skip if already in pickup soon
+      }
+      const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
+      const csoValue = load.ge_cso?.trim() || '';
+      const needsWrap = !load.prep_wrapped;
+      const needsTag = !load.prep_tagged;
+      const actions = [needsWrap && 'wrap', needsTag && 'tag'].filter(Boolean).join(' & ');
+      items.push({
+        id: `prep-${load.sub_inventory_name}`,
+        type: 'tag',
+        priority: 3,
+        title: `Prep ${friendly}`,
+        subtitle: `Needs ${actions} · ${csoValue ? 'CSO' : 'Load'} ${csoValue ? csoValue.slice(-4) : load.sub_inventory_name}`,
+        load,
+        icon: Package,
+        color: 'text-orange-600 dark:text-orange-400',
+      });
+    });
+
+    // Wrap for sale loads (lower priority)
+    asisActionLoads.forSaleNeedsWrap.forEach((load) => {
+      const friendly = load.friendly_name?.trim() || load.sub_inventory_name;
+      const csoValue = load.ge_cso?.trim() || '';
+      items.push({
+        id: `wrap-${load.sub_inventory_name}`,
+        type: 'wrap',
+        priority: 4,
+        title: `Wrap ${friendly}`,
+        subtitle: `For Sale · ${csoValue ? 'CSO' : 'Load'} ${csoValue ? csoValue.slice(-4) : load.sub_inventory_name}`,
+        load,
+        icon: PackageOpen,
+        color: 'text-blue-600 dark:text-blue-400',
+      });
+    });
+
+    return items.sort((a, b) => a.priority - b.priority);
+  }, [asisActionLoads, formatPickupDate, sessionsQuery.data, loadsData]);
 
   const formatActivityDate = (value: string) =>
     new Date(value).toLocaleString(undefined, {
@@ -620,79 +647,140 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
       )}
 
       <PageContainer className="py-4 space-y-6 pb-24">
-        {/* Welcome Header with Quick Stats */}
-        <Card className="p-4 sm:p-6 bg-gradient-to-r from-primary/10 to-primary/5">
-          <div className="space-y-2 sm:space-y-4">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-full overflow-hidden bg-primary/20 flex items-center justify-center flex-shrink-0">
-                {user?.image ? (
-                  <img
-                    src={user.image}
-                    alt={userDisplayName}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <User className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg sm:text-2xl font-bold break-words">Welcome back, {currentUser.name}</h1>
-                <p className="text-xs sm:text-sm text-muted-foreground break-words">
-                  {currentUser.role} • {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-
         {/* Reorder Alerts */}
         <ReorderAlertsCard onViewParts={() => navigateToPartsInventory('reorder')} />
 
-        {/* Mobile: Task Board First (Load Board, Quick Actions, Activity) */}
+        {/* Mobile: Action-focused */}
         {isMobile && (
           <>
-            {/* Load Board */}
+            {/* Action Items */}
             <div>
-            <h2 className="text-lg font-semibold mb-3">ASIS Load Board</h2>
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Sanity check ASIS load</p>
-                    <p className="text-xs text-muted-foreground">Loads requesting a sanity check.</p>
-                  </div>
-                  <Badge variant="outline">{asisActionLoads.sanityCheckRequested.length}</Badge>
-                </div>
-                {renderLoadChips(asisActionLoads.sanityCheckRequested, (load) => navigateToLoad(load.sub_inventory_name))}
-              </div>
+              <h2 className="text-lg font-semibold mb-3">Action Items</h2>
+              {actionItems.length === 0 ? (
+                <Card className="p-6 text-center">
+                  <Check className="h-12 w-12 mx-auto mb-2 text-green-500" />
+                  <p className="text-sm font-medium">All caught up!</p>
+                  <p className="text-xs text-muted-foreground mt-1">No action items at this time.</p>
+                </Card>
+              ) : (
+                <Tabs defaultValue="all" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-3">
+                    <TabsTrigger value="all" className="text-xs">
+                      All ({actionItems.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="priority" className="text-xs">
+                      Priority ({actionItems.filter(i => i.priority <= 2).length})
+                    </TabsTrigger>
+                  </TabsList>
 
-              <div className="border-t border-border/60" />
+                  <TabsContent value="all" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.slice(0, 8).map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (item.type === 'session' && item.sessionId) {
+                            onViewChange?.('create-session');
+                            setTimeout(() => {
+                              const params = new URLSearchParams(window.location.search);
+                              params.set('session', item.sessionId!);
+                              const path = `/scanning-sessions/${item.sessionId}`;
+                              window.history.replaceState({}, '', path);
+                              window.dispatchEvent(new Event('app:locationchange'));
+                            }, 50);
+                          } else if (item.load) {
+                            navigateToLoad(item.load.sub_inventory_name);
+                          }
+                        }}
+                        className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-3 text-left transition hover:bg-accent w-full"
+                      >
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm truncate">{item.title}</div>
+                          {item.subtitle && (
+                            <div className="text-xs text-muted-foreground truncate">{item.subtitle}</div>
+                          )}
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </button>
+                    );
+                  })}
+                    </div>
+                  </TabsContent>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Prep ASIS load</p>
-                    <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
-                  </div>
-                  <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
-                </div>
-                {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
-              </div>
-
-              <div className="border-t border-border/60" />
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Prep ASIS load</p>
-                    <p className="text-xs text-muted-foreground">For Sale loads missing prep.</p>
-                  </div>
-                  <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
-                </div>
-                {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
-              </div>
+                  <TabsContent value="priority" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.filter(i => i.priority <= 2).slice(0, 8).map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.type === 'session' && item.sessionId) {
+                                onViewChange?.('create-session');
+                                setTimeout(() => {
+                                  const params = new URLSearchParams(window.location.search);
+                                  params.set('session', item.sessionId!);
+                                  const path = `/scanning-sessions/${item.sessionId}`;
+                                  window.history.replaceState({}, '', path);
+                                  window.dispatchEvent(new Event('app:locationchange'));
+                                }, 50);
+                              } else if (item.load) {
+                                navigateToLoad(item.load.sub_inventory_name);
+                              }
+                            }}
+                            className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-3 text-left transition hover:bg-accent w-full"
+                          >
+                            <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{item.title}</div>
+                              {item.subtitle && (
+                                <div className="text-xs text-muted-foreground truncate">{item.subtitle}</div>
+                              )}
+                            </div>
+                            <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              )}
             </div>
-          </div>
+
+            {/* ASIS Stats */}
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">ASIS Loads</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onViewChange?.('loads')}
+                  className="h-7 text-xs"
+                >
+                  View all
+                  <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <div className="text-2xl font-bold">{stats.asisLoads.forSale}</div>
+                  <div className="text-xs text-muted-foreground">For Sale</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats.asisLoads.sold}</div>
+                  <div className="text-xs text-muted-foreground">Sold</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats.asisLoads.total - stats.asisLoads.forSale - stats.asisLoads.sold}</div>
+                  <div className="text-xs text-muted-foreground">Shipped</div>
+                </div>
+              </div>
+            </Card>
 
           {/* Quick Actions */}
           <div>
@@ -702,10 +790,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                 <Button
                   variant="outline"
                   className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                  onClick={() => navigateToInventory()}
+                  onClick={() => onViewChange?.('create-session')}
                 >
                   <ScanBarcode className="mr-2 h-4 w-4" />
-                  Start New Scanning Session
+                  Manage sessions
                 </Button>
                 <Button
                   variant="outline"
@@ -750,7 +838,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
               ) : (
                 activityLogs.map((entry) => (
                   <div key={entry.id} className="flex items-start gap-3">
-                    <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
+                    <div className="h-9 w-9 flex-shrink-0 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
                       {entry.actor_image ? (
                         <img
                           src={entry.actor_image}
@@ -785,9 +873,9 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
         {/* Desktop: 3-Column Grid Layout */}
         {!isMobile && (
-          <div className="grid grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
             {/* Left Column: Chart & Stats */}
-            <div className="col-span-3 space-y-6">
+            <div className="md:col-span-1 lg:col-span-3 space-y-6">
               {/* Interactive Donut Chart */}
               <Card className="p-4">
             <div className="space-y-3">
@@ -923,67 +1011,328 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                       </div>
                       <h4 className="text-sm font-semibold">ASIS</h4>
                     </div>
-                    <span className="text-lg font-bold">{stats.asisLoads.total}</span>
+                    <span className="text-lg font-bold">{stats.asis.total}</span>
                   </div>
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">For Sale</span>
-                      <span className="font-medium">{stats.asisLoads.forSale}</span>
+                      <span className="text-muted-foreground">Regular</span>
+                      <span className="font-medium">{stats.asis.regular}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sold</span>
-                      <span className="font-medium">{stats.asisLoads.sold}</span>
+                      <span className="text-muted-foreground">Salvage</span>
+                      <span className="font-medium">{stats.asis.salvage}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Unassigned</span>
+                      <span className="font-medium">{stats.asis.unassigned}</span>
                     </div>
                   </div>
                 </div>
               </Card>
             </div>
 
-            {/* Center Column: Load Board */}
-            <div className="col-span-6">
-              <h2 className="text-lg font-semibold mb-4">ASIS Load Board</h2>
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Sanity check ASIS load</p>
-                        <p className="text-xs text-muted-foreground">Loads requesting a sanity check.</p>
-                      </div>
-                      <Badge variant="outline">{asisActionLoads.sanityCheckRequested.length}</Badge>
+            {/* Center Column: Action Items */}
+            <div className="md:col-span-1 lg:col-span-6">
+              <h2 className="text-lg font-semibold mb-4">Action Items</h2>
+              {actionItems.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <Check className="h-16 w-16 mx-auto mb-3 text-green-500" />
+                  <p className="text-base font-medium">All caught up!</p>
+                  <p className="text-sm text-muted-foreground mt-2">No action items at this time.</p>
+                </Card>
+              ) : (
+                <Tabs defaultValue="all" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4 mb-4">
+                    <TabsTrigger value="all">
+                      All <Badge variant="secondary" className="ml-1">{actionItems.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="priority">
+                      Priority <Badge variant="secondary" className="ml-1">{actionItems.filter(i => i.priority <= 2).length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="prep">
+                      Prep <Badge variant="secondary" className="ml-1">{actionItems.filter(i => i.type === 'wrap' || i.type === 'tag').length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="sessions">
+                      Sessions <Badge variant="secondary" className="ml-1">{actionItems.filter(i => i.type === 'session').length}</Badge>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="all" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          if (item.type === 'session' && item.sessionId) {
+                            onViewChange?.('create-session');
+                            setTimeout(() => {
+                              const params = new URLSearchParams(window.location.search);
+                              params.set('session', item.sessionId!);
+                              const path = `/scanning-sessions/${item.sessionId}`;
+                              window.history.replaceState({}, '', path);
+                              window.dispatchEvent(new Event('app:locationchange'));
+                            }, 50);
+                          } else if (item.load) {
+                            navigateToLoad(item.load.sub_inventory_name);
+                          }
+                        }}
+                        className="flex items-center gap-4 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition hover:bg-accent w-full"
+                      >
+                        <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-base">{item.title}</div>
+                          {item.subtitle && (
+                            <div className="text-sm text-muted-foreground">{item.subtitle}</div>
+                          )}
+                        </div>
+                        {item.load?.primary_color && (
+                          <span
+                            className="h-4 w-4 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: item.load.primary_color }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </button>
+                    );
+                  })}
                     </div>
-                    {renderLoadChips(asisActionLoads.sanityCheckRequested, (load) => navigateToLoad(load.sub_inventory_name))}
-                  </div>
+                  </TabsContent>
 
-                  <div className="border-t border-border/60" />
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Prep ASIS load</p>
-                        <p className="text-xs text-muted-foreground">Sold loads missing prep.</p>
-                      </div>
-                      <Badge variant="outline">{stats.asisLoads.soldNeedsBoth}</Badge>
+                  <TabsContent value="priority" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.filter(i => i.priority <= 2).map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.type === 'session' && item.sessionId) {
+                                onViewChange?.('create-session');
+                                setTimeout(() => {
+                                  const params = new URLSearchParams(window.location.search);
+                                  params.set('session', item.sessionId!);
+                                  const path = `/scanning-sessions/${item.sessionId}`;
+                                  window.history.replaceState({}, '', path);
+                                  window.dispatchEvent(new Event('app:locationchange'));
+                                }, 50);
+                              } else if (item.load) {
+                                navigateToLoad(item.load.sub_inventory_name);
+                              }
+                            }}
+                            className="flex items-center gap-4 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition hover:bg-accent w-full"
+                          >
+                            <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-base">{item.title}</div>
+                              {item.subtitle && (
+                                <div className="text-sm text-muted-foreground">{item.subtitle}</div>
+                              )}
+                            </div>
+                            {item.load?.primary_color && (
+                              <span
+                                className="h-4 w-4 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: item.load.primary_color }}
+                                aria-hidden="true"
+                              />
+                            )}
+                            <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          </button>
+                        );
+                      })}
                     </div>
-                    {renderLoadChips(asisActionLoads.soldNeedsPrep, (load) => navigateToLoad(load.sub_inventory_name))}
-                  </div>
+                  </TabsContent>
 
-                  <div className="border-t border-border/60" />
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">Prep ASIS load</p>
-                        <p className="text-xs text-muted-foreground">For Sale loads missing prep.</p>
-                      </div>
-                      <Badge variant="outline">{stats.asisLoads.forSaleNeedsWrap}</Badge>
+                  <TabsContent value="prep" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.filter(i => i.type === 'wrap' || i.type === 'tag').map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.load) {
+                                navigateToLoad(item.load.sub_inventory_name);
+                              }
+                            }}
+                            className="flex items-center gap-4 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition hover:bg-accent w-full"
+                          >
+                            <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-base">{item.title}</div>
+                              {item.subtitle && (
+                                <div className="text-sm text-muted-foreground">{item.subtitle}</div>
+                              )}
+                            </div>
+                            {item.load?.primary_color && (
+                              <span
+                                className="h-4 w-4 rounded-sm flex-shrink-0"
+                                style={{ backgroundColor: item.load.primary_color }}
+                                aria-hidden="true"
+                              />
+                            )}
+                            <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          </button>
+                        );
+                      })}
                     </div>
-                    {renderLoadChips(asisActionLoads.forSaleNeedsWrap, (load) => navigateToLoad(load.sub_inventory_name))}
-                  </div>
-                </div>
+                  </TabsContent>
+
+                  <TabsContent value="sessions" className="mt-0">
+                    <div className="space-y-2">
+                      {actionItems.filter(i => i.type === 'session').map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.sessionId) {
+                                onViewChange?.('create-session');
+                                setTimeout(() => {
+                                  const params = new URLSearchParams(window.location.search);
+                                  params.set('session', item.sessionId!);
+                                  const path = `/scanning-sessions/${item.sessionId}`;
+                                  window.history.replaceState({}, '', path);
+                                  window.dispatchEvent(new Event('app:locationchange'));
+                                }, 50);
+                              }
+                            }}
+                            className="flex items-center gap-4 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition hover:bg-accent w-full"
+                          >
+                            <Icon className={`h-5 w-5 flex-shrink-0 ${item.color}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-base">{item.title}</div>
+                              {item.subtitle && (
+                                <div className="text-sm text-muted-foreground">{item.subtitle}</div>
+                              )}
+                            </div>
+                            <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              )}
             </div>
 
-            {/* Right Column: Quick Actions + Activity */}
-            <div className="col-span-3 space-y-6">
+            {/* Right Column: ASIS Stats + Quick Actions + Activity */}
+            <div className="md:col-span-2 lg:col-span-3 space-y-6">
+              {/* ASIS Load Stats */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">ASIS Loads</h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onViewChange?.('loads')}
+                    className="h-8"
+                  >
+                    View all
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+                <Card className="p-4">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <div className="text-3xl font-bold">{stats.asisLoads.forSale}</div>
+                      <div className="text-sm text-muted-foreground mt-1">For Sale</div>
+                    </div>
+                    <div>
+                      <div className="text-3xl font-bold">{stats.asisLoads.sold}</div>
+                      <div className="text-sm text-muted-foreground mt-1">Sold</div>
+                    </div>
+                    <div>
+                      <div className="text-3xl font-bold">{stats.asisLoads.total - stats.asisLoads.forSale - stats.asisLoads.sold}</div>
+                      <div className="text-sm text-muted-foreground mt-1">Shipped</div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Fog of War - Warehouse Mapping Progress */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Warehouse Map</h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onViewChange?.('map')}
+                    className="h-8"
+                  >
+                    View map
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+                <Card className="p-4">
+                  {fogOfWarQuery.isLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                      <Package className="h-4 w-4 animate-pulse" />
+                      Loading map data…
+                    </div>
+                  ) : fogOfWarQuery.data ? (
+                    <div className="space-y-4">
+                      {/* Progress */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">Coverage</span>
+                          <span className="text-2xl font-bold">{fogOfWarQuery.data.coveragePercent}%</span>
+                        </div>
+                        <div className="h-3 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-600 transition-all duration-500"
+                            style={{ width: `${fogOfWarQuery.data.coveragePercent}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                          <span>{fogOfWarQuery.data.mappedItems.toLocaleString()} mapped</span>
+                          <span>{fogOfWarQuery.data.totalItems.toLocaleString()} total</span>
+                        </div>
+                      </div>
+
+                      {/* Recent Scans */}
+                      {fogOfWarQuery.data.recentScans.length > 0 && (
+                        <div>
+                          <div className="text-xs font-semibold text-muted-foreground mb-2">Recent Scans</div>
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                            {fogOfWarQuery.data.recentScans.slice(0, 5).map((scan) => (
+                              <div
+                                key={scan.id}
+                                className="flex items-center justify-between text-xs py-1 border-b border-border/50 last:border-0"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium truncate">
+                                    {scan.productType || 'Unknown'}
+                                    {scan.subInventory && (
+                                      <span className="text-muted-foreground ml-1">· {scan.subInventory}</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-muted-foreground text-[10px] ml-2 flex-shrink-0">
+                                  {new Date(scan.createdAt).toLocaleTimeString(undefined, {
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-muted-foreground py-4">No map data available</div>
+                  )}
+                </Card>
+              </div>
+
+              {/* Quick Actions */}
               <div>
                 <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
                 <Card className="p-4">
@@ -991,10 +1340,10 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                     <Button
                       variant="outline"
                       className="w-full justify-start whitespace-normal text-left h-auto py-3"
-                      onClick={() => navigateToInventory()}
+                      onClick={() => onViewChange?.('create-session')}
                     >
                       <ScanBarcode className="mr-2 h-4 w-4" />
-                      Start New Scanning Session
+                      Manage sessions
                     </Button>
                     <Button
                       variant="outline"
@@ -1039,7 +1388,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                   ) : (
                     activityLogs.map((entry) => (
                       <div key={entry.id} className="flex items-start gap-3">
-                        <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
+                        <div className="h-9 w-9 flex-shrink-0 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
                           {entry.actor_image ? (
                             <img
                               src={entry.actor_image}

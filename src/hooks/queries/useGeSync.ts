@@ -19,6 +19,8 @@ export function useGeSync() {
       if (locationId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.inventory.all(locationId) });
         queryClient.invalidateQueries({ queryKey: queryKeys.loads.all(locationId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.items(locationId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.conflicts(locationId) });
       }
     },
   });

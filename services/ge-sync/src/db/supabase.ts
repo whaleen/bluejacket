@@ -65,13 +65,14 @@ function normalizeModelKey(model: string): string {
   return model.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-export async function getProductLookup(companyId: string) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function getProductLookup(_companyId: string) {
   const db = getSupabase();
 
+  // Products are a global catalog - no company_id filtering
   const { data: products, error } = await db
     .from('products')
-    .select('id, model, product_type')
-    .eq('company_id', companyId);
+    .select('id, model, product_type');
 
   if (error) {
     throw new Error(`Failed to fetch products: ${error.message}`);
