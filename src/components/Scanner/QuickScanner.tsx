@@ -1,22 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { X, ScanBarcode, Scan, ChevronDown, ClipboardList } from 'lucide-react';
+import { X, ScanBarcode, Scan, ChevronDown } from 'lucide-react';
 import { BarcodeScanner } from '@/components/Scanner/BarcodeScanner';
 import { OverlayPortal } from '@/components/Layout/OverlayPortal';
 import { uiLayers } from '@/lib/uiLayers';
 import { feedbackScanDetected, feedbackSuccess, feedbackError } from '@/lib/feedback';
 import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
 import { findMatchingItemsInInventory } from '@/lib/inventoryScanner';
-import { getOrCreateAdHocSession, getOrCreateFogOfWarSession } from '@/lib/sessionManager';
 import { useAuth } from '@/context/AuthContext';
-import { useSessionSummaries } from '@/hooks/queries/useSessions';
 import { useQueryClient } from '@tanstack/react-query';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
 
 interface QuickScannerProps {
@@ -34,8 +30,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
   const userDisplayName = user?.username ?? user?.email ?? undefined;
   const queryClient = useQueryClient();
   const { locationId } = getActiveLocationContext();
-  const sessionSummariesQuery = useSessionSummaries();
-  const openSessions = sessionSummariesQuery.data?.filter(s => s.status !== 'closed') ?? [];
 
   const [mode, setMode] = useState<ScanMode>(() => {
     const saved = localStorage.getItem(MODE_STORAGE_KEY);
@@ -43,7 +37,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
   });
   const [inputValue, setInputValue] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,15 +63,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
     setIsProcessing(true);
 
     try {
-      // Get or create permanent ad-hoc session
-      const { sessionId: adHocSessionId, error: sessionError } = await getOrCreateAdHocSession();
-      if (!adHocSessionId || sessionError) {
-        feedbackError();
-        console.error('Ad-hoc session error:', sessionError);
-        showAlert('error', 'Failed to get ad-hoc session');
-        return;
-      }
-
       // Capture GPS position
       const position = await getCurrentPosition();
       if (!position) {
@@ -89,7 +73,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
 
       // Create marker on map with ad-hoc session ID
       const result = await logProductLocation({
-        scanning_session_id: adHocSessionId,
         raw_lat: position.latitude,
         raw_lng: position.longitude,
         accuracy: position.accuracy,
@@ -140,7 +123,7 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
         feedbackError();
         showAlert(
           'error',
-          `Model scan requires session context - found ${result.items?.length || 0} matching items. Use Sessions to scan models.`,
+          `Model scan requires load context - found ${result.items?.length || 0} matching items. Use the map scanner to scan models.`,
           5000
         );
         return;
@@ -151,15 +134,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
       if (!item) {
         feedbackError();
         showAlert('error', 'Item data missing');
-        return;
-      }
-
-      // Get or create permanent fog-of-war session
-      const { sessionId: fogSessionId, error: sessionError } = await getOrCreateFogOfWarSession();
-      if (!fogSessionId || sessionError) {
-        feedbackError();
-        console.error('Fog of war session error:', sessionError);
-        showAlert('error', 'Failed to get fog of war session');
         return;
       }
 
@@ -175,7 +149,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
       const logResult = await logProductLocation({
         product_id: item.products?.id ?? item.product_fk,
         inventory_item_id: item.id,
-        scanning_session_id: fogSessionId,
         raw_lat: position.latitude,
         raw_lng: position.longitude,
         accuracy: position.accuracy,
@@ -235,12 +208,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
     }
   };
 
-  const handleSessionSelect = (sessionId: string) => {
-    setSessionsOpen(false);
-    onClose();
-    // Navigate to session (this will be handled by parent)
-    window.location.hash = `#session/${sessionId}`;
-  };
 
   // If camera is open, render camera scanner
   if (cameraOpen) {
@@ -298,15 +265,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
             </DropdownMenu>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setSessionsOpen(true)}
-            className="gap-2"
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span className="hidden sm:inline">Sessions</span>
-          </Button>
         </div>
 
         {/* Alert */}
@@ -330,7 +288,7 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
               </p>
               {mode === 'fog-of-war' && (
                 <p className="text-xs text-muted-foreground">
-                  Serial/CSO scans only - models require session context
+                  Serial/CSO scans only - models require load context
                 </p>
               )}
             </div>
@@ -394,45 +352,6 @@ export function QuickScanner({ onScan, onClose, title = 'Quick Scan' }: QuickSca
         </div>
       </div>
 
-      {/* Sessions List Sheet */}
-      <Sheet open={sessionsOpen} onOpenChange={setSessionsOpen}>
-        <SheetContent side="bottom" className="h-[80vh]">
-          <SheetHeader>
-            <SheetTitle>Open Sessions</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 space-y-2 overflow-y-auto max-h-[calc(80vh-80px)]">
-            {sessionSummariesQuery.isLoading && (
-              <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Loading sessions...
-              </div>
-            )}
-            {openSessions.length === 0 && !sessionSummariesQuery.isLoading && (
-              <div className="text-center py-8 text-muted-foreground">
-                No open sessions
-              </div>
-            )}
-            {openSessions.map(session => (
-              <Button
-                key={session.id}
-                variant="outline"
-                className="w-full h-auto py-4 justify-between"
-                onClick={() => handleSessionSelect(session.id)}
-              >
-                <div className="flex flex-col items-start gap-1">
-                  <span className="font-semibold">{session.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {session.inventoryType} • {session.subInventory || 'All'}
-                  </span>
-                </div>
-                <Badge variant="outline">
-                  {session.scannedCount} / {session.totalItems}
-                </Badge>
-              </Button>
-            ))}
-          </div>
-        </SheetContent>
-      </Sheet>
     </OverlayPortal>
   );
 }

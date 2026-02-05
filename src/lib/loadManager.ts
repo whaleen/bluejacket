@@ -127,7 +127,8 @@ export async function getLoadWithItems(
   }
 
   // Fetch items
-  const { data: items, error: itemsError } = await supabase
+  const inventoryTypes = getInventoryTypes(inventoryType);
+  let itemsQuery = supabase
     .from('inventory_items')
     .select(`
       *,
@@ -136,9 +137,17 @@ export async function getLoadWithItems(
       )
     `)
     .eq('location_id', locationId)
-    .eq('inventory_type', inventoryType)
     .eq('sub_inventory', subInventoryName)
     .order('created_at', { ascending: false });
+
+  if (inventoryTypes.length === 1) {
+    itemsQuery = itemsQuery.eq('inventory_type', inventoryTypes[0]);
+  } else {
+    itemsQuery = itemsQuery.in('inventory_type', inventoryTypes);
+  }
+
+  const { data: items, error: itemsError } = await itemsQuery;
+
 
   if (itemsError) {
     return { data: null, error: itemsError };

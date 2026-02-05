@@ -1,23 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, ScanBarcode, Keyboard, ChevronDown, type LucideIcon } from 'lucide-react';
+import { Loader2, ScanBarcode, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { OverlayPortal } from '@/components/Layout/OverlayPortal';
 import { uiLayers } from '@/lib/uiLayers';
-
-export interface SessionOption {
-  id: string;
-  name: string;
-  isActive: boolean;
-  isSpecial?: boolean;
-  icon?: LucideIcon;
-  details?: string;
-  color?: string;
-  showAsBox?: boolean;
-  onClick: () => void;
-}
 
 interface MinimalScanOverlayProps {
   isOpen: boolean;
@@ -27,10 +14,9 @@ interface MinimalScanOverlayProps {
   isProcessing: boolean;
   alert: { type: 'success' | 'error'; message: string } | null;
   feedbackText?: string;
-  activeSessionName?: string;
-  activeSessionDisplayName?: string;
-  activeSessionColor?: string;
-  sessionOptions?: SessionOption[];
+  mode?: 'fog' | 'adhoc';
+  onSelectFog?: () => void;
+  onSelectAdHoc?: () => void;
 }
 
 type InputMode = 'scanner' | 'keyboard';
@@ -43,14 +29,12 @@ export function MinimalScanOverlay({
   isProcessing,
   alert,
   feedbackText,
-  activeSessionName,
-  activeSessionDisplayName,
-  activeSessionColor,
-  sessionOptions = [],
+  mode = 'fog',
+  onSelectFog,
+  onSelectAdHoc,
 }: MinimalScanOverlayProps) {
   const [inputValue, setInputValue] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('scanner');
-  const [popoverOpen, setPopoverOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Auto-focus input when opened
@@ -83,78 +67,28 @@ export function MinimalScanOverlay({
 
   return (
     <OverlayPortal>
-      {/* Session selector at top */}
-      {activeSessionName && sessionOptions.length > 0 && (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 pointer-events-auto ${uiLayers.toolOverlay}`}>
-          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className="h-10 gap-2 bg-background/95 backdrop-blur-sm shadow-lg border"
-              >
-                {activeSessionColor && (
-                  <div
-                    className="size-3 rounded-sm shrink-0"
-                    style={{ backgroundColor: activeSessionColor }}
-                  />
-                )}
-                <span className="text-sm font-semibold">{activeSessionDisplayName || activeSessionName}</span>
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-2 max-h-[400px] overflow-y-auto">
-              <div className="space-y-1">
-                {sessionOptions.map((option, index) => (
-                  <div key={option.id}>
-                    {index > 0 && !option.isSpecial && sessionOptions[index - 1].isSpecial && (
-                      <div className="border-t my-1" />
-                    )}
-                    {option.showAsBox ? (
-                      // Box style (ASIS with color, FG without color)
-                      <div
-                        onClick={() => {
-                          option.onClick();
-                          setPopoverOpen(false);
-                        }}
-                        className="cursor-pointer flex items-center justify-between gap-2"
-                      >
-                        <div className={`inline-flex items-center rounded-md overflow-hidden border ${option.isActive ? 'bg-accent' : 'hover:bg-accent/50'}`}>
-                          {option.color && (
-                            <div
-                              className="size-6 shrink-0"
-                              style={{ backgroundColor: option.color }}
-                            />
-                          )}
-                          <span className="font-medium text-xs py-1 px-2 whitespace-nowrap">{option.name}</span>
-                        </div>
-                        {option.details && (
-                          <span className="text-xs text-muted-foreground">{option.details}</span>
-                        )}
-                      </div>
-                    ) : (
-                      // Special sessions: standard button with icon
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          option.onClick();
-                          setPopoverOpen(false);
-                        }}
-                        className={`w-full justify-start h-auto py-2 ${option.isActive ? 'bg-accent' : ''}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          {option.icon && <option.icon className="h-4 w-4 shrink-0" />}
-                          <span className="font-medium text-sm">{option.name}</span>
-                        </div>
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+      <div className={`fixed top-4 left-1/2 -translate-x-1/2 pointer-events-auto ${uiLayers.toolOverlay}`}>
+        <div className="flex items-center gap-2 rounded-full border border-border bg-background/95 backdrop-blur-sm p-1 shadow-lg">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === 'fog' ? 'secondary' : 'ghost'}
+            className="h-8 rounded-full px-3"
+            onClick={onSelectFog}
+          >
+            Fog of War
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === 'adhoc' ? 'secondary' : 'ghost'}
+            className="h-8 rounded-full px-3"
+            onClick={onSelectAdHoc}
+          >
+            Ad-hoc
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* Centered scan input */}
       <div className={`fixed inset-0 flex items-center justify-center pointer-events-none ${uiLayers.toolOverlay}`}>

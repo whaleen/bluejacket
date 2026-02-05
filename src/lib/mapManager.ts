@@ -62,7 +62,6 @@ export async function getCurrentPosition(): Promise<RawGPSPosition | null> {
 export async function logProductLocation(input: {
   product_id?: string;
   inventory_item_id?: string;
-  scanning_session_id: string;
   raw_lat: number;
   raw_lng: number;
   accuracy: number;
@@ -80,7 +79,6 @@ export async function logProductLocation(input: {
       .from('product_location_history')
       .select('id, created_at')
       .eq('inventory_item_id', input.inventory_item_id ?? null)
-      .eq('scanning_session_id', input.scanning_session_id)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -114,7 +112,7 @@ export async function logProductLocation(input: {
       location_id: locationId,
       product_id: input.product_id ?? null,
       inventory_item_id: input.inventory_item_id ?? null,
-      scanning_session_id: input.scanning_session_id,
+      scanning_session_id: null,
       position_x: 0,
       position_y: 0,
       position_source: 'gps',
@@ -164,12 +162,15 @@ export async function getProductLocations(): Promise<{
       serial: string | null;
       product_type: string | null;
       product_fk: string | null;
+      sub_inventory: string | null;
+      inventory_type: string | null;
+      owning_session_id: string | null;
     }
   >();
   if (inventoryItemIds.length > 0) {
     const { data: inventoryItems, error: inventoryError } = await supabase
       .from('inventory_items')
-      .select('id, model, serial, product_type, product_fk')
+      .select('id, model, serial, product_type, product_fk, sub_inventory, inventory_type, owning_session_id')
       .in('id', inventoryItemIds);
 
     if (!inventoryError && inventoryItems) {
@@ -179,6 +180,9 @@ export async function getProductLocations(): Promise<{
         serial: string | null;
         product_type: string | null;
         product_fk: string | null;
+        sub_inventory: string | null;
+        inventory_type: string | null;
+        owning_session_id: string | null;
       }[]) {
         inventoryItemById.set(item.id, item);
       }
@@ -237,11 +241,16 @@ export async function getProductLocations(): Promise<{
     }
   }
 
+  const resolveSubInventory = (item: ProductLocationHistory) => {
+    const inventoryItem = item.inventory_item_id ? inventoryItemById.get(item.inventory_item_id) : undefined;
+    return inventoryItem?.sub_inventory ?? item.sub_inventory;
+  };
+
   // Get all unique load names for color mapping
   const loadNames = Array.from(
     new Set(
       (data as ProductLocationHistory[])
-        .map((item) => item.sub_inventory)
+        .map((item) => resolveSubInventory(item))
         .filter((name): name is string => name != null)
     )
   );
@@ -279,11 +288,12 @@ export async function getProductLocations(): Promise<{
 
   // Map locations with colors
   const locationsWithColors: ProductLocationForMap[] = (data as ProductLocationHistory[]).map((item) => {
-    const loadColor = getLoadColorByName(loadNames, item.sub_inventory);
-    const loadFriendlyName = item.sub_inventory
-      ? loadMetadataByName.get(item.sub_inventory)?.friendly_name ?? null
-      : null;
     const inventoryItem = item.inventory_item_id ? inventoryItemById.get(item.inventory_item_id) : undefined;
+    const resolvedSubInventory = inventoryItem?.sub_inventory ?? item.sub_inventory;
+    const loadColor = getLoadColorByName(loadNames, resolvedSubInventory ?? null);
+    const loadFriendlyName = resolvedSubInventory
+      ? loadMetadataByName.get(resolvedSubInventory)?.friendly_name ?? null
+      : null;
     const resolvedProductId = item.product_id ?? inventoryItem?.product_fk ?? null;
     const product =
       (resolvedProductId ? productById.get(resolvedProductId) : undefined) ??
@@ -292,7 +302,7 @@ export async function getProductLocations(): Promise<{
     const serial = inventoryItem?.serial ?? null;
     const productType = item.product_type ?? inventoryItem?.product_type ?? product?.product_type ?? null;
     const imageUrl = product?.image_url ?? null;
-    const loadItemCount = item.sub_inventory ? loadItemCounts.get(item.sub_inventory) ?? null : null;
+    const loadItemCount = resolvedSubInventory ? loadItemCounts.get(resolvedSubInventory) ?? null : null;
 
     return {
       id: item.id,
@@ -300,17 +310,20 @@ export async function getProductLocations(): Promise<{
       position_y: item.position_y,
       raw_lat: item.raw_lat != null ? Number(item.raw_lat) : null,
       raw_lng: item.raw_lng != null ? Number(item.raw_lng) : null,
+      inventory_item_id: item.inventory_item_id,
+      inventory_type: inventoryItem?.inventory_type ?? null,
       image_url: imageUrl,
       load_item_count: loadItemCount,
       product_type: productType,
       model,
       serial,
-      sub_inventory: item.sub_inventory,
+      sub_inventory: resolvedSubInventory ?? null,
       load_friendly_name: loadFriendlyName,
       load_color: loadColor,
       created_at: item.created_at,
       accuracy: item.accuracy,
       scanning_session_id: item.scanning_session_id,
+      owning_session_id: inventoryItem?.owning_session_id ?? null,
     };
   });
 

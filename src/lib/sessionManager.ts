@@ -117,41 +117,6 @@ export async function getSession(sessionId: string): Promise<{ data: ScanningSes
   return { data: toSession(data as SessionRecord), error: null };
 }
 
-export async function createSession(input: {
-  name: string;
-  inventoryType: ScanningSession['inventoryType'];
-  subInventory?: string;
-  items: InventoryItem[];
-  status?: SessionStatus;
-  createdBy?: string;
-}): Promise<{ data: ScanningSession | null; error: PostgrestError | null }> {
-  const { locationId, companyId } = getActiveLocationContext();
-  const { data, error } = await supabase
-    .from(SESSION_TABLE)
-    .insert({
-      company_id: companyId,
-      location_id: locationId,
-      name: input.name,
-      inventory_type: input.inventoryType,
-      sub_inventory: input.subInventory ?? null,
-      status: input.status ?? 'active',
-      session_source: 'manual',
-      items: input.items,
-      scanned_item_ids: [],
-      created_by: input.createdBy ?? null,
-      updated_by: input.createdBy ?? null,
-      updated_at: new Date().toISOString()
-    })
-    .select('*')
-    .single();
-
-  if (error || !data) {
-    return { data: null, error };
-  }
-
-  return { data: toSession(data as SessionRecord), error: null };
-}
-
 export async function updateSessionScannedItems(input: {
   sessionId: string;
   scannedItemIds: string[];

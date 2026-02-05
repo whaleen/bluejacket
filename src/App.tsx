@@ -99,7 +99,6 @@ function App() {
   const initialRoute = getRouteFromLocation();
 
   const [currentView, setCurrentView] = useState<AppView>(initialRoute.view);
-  const [sessionId, setSessionId] = useState<string | null>(initialRoute.sessionId ?? null);
   const [displayId, setDisplayId] = useState<string | null>(initialRoute.displayId ?? null);
 
   const navigate = useCallback((view: AppView, options?: { params?: URLSearchParams; sessionId?: string | null; displayId?: string | null; replace?: boolean }) => {
@@ -123,7 +122,6 @@ function App() {
     window.dispatchEvent(new Event('app:locationchange'));
     startTransition(() => {
       setCurrentView(view);
-      setSessionId(nextSessionId);
       setDisplayId(nextDisplayId);
     });
   }, []);
@@ -132,16 +130,12 @@ function App() {
     navigate(view);
   };
 
-  const handleSessionChange = (nextSessionId: string | null) => {
-    navigate('sessions', { sessionId: nextSessionId });
-  };
 
   useEffect(() => {
     const syncRoute = () => {
       const route = getRouteFromLocation();
       startTransition(() => {
         setCurrentView(route.view);
-        setSessionId(route.sessionId ?? null);
         setDisplayId(route.displayId ?? null);
       });
     };
@@ -315,10 +309,9 @@ function App() {
                       <AgentView />
                     )}
                     {currentView === "sessions" && (
-                      <SessionsView
-                        sessionId={sessionId}
-                        onSessionChange={handleSessionChange}
-                      />
+                        <SessionsView
+                          onViewChange={handleViewChange}
+                        />
                     )}
                     {currentView === "settings-locations" && (
                       <SettingsView section="locations" />
@@ -387,10 +380,9 @@ function App() {
                       <AgentView />
                     )}
                     {currentView === "sessions" && (
-                      <SessionsView
-                        sessionId={sessionId}
-                        onSessionChange={handleSessionChange}
-                      />
+                        <SessionsView
+                          onViewChange={handleViewChange}
+                        />
                     )}
                     {currentView === "settings-locations" && (
                       <SettingsView section="locations" />

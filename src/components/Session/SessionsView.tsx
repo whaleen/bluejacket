@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,21 +11,20 @@ import type { InventoryType } from '@/types/inventory';
 import type { SessionSummary } from '@/types/session';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
-import { MobileOverlay } from '@/components/Layout/MobileOverlay';
-import { ScanningSessionView } from '@/components/Session/ScanningSessionView';
-import { useAuth } from '@/context/AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import supabase from '@/lib/supabase';
+import { getActiveLocationContext } from '@/lib/tenant';
 import {
   useSessionCreatorAvatars,
   useSessionLoadMetadata,
   useSessionSummaries,
-  useUpdateSessionStatus,
 } from '@/hooks/queries/useSessions';
 import { useIsMobile } from '@/hooks/use-mobile';
+import type { AppView } from '@/lib/routes';
 
 interface SessionsViewProps {
+  onViewChange?: (view: AppView) => void;
   onMenuClick?: () => void;
-  sessionId?: string | null;
-  onSessionChange?: (sessionId: string | null) => void;
 }
 
 const inventoryTypeLabels: Record<InventoryType, string> = {
@@ -39,6 +38,8 @@ const inventoryTypeLabels: Record<InventoryType, string> = {
   Parts: 'Parts',
   WillCall: 'WillCall'
 };
+
+const getInventoryTypeLabel = (value: InventoryType) => inventoryTypeLabels[value] ?? value;
 
 function formatSessionTimestamp(value?: string) {
   if (!value) return '';
@@ -60,18 +61,15 @@ function getInitials(name?: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function SessionsView({ onMenuClick, sessionId, onSessionChange }: SessionsViewProps) {
-  const { user } = useAuth();
-  const userDisplayName = user?.username ?? user?.email ?? null;
+export function SessionsView({ onViewChange, onMenuClick }: SessionsViewProps) {
   const isMobile = useIsMobile();
+  const { locationId } = getActiveLocationContext();
   const [sessionListTab, setSessionListTab] = useState<'active' | 'closed' | 'all'>('active');
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionTypeFilter, setSessionTypeFilter] = useState<'all' | InventoryType>('all');
-  const [sessionsActionError, setSessionsActionError] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId ?? null);
+  const sessionsActionError = null;
   const sessionsQuery = useSessionSummaries();
-  const updateStatusMutation = useUpdateSessionStatus();
-  const sessions = sessionsQuery.data ?? [];
+  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
   const sessionsLoading = sessionsQuery.isLoading;
   const sessionsError = sessionsQuery.error instanceof Error ? sessionsQuery.error.message : null;
   const sessionsDisplayError = sessionsActionError ?? sessionsError;
@@ -80,7 +78,19 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
     [sessions]
   );
   const sessionLoadMetadataQuery = useSessionLoadMetadata(sessionSubInventories);
-  const sessionLoadMetadata = sessionLoadMetadataQuery.data ?? new Map();
+  const sessionLoadMetadata = useMemo(
+    () => sessionLoadMetadataQuery.data ?? new Map(),
+    [sessionLoadMetadataQuery.data]
+  );
+  const filteredSessions = useMemo(() => {
+    return sessions.filter((session) => {
+      if (session.inventoryType !== 'ASIS' || !session.subInventory) return true;
+      const load = sessionLoadMetadata.get(session.subInventory);
+      if (!load) return true;
+      const rawStatus = load.ge_source_status || (load as { status?: string | null }).status || '';
+      return !rawStatus.trim().toLowerCase().includes('delivered');
+    });
+  }, [sessionLoadMetadata, sessions]);
   const createdByNames = useMemo(
     () => Array.from(new Set(sessions.map((session) => session.createdBy).filter(Boolean) as string[])),
     [sessions]
@@ -88,37 +98,88 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
   const creatorAvatarsQuery = useSessionCreatorAvatars(createdByNames);
   const creatorAvatars = creatorAvatarsQuery.data ?? {};
 
-  useEffect(() => {
-    setActiveSessionId(sessionId ?? null);
-  }, [sessionId]);
-
-  const handleExitSession = () => {
-    setActiveSessionId(null);
-    onSessionChange?.(null);
-    sessionsQuery.refetch();
-  };
-
-  const handleOpenSession = async (session: SessionSummary) => {
-    if (session.status === 'draft') {
-      setSessionsActionError(null);
-      try {
-        await updateStatusMutation.mutateAsync({
-          sessionId: session.id,
-          status: 'active',
-          updatedBy: userDisplayName ?? undefined
-        });
-      } catch (err) {
-        setSessionsActionError(err instanceof Error ? err.message : 'Failed to start session');
-        return;
+  const sessionCountsQuery = useQuery({
+    queryKey: ['session-scan-counts', locationId ?? 'missing'],
+    enabled: !!locationId,
+    queryFn: async () => {
+      if (!locationId) {
+        return {
+          totalsByKey: new Map<string, number>(),
+          scannedByKey: new Map<string, number>(),
+        };
       }
+
+      const { data: inventoryItems, error: inventoryError } = await supabase
+        .from('inventory_items')
+        .select('id, sub_inventory, inventory_type')
+        .eq('location_id', locationId);
+
+      if (inventoryError) throw inventoryError;
+
+      const itemMap = new Map<string, { sub_inventory: string | null; inventory_type: string | null }>();
+      const totalsByKey = new Map<string, number>();
+
+      for (const item of inventoryItems ?? []) {
+        if (!item.id) continue;
+        const key = item.sub_inventory
+          ? `load:${item.sub_inventory}`
+          : `type:${item.inventory_type ?? 'unknown'}`;
+        totalsByKey.set(key, (totalsByKey.get(key) ?? 0) + 1);
+        itemMap.set(item.id, {
+          sub_inventory: item.sub_inventory ?? null,
+          inventory_type: item.inventory_type ?? null,
+        });
+      }
+
+      const { data: scanRows, error: scanError } = await supabase
+        .from('product_location_history')
+        .select('inventory_item_id')
+        .eq('location_id', locationId)
+        .not('inventory_item_id', 'is', null);
+
+      if (scanError) throw scanError;
+
+      const scannedByKey = new Map<string, number>();
+      const scannedIds = new Set<string>();
+      for (const row of scanRows ?? []) {
+        if (row.inventory_item_id) {
+          scannedIds.add(row.inventory_item_id);
+        }
+      }
+
+      for (const id of scannedIds) {
+        const item = itemMap.get(id);
+        if (!item) continue;
+        const key = item.sub_inventory
+          ? `load:${item.sub_inventory}`
+          : `type:${item.inventory_type ?? 'unknown'}`;
+        scannedByKey.set(key, (scannedByKey.get(key) ?? 0) + 1);
+      }
+
+      return { totalsByKey, scannedByKey };
+    },
+  });
+
+  const sessionCounts = sessionCountsQuery.data;
+  const getCountsForSession = (session: SessionSummary) => {
+    if (!sessionCounts) {
+      return { total: session.totalItems, scanned: session.scannedCount };
     }
-    setActiveSessionId(session.id);
-    onSessionChange?.(session.id);
+    const key = session.inventoryType === 'ASIS' && session.subInventory
+      ? `load:${session.subInventory}`
+      : `type:${session.inventoryType}`;
+    const total = sessionCounts.totalsByKey.get(key) ?? 0;
+    const scanned = sessionCounts.scannedByKey.get(key) ?? 0;
+    return { total, scanned };
   };
+
 
   const renderSessionCard = (session: SessionSummary) => {
+    const counts = getCountsForSession(session);
+    const totalItems = counts.total;
+    const scannedCount = counts.scanned;
     const isClosed = session.status === 'closed';
-    const progress = session.totalItems > 0 ? Math.round((session.scannedCount / session.totalItems) * 100) : 0;
+    const progress = totalItems > 0 ? Math.round((scannedCount / totalItems) * 100) : 0;
     const timestamp = isClosed
       ? formatSessionTimestamp(session.closedAt || session.updatedAt || session.createdAt)
       : formatSessionTimestamp(session.createdAt);
@@ -176,7 +237,7 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
           </div>
           <div className="text-right text-xs text-muted-foreground">
             <div className="text-lg font-semibold text-foreground">
-              {session.scannedCount}/{session.totalItems}
+              {scannedCount}/{totalItems}
             </div>
             <div>scanned</div>
           </div>
@@ -187,8 +248,11 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{progress}% complete</span>
             <div className="flex items-center gap-2">
-              <Button size="responsive" onClick={() => handleOpenSession(session)}>
-                {isClosed ? 'View' : session.status === 'draft' ? 'Start' : 'Resume'}
+              <Button
+                size="responsive"
+                onClick={() => onViewChange?.('map')}
+              >
+                View Map
               </Button>
             </div>
           </div>
@@ -197,8 +261,8 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
     );
   };
 
-  const activeSessions = sessions.filter(session => session.status !== 'closed');
-  const closedSessions = sessions.filter(session => session.status === 'closed');
+  const activeSessions = filteredSessions.filter(session => session.status !== 'closed');
+  const closedSessions = filteredSessions.filter(session => session.status === 'closed');
 
   const availableSessionTypes = useMemo(() => {
     const base =
@@ -206,10 +270,10 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
         ? activeSessions
         : sessionListTab === 'closed'
           ? closedSessions
-          : sessions;
+        : filteredSessions;
     const types = Array.from(new Set(base.map(session => session.inventoryType)));
-    return types.sort((a, b) => inventoryTypeLabels[a].localeCompare(inventoryTypeLabels[b]));
-  }, [activeSessions, closedSessions, sessions, sessionListTab]);
+    return types.sort((a, b) => getInventoryTypeLabel(a).localeCompare(getInventoryTypeLabel(b)));
+  }, [activeSessions, closedSessions, filteredSessions, sessionListTab]);
 
   const filteredActiveSessions = useMemo(() => {
     const query = sessionSearch.trim().toLowerCase();
@@ -220,7 +284,7 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
         session.name.toLowerCase().includes(query) ||
         session.subInventory?.toLowerCase().includes(query) ||
         session.createdBy?.toLowerCase().includes(query) ||
-        inventoryTypeLabels[session.inventoryType].toLowerCase().includes(query);
+        getInventoryTypeLabel(session.inventoryType).toLowerCase().includes(query);
       return matchesType && matchesSearch;
     });
   }, [activeSessions, sessionSearch, sessionTypeFilter]);
@@ -234,7 +298,7 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
         session.name.toLowerCase().includes(query) ||
         session.subInventory?.toLowerCase().includes(query) ||
         session.createdBy?.toLowerCase().includes(query) ||
-        inventoryTypeLabels[session.inventoryType].toLowerCase().includes(query);
+        getInventoryTypeLabel(session.inventoryType).toLowerCase().includes(query);
       return matchesType && matchesSearch;
     });
   }, [closedSessions, sessionSearch, sessionTypeFilter]);
@@ -247,26 +311,6 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
     sessionListTab === 'closed' || sessionListTab === 'all'
       ? filteredClosedSessions
       : [];
-
-  if (activeSessionId) {
-    if (isMobile) {
-      return (
-        <MobileOverlay title="" onClose={handleExitSession} showHeader={false}>
-          <ScanningSessionView
-            sessionId={activeSessionId}
-            onExit={handleExitSession}
-          />
-        </MobileOverlay>
-      );
-    }
-
-    return (
-      <ScanningSessionView
-        sessionId={activeSessionId}
-        onExit={handleExitSession}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -303,7 +347,7 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
                     <SelectItem value="all">All Types</SelectItem>
                     {availableSessionTypes.map(type => (
                       <SelectItem key={type} value={type}>
-                        {inventoryTypeLabels[type]}
+                        {getInventoryTypeLabel(type)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -319,7 +363,7 @@ export function SessionsView({ onMenuClick, sessionId, onSessionChange }: Sessio
                   <SelectContent>
                     <SelectItem value="active">Open ({activeSessions.length})</SelectItem>
                     <SelectItem value="closed">Closed ({closedSessions.length})</SelectItem>
-                    <SelectItem value="all">All ({sessions.length})</SelectItem>
+                    <SelectItem value="all">All ({filteredSessions.length})</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

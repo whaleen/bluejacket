@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Search, X, Trash2, Printer, Maximize2 } from 'lucide-react';
+import { Loader2, Search, X, Trash2, Printer } from 'lucide-react';
 import { updateLoadMetadata } from '@/lib/loadManager';
 import { useLoadDetail, useLoadConflicts } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -16,6 +16,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { useLogActivity } from '@/hooks/queries/useActivity';
+import { useQuery } from '@tanstack/react-query';
+import supabase from '@/lib/supabase';
 
 interface LoadDetailPanelProps {
   load: LoadMetadata;
@@ -23,7 +25,6 @@ interface LoadDetailPanelProps {
   onClose?: () => void;
   onDelete?: (load: LoadMetadata) => void;
   onMetaUpdated?: (updates: Partial<LoadMetadata>) => void;
-  onOpenStandalone?: () => void;
 }
 
 export function LoadDetailPanel({
@@ -32,7 +33,6 @@ export function LoadDetailPanel({
   onClose,
   onDelete,
   onMetaUpdated,
-  onOpenStandalone,
 }: LoadDetailPanelProps) {
   const { user } = useAuth();
   const userDisplayName = user?.username ?? user?.email ?? 'Unknown';
@@ -48,19 +48,44 @@ export function LoadDetailPanel({
     load.sub_inventory_name
   );
 
+  const otherInventoryQuery = useQuery({
+    queryKey: ['load-cross-inventory', locationId ?? 'none', load.sub_inventory_name, load.inventory_type],
+    enabled: !!locationId && !!load.sub_inventory_name,
+    queryFn: async () => {
+      if (!locationId) return [];
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .select('serial, inventory_type')
+        .eq('location_id', locationId)
+        .eq('sub_inventory', load.sub_inventory_name)
+        .neq('inventory_type', load.inventory_type)
+        .not('serial', 'is', null);
+
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const otherInventoryBySerial = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const row of otherInventoryQuery.data ?? []) {
+      if (!row.serial) continue;
+      const current = map.get(row.serial) ?? new Set<string>();
+      if (row.inventory_type) current.add(row.inventory_type);
+      map.set(row.serial, current);
+    }
+    return map;
+  }, [otherInventoryQuery.data]);
+
   const items = loadDetail?.items ?? [];
   const [searchTerm, setSearchTerm] = useState('');
   const [prepTagged, setPrepTagged] = useState(false);
   const [prepWrapped, setPrepWrapped] = useState(false);
   const [sanityCheckRequested, setSanityCheckRequested] = useState(false);
-  const [sanityRequestedAt, setSanityRequestedAt] = useState<string | null>(null);
-  const [sanityRequestedBy, setSanityRequestedBy] = useState<string | null>(null);
   const [sanityCompletedAt, setSanityCompletedAt] = useState<string | null>(null);
-  const [sanityCompletedBy, setSanityCompletedBy] = useState<string | null>(null);
   const [sanityRequestConfirmOpen, setSanityRequestConfirmOpen] = useState(false);
   const [sanityCompleteConfirmOpen, setSanityCompleteConfirmOpen] = useState(false);
   const [pickupDate, setPickupDate] = useState('');
-  const [pickupTba, setPickupTba] = useState(false);
   const [savingPrep, setSavingPrep] = useState(false);
   const [friendlyName, setFriendlyName] = useState('');
   const [primaryColor, setPrimaryColor] = useState('');
@@ -94,12 +119,8 @@ export function LoadDetailPanel({
     setPrepTagged(Boolean(load.prep_tagged));
     setPrepWrapped(Boolean(load.prep_wrapped));
     setSanityCheckRequested(Boolean(load.sanity_check_requested));
-    setSanityRequestedAt(load.sanity_check_requested_at ?? null);
-    setSanityRequestedBy(load.sanity_check_requested_by ?? null);
     setSanityCompletedAt(load.sanity_check_completed_at ?? null);
-    setSanityCompletedBy(load.sanity_check_completed_by ?? null);
     setPickupDate(load.pickup_date ? load.pickup_date.slice(0, 10) : '');
-    setPickupTba(Boolean(load.pickup_tba));
     setFriendlyName(load.friendly_name || '');
     setPrimaryColor(load.primary_color || '');
     setNotes(load.notes || '');
@@ -109,12 +130,8 @@ export function LoadDetailPanel({
     load.prep_tagged,
     load.prep_wrapped,
     load.sanity_check_requested,
-    load.sanity_check_requested_at,
-    load.sanity_check_requested_by,
     load.sanity_check_completed_at,
-    load.sanity_check_completed_by,
     load.pickup_date,
-    load.pickup_tba,
     load.friendly_name,
     load.primary_color,
     load.notes,
@@ -158,18 +175,8 @@ export function LoadDetailPanel({
     }
   };
 
-  const formatSanityTimestamp = (value?: string | null) => {
-    if (!value) return '';
-    return new Date(value).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
 
   const displayName = load.friendly_name || load.sub_inventory_name;
-  const prepCount = (prepTagged ? 1 : 0) + (prepWrapped ? 1 : 0);
 
   const escapeHtml = (value: string) =>
     value
@@ -334,34 +341,6 @@ export function LoadDetailPanel({
     return null;
   })();
 
-  const suggestedCodes = (() => {
-    if (load.inventory_type !== 'ASIS') return [];
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-    const suggestions: string[] = [];
-    const used = recentCodes;
-
-    for (const letter of alphabet) {
-      if (!used.has(letter)) {
-        suggestions.push(letter);
-      }
-      if (suggestions.length >= 8) return suggestions;
-    }
-
-    for (const first of alphabet) {
-      for (const second of alphabet) {
-        const code = `${first}${second}`;
-        if (first === second && used.has(first)) continue;
-        if (!used.has(code)) {
-          suggestions.push(code);
-        }
-        if (suggestions.length >= 8) return suggestions;
-      }
-    }
-    return suggestions;
-  })();
-
-  const derivedFriendlyName = deriveFriendlyNameFromNotes(load.ge_notes, load.ge_source_status);
-  const derivedFriendlyCode = normalizeFriendlyCode(derivedFriendlyName);
 
   const hasMetaChanges = (() => {
     const friendly = friendlyName.trim().toUpperCase();
@@ -376,6 +355,44 @@ export function LoadDetailPanel({
       categoryValue !== (load.category || '')
     );
   })();
+
+  const loadDetailRows = useMemo(
+    () =>
+      [
+        ['ID', load.id],
+        ['Company ID', load.company_id],
+        ['Location ID', load.location_id],
+        ['Inventory Type', load.inventory_type],
+        ['Load Number', load.sub_inventory_name],
+        ['Friendly Name', load.friendly_name],
+        ['Status', load.status],
+        ['Category', load.category],
+        ['Primary Color', load.primary_color],
+        ['Prep Tagged', load.prep_tagged],
+        ['Prep Wrapped', load.prep_wrapped],
+        ['Sanity Check Requested', load.sanity_check_requested],
+        ['Sanity Requested At', load.sanity_check_requested_at],
+        ['Sanity Requested By', load.sanity_check_requested_by],
+        ['Sanity Completed At', load.sanity_check_completed_at],
+        ['Sanity Completed By', load.sanity_check_completed_by],
+        ['Pickup Date', load.pickup_date],
+        ['Pickup TBA', load.pickup_tba],
+        ['GE Source Status', load.ge_source_status],
+        ['GE CSO Status', load.ge_cso_status],
+        ['GE Inv Org', load.ge_inv_org],
+        ['GE Units', load.ge_units],
+        ['GE Submitted Date', load.ge_submitted_date],
+        ['GE CSO', load.ge_cso],
+        ['GE Pricing', load.ge_pricing],
+        ['GE Notes', load.ge_notes],
+        ['GE Scanned At', load.ge_scanned_at],
+        ['Created At', load.created_at],
+        ['Updated At', load.updated_at],
+        ['Created By', load.created_by],
+        ['Notes', load.notes],
+      ] as Array<[string, string | number | boolean | null | undefined]>,
+    [load]
+  );
 
   const handleSaveMeta = useCallback(async () => {
     if (!hasMetaChanges) {
@@ -529,10 +546,7 @@ export function LoadDetailPanel({
     if (!user) return;
     const now = new Date().toISOString();
     setSanityCheckRequested(true);
-    setSanityRequestedAt(now);
-    setSanityRequestedBy(userDisplayName);
     setSanityCompletedAt(null);
-    setSanityCompletedBy(null);
     const success = await persistPrepUpdate(
       {
         sanity_check_requested: true,
@@ -568,7 +582,6 @@ export function LoadDetailPanel({
     const now = new Date().toISOString();
     setSanityCheckRequested(false);
     setSanityCompletedAt(now);
-    setSanityCompletedBy(userDisplayName);
     const success = await persistPrepUpdate(
       {
         sanity_check_requested: false,
@@ -600,24 +613,9 @@ export function LoadDetailPanel({
   const handlePickupDateChange = (event: ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value;
     setPickupDate(nextValue);
-    if (pickupTba) {
-      setPickupTba(false);
-    }
     persistPrepUpdate({
       pickup_date: nextValue ? nextValue : null,
-      pickup_tba: false,
     });
-  };
-
-  const handlePickupTbaChange = (checked: boolean | 'indeterminate') => {
-    const nextValue = checked === true;
-    setPickupTba(nextValue);
-    if (nextValue) {
-      setPickupDate('');
-      persistPrepUpdate({ pickup_tba: true, pickup_date: null });
-    } else {
-      persistPrepUpdate({ pickup_tba: false });
-    }
   };
 
   const handlePrintTags = () => {
@@ -753,135 +751,93 @@ export function LoadDetailPanel({
     <>
       <div className="rounded-lg border bg-background p-4 space-y-4">
         {/* Simplified Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">{displayName}</h2>
+        <div className="flex items-start gap-3">
+          {onClose && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={onClose}
+              aria-label="Close load details"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              {primaryColor && (
+                <span
+                  className="size-3 rounded-sm border border-border"
+                  style={{ backgroundColor: primaryColor }}
+                  aria-hidden="true"
+                />
+              )}
+              <h2 className="text-lg font-semibold">{displayName}</h2>
+              <span className="text-xs text-muted-foreground">{items.length}</span>
+            </div>
             <div className="text-sm text-muted-foreground mt-1">
               {load.ge_cso ? `CSO ${load.ge_cso}` : `Load # ${load.sub_inventory_name}`}
             </div>
           </div>
-          {(onClose || onOpenStandalone) && (
-            <div className="flex items-center gap-2">
-              {onOpenStandalone && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={onOpenStandalone}
-                  aria-label="Open standalone load view"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </Button>
-              )}
-              {onClose && (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  onClick={onClose}
-                  aria-label="Close load details"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="progress" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="progress">Work Progress</TabsTrigger>
             <TabsTrigger value="editor">Load Editor</TabsTrigger>
+            <TabsTrigger value="details">Details</TabsTrigger>
           </TabsList>
 
           {/* Work Progress Tab */}
           <TabsContent value="progress" className="space-y-4 mt-4">
             {/* Prep Checklist */}
-            <div className="rounded-lg border bg-muted/20 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-medium">Prep checklist</p>
-              <p className="text-xs text-muted-foreground">Tagged, wrapped, and sanity check requests.</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {savingPrep && <Loader2 className="h-3 w-3 animate-spin" />}
-              <span>{prepCount}/2 complete</span>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={prepTagged} onCheckedChange={handleTaggedChange} disabled={savingPrep} />
-              Tagged
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={prepWrapped} onCheckedChange={handleWrappedChange} disabled={savingPrep} />
-              Wrapped
-            </label>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">Sanity check</span>
-                {sanityCheckRequested ? (
-                  <span className="text-xs text-muted-foreground">
-                    Requested
-                    {sanityRequestedBy ? ` by ${sanityRequestedBy}` : ''}
-                    {sanityRequestedAt ? ` • ${formatSanityTimestamp(sanityRequestedAt)}` : ''}
-                  </span>
-                ) : sanityCompletedAt ? (
-                  <span className="text-xs text-muted-foreground">
-                    Last completed
-                    {sanityCompletedBy ? ` by ${sanityCompletedBy}` : ''}
-                    {sanityCompletedAt ? ` • ${formatSanityTimestamp(sanityCompletedAt)}` : ''}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Not requested</span>
-                )}
-              </div>
-              <Button
-                size="responsive"
-                variant={sanityCheckRequested ? 'outline' : 'default'}
-                onClick={() =>
-                  sanityCheckRequested
-                    ? setSanityCompleteConfirmOpen(true)
-                    : setSanityRequestConfirmOpen(true)
-                }
-                disabled={savingPrep}
-              >
-                {sanityCheckRequested ? 'Complete sanity check' : 'Request sanity check'}
-              </Button>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Pickup</span>
-              <Input
-                type="date"
-                value={pickupDate}
-                onChange={handlePickupDateChange}
-                disabled={savingPrep || pickupTba}
-                className="w-[160px]"
-              />
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={pickupTba} onCheckedChange={handlePickupTbaChange} disabled={savingPrep} />
-                TBA
-              </label>
-            </div>
-          </div>
-        </div>
-
-            {/* Summary */}
-            <div className="grid grid-cols-1 gap-4 p-4 bg-muted rounded-lg sm:grid-cols-2">
-              <div>
-                <div className="text-sm text-muted-foreground">Total Items</div>
-                <div className="text-2xl font-bold">{items.length}</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground">Product Types</div>
-                <div className="text-sm mt-1">
-                  {Object.entries(productTypeBreakdown).map(([type, count]) => (
-                    <div key={type}>
-                      {type}: {count}
-                    </div>
-                  ))}
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-3">
+              {savingPrep && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Saving</span>
                 </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-sm">
+                  <Checkbox checked={prepTagged} onCheckedChange={handleTaggedChange} disabled={savingPrep} />
+                  Tagged
+                </label>
+                <label className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-sm">
+                  <Checkbox checked={prepWrapped} onCheckedChange={handleWrappedChange} disabled={savingPrep} />
+                  Wrapped
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={sanityCheckRequested ? 'outline' : 'default'}
+                  onClick={() =>
+                    sanityCheckRequested
+                      ? setSanityCompleteConfirmOpen(true)
+                      : setSanityRequestConfirmOpen(true)
+                  }
+                  disabled={savingPrep}
+                  className="h-8"
+                >
+                  {sanityCheckRequested
+                    ? 'Sanity: Requested'
+                    : sanityCompletedAt
+                    ? 'Sanity: Complete'
+                    : 'Sanity: Request'}
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">Pickup</span>
+                <Input
+                  type="date"
+                  value={pickupDate}
+                  onChange={handlePickupDateChange}
+                  disabled={savingPrep}
+                  className="w-[150px]"
+                />
               </div>
             </div>
 
@@ -960,6 +916,11 @@ export function LoadDetailPanel({
                       {syntheticSerial && (
                         <Badge variant="outline">No serial</Badge>
                       )}
+                      {item.serial && otherInventoryBySerial.has(item.serial) && (
+                        <Badge variant="secondary">
+                          Also in {Array.from(otherInventoryBySerial.get(item.serial) ?? []).join(', ')}
+                        </Badge>
+                      )}
                     </>
                   );
 
@@ -1003,34 +964,6 @@ export function LoadDetailPanel({
                     onChange={(e) => setFriendlyName(e.target.value.toUpperCase())}
                     placeholder="Optional display name"
                   />
-                  {load.inventory_type === 'ASIS' && (
-                    <div className="space-y-2 text-xs text-muted-foreground">
-                      {derivedFriendlyCode && !friendlyName.trim() && (
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-2 text-primary"
-                          onClick={() => setFriendlyName(derivedFriendlyCode)}
-                        >
-                          Use suggested name {derivedFriendlyCode}
-                        </button>
-                      )}
-                      {suggestedCodes.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {suggestedCodes.map((code) => (
-                            <button
-                              key={code}
-                              type="button"
-                              className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
-                              onClick={() => setFriendlyName(code)}
-                            >
-                              {code}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <p>Allowed: 1–2 letters, not used in the last {recentWindowSize} ASIS loads.</p>
-                    </div>
-                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Notes</label>
@@ -1045,18 +978,35 @@ export function LoadDetailPanel({
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-xs uppercase tracking-wide text-muted-foreground/70">Primary color</label>
-                  <select
-                    value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">No color</option>
-                    {COLOR_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label} ({option.value})
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={primaryColor ? 'outline' : 'default'}
+                      size="sm"
+                      className="h-9"
+                      onClick={() => setPrimaryColor('')}
+                    >
+                      No color
+                    </Button>
+                    {COLOR_OPTIONS.map((option) => {
+                      const isSelected = primaryColor === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setPrimaryColor(option.value)}
+                          className={`h-9 w-9 rounded-md border ${isSelected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : 'border-border'} flex items-center justify-center`}
+                          aria-label={option.label}
+                          title={`${option.label} (${option.value})`}
+                        >
+                          <span
+                            className="size-6 rounded-sm border border-border"
+                            style={{ backgroundColor: option.value }}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {load.inventory_type === 'ASIS' && (
@@ -1076,6 +1026,33 @@ export function LoadDetailPanel({
               {metaError && (
                 <div className="text-sm text-destructive">{metaError}</div>
               )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="details" className="space-y-4 mt-4">
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-sm font-medium mb-3">Load data</div>
+              <div className="mb-4">
+                <div className="text-xs text-muted-foreground">Product Types</div>
+                <div className="mt-2 grid gap-1 text-sm">
+                  {Object.entries(productTypeBreakdown).map(([type, count]) => (
+                    <div key={type} className="flex items-center justify-between">
+                      <span className="font-medium">{type}</span>
+                      <span className="text-muted-foreground">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
+                {loadDetailRows.map(([label, value]) => (
+                  <div key={label} className="space-y-1">
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                    <div className="font-medium break-words">
+                      {value === null || value === undefined ? '—' : String(value)}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

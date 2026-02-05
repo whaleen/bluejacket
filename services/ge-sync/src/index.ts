@@ -3,6 +3,7 @@ import express from 'express';
 import { getAuthStatus, refreshAuth } from './auth/playwright.js';
 import { syncASIS } from './sync/asis.js';
 import { syncSimpleInventory } from './sync/inventory.js';
+import { syncInboundReceipts } from './sync/inbound.js';
 import type { SyncResult, AuthStatus } from './types/index.js';
 
 const app = express();
@@ -217,6 +218,49 @@ app.post('/sync/sta', async (req, res) => {
     const result: SyncResult = {
       success: false,
       message: `STA sync failed: ${message}`,
+      stats: {
+        totalGEItems: 0,
+        itemsInLoads: 0,
+        unassignedItems: 0,
+        newItems: 0,
+        updatedItems: 0,
+        forSaleLoads: 0,
+        pickedLoads: 0,
+        changesLogged: 0,
+      },
+      changes: [],
+      error: message,
+    };
+
+    res.status(500).json(result);
+  }
+});
+
+// Sync inbound receiving reports
+app.post('/sync/inbound', async (req, res) => {
+  const startTime = Date.now();
+
+  try {
+    const { locationId } = req.body;
+
+    if (!locationId) {
+      return res.status(400).json({ error: 'locationId is required' });
+    }
+
+    console.log(`Starting inbound receipts sync for location: ${locationId}`);
+
+    const result: SyncResult = await syncInboundReceipts(locationId);
+
+    console.log(`Inbound receipts sync completed in ${Date.now() - startTime}ms`, result.stats);
+
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Inbound receipts sync failed:', message);
+
+    const result: SyncResult = {
+      success: false,
+      message: `Inbound receipts sync failed: ${message}`,
       stats: {
         totalGEItems: 0,
         itemsInLoads: 0,

@@ -692,11 +692,14 @@ async function discoverInventoryDownloadUrl(cookieHeader: string): Promise<strin
  */
 export async function syncASIS(locationId: string): Promise<SyncResult> {
   const startTime = Date.now();
+  const log: string[] = [];
+  log.push('Starting ASIS sync');
 
   try {
     const config = await getLocationConfig(locationId);
     const db = getSupabase();
     const productLookup = await getProductLookup(config.companyId);
+    log.push(`Company ${config.companyId} • Location ${locationId}`);
 
     // Determine invOrg from location slug or config
     // For now, hardcode to 9SU - should be configurable per location
@@ -705,9 +708,17 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     // Fetch from GE
     const { inventoryFromLoads, masterInventory, serialDetails, loadInfo, serialToLoad, mergedLoadData } =
       await fetchASISData(locationId, invOrg);
+    log.push(`Fetched ${loadInfo.length} load history entries`);
+    log.push(`Mapped ${serialToLoad.size} serials to loads`);
 
     // Sync load metadata (notes/status/etc.)
-    await syncLoadMetadata(db, config.companyId, locationId, mergedLoadData);
+    const { inserted: loadsInserted, updated: loadsUpdated } = await syncLoadMetadata(
+      db,
+      config.companyId,
+      locationId,
+      mergedLoadData
+    );
+    log.push(`Load metadata: inserted ${loadsInserted}, updated ${loadsUpdated}`);
 
     const loadCsoByLoadNumber = new Map<string, string>();
     for (const load of mergedLoadData) {
@@ -777,9 +788,12 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
       if (masterMissingSerials > 0) {
         console.log(`  Master inventory rows missing serials: ${masterMissingSerials}`);
       }
+      log.push(`Master inventory rows: ${masterInventory.length}`);
     } else {
       inventory.push(...inventoryFromLoads);
     }
+
+    log.push(`Inventory rows after merge: ${inventory.length}`);
 
     if (inventory.length === 0 && masterInventory && masterInventory.length > 0) {
       const sample = masterInventory[0] as unknown as Record<string, unknown>;
@@ -801,6 +815,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     if (fetchError) {
       throw new Error(`Failed to fetch existing items: ${fetchError.message}`);
     }
+    log.push(`Existing ASIS items in DB: ${existingItems?.length || 0}`);
 
     // Build existing items map
     interface ExistingItem {
@@ -982,10 +997,12 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     const itemsWithoutIdWithoutSerial = itemsWithoutId.filter(
       (item) => !item.serial || (typeof item.serial === 'string' && item.serial.trim().length === 0)
     );
+    log.push(`Upsert candidates: ${itemsToUpsert.length}`);
 
     const upsertChunkSize = 500;
 
     if (itemsWithoutIdWithoutSerial.length > 0) {
+      log.push(`Insert new items without serial: ${itemsWithoutIdWithoutSerial.length}`);
       for (let i = 0; i < itemsWithoutIdWithoutSerial.length; i += upsertChunkSize) {
         const chunk = itemsWithoutIdWithoutSerial.slice(i, i + upsertChunkSize);
         const { error: insertError } = await db
@@ -998,11 +1015,12 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     }
 
     if (itemsWithoutIdWithSerial.length > 0) {
+      log.push(`Upsert items with serial: ${itemsWithoutIdWithSerial.length}`);
       for (let i = 0; i < itemsWithoutIdWithSerial.length; i += upsertChunkSize) {
         const chunk = itemsWithoutIdWithSerial.slice(i, i + upsertChunkSize);
         const { error: upsertSerialError } = await db
           .from('inventory_items')
-          .upsert(chunk, { onConflict: 'company_id,location_id,serial' });
+          .upsert(chunk, { onConflict: 'company_id,location_id,serial,inventory_type' });
         if (upsertSerialError) {
           throw new Error(`Failed to upsert serial items: ${upsertSerialError.message}`);
         }
@@ -1010,6 +1028,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     }
 
     if (itemsWithId.length > 0) {
+      log.push(`Upsert items by id: ${itemsWithId.length}`);
       for (let i = 0; i < itemsWithId.length; i += upsertChunkSize) {
         const chunk = itemsWithId.slice(i, i + upsertChunkSize);
         const { error: upsertError } = await db
@@ -1030,6 +1049,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     if (backfilledCount > 0) {
       console.log(`Backfilled ${backfilledCount} ASIS items with product links.`);
     }
+    log.push(`Backfilled product links: ${backfilledCount}`);
 
     // Orphans are not a concept for ASIS-only syncs; clear any stale flags.
     const { error: clearOrphansError } = await db
@@ -1043,6 +1063,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     if (clearOrphansError) {
       console.error('Failed to clear orphan flags:', clearOrphansError.message);
     }
+    log.push('Cleared ASIS orphan flags');
     const stats: SyncStats = {
       totalGEItems: inventory.length,
       itemsInLoads,
@@ -1058,6 +1079,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
       success: true,
       stats,
       duration: Date.now() - startTime,
+      log,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -1075,6 +1097,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
         pickedLoads: 0,
         changesLogged: 0,
       },
+      log,
     };
   }
 }
@@ -1084,8 +1107,8 @@ async function syncLoadMetadata(
   companyId: string,
   locationId: string,
   mergedLoads: MergedLoad[]
-): Promise<void> {
-  if (!mergedLoads.length) return;
+): Promise<{ inserted: number; updated: number }> {
+  if (!mergedLoads.length) return { inserted: 0, updated: 0 };
 
   const uniqueLoadNumbers = Array.from(new Set(mergedLoads.map(l => l.loadNumber)));
 
@@ -1219,4 +1242,6 @@ async function syncLoadMetadata(
   if (newLoads.length || updatedLoadsCount > 0) {
     console.log(`Load metadata synced (new: ${newLoads.length}, updated: ${updatedLoadsCount})`);
   }
+
+  return { inserted: newLoads.length, updated: updatedLoadsCount };
 }

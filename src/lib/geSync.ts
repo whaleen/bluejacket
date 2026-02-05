@@ -1,4 +1,4 @@
-export type GeSyncType = 'asis' | 'fg' | 'sta';
+export type GeSyncType = 'asis' | 'fg' | 'sta' | 'inbound';
 
 const GE_SYNC_URL =
   (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? 'http://localhost:3001';
@@ -11,6 +11,8 @@ export type GeSyncStats = {
   changesLogged: number;
   unassignedItems?: number;
 };
+
+export type GeSyncLog = string[];
 
 export async function syncGeInventory(type: GeSyncType, locationId: string) {
   const response = await fetch(`${GE_SYNC_URL}/sync/${type}`, {
@@ -30,5 +32,6 @@ export async function syncGeInventory(type: GeSyncType, locationId: string) {
 
   return {
     stats: (payload.stats ?? {}) as GeSyncStats,
+    log: (payload.log ?? []) as GeSyncLog,
   };
 }

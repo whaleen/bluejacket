@@ -26,6 +26,18 @@ export const ENDPOINTS = {
   // ERP inventory on-hand (master inventory export)
   // POST with body: dmsLoc={invOrg}&subInvLoc=ASIS&invorg={invOrg}&erpDataList=[]
   ERP_INVENTORY_SPREADSHEET: `${GE_DMS_BASE}/dms/erpCheckInventory/erpInventorySpreadsheet`,
+
+  // Inbound history list (submitted shipments)
+  INBOUND_HISTORY: `${GE_DMS_BASE}/dms/inbound/inboundhistory`,
+
+  // Inbound summary list (pending shipments)
+  INBOUND_SUMMARY: `${GE_DMS_BASE}/dms/inbound/summary`,
+
+  // Inbound summary page (sets session state)
+  INBOUND_BASE: `${GE_DMS_BASE}/dms/inbound`,
+
+  // Inbound receiving report PDF
+  INBOUND_EXPORT_PDF: `${GE_DMS_BASE}/dms/inbound/exportpdf`,
 } as const;
 
 export const HEADERS = {
@@ -42,6 +54,7 @@ export const REFERERS = {
   ASIS_REPORT_HISTORY: `${GE_DMS_BASE}/dms/newasis`,
   ASIS_LOAD_DETAIL: `${GE_DMS_BASE}/dms/newasis`,
   ERP_INVENTORY: `${GE_DMS_BASE}/dms/erpCheckInventory`,
+  INBOUND: `${GE_DMS_BASE}/dms/inbound`,
 };
 
 /**

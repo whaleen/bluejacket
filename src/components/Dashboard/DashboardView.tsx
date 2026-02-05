@@ -684,13 +684,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                         onClick={() => {
                           if (item.type === 'session' && item.sessionId) {
                             onViewChange?.('sessions');
-                            setTimeout(() => {
-                              const params = new URLSearchParams(window.location.search);
-                              params.set('session', item.sessionId!);
-                              const path = `/scanning-sessions/${item.sessionId}`;
-                              window.history.replaceState({}, '', path);
-                              window.dispatchEvent(new Event('app:locationchange'));
-                            }, 50);
                           } else if (item.load) {
                             navigateToLoad(item.load.sub_inventory_name);
                           }
@@ -722,13 +715,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                             onClick={() => {
                               if (item.type === 'session' && item.sessionId) {
                                 onViewChange?.('sessions');
-                                setTimeout(() => {
-                                  const params = new URLSearchParams(window.location.search);
-                                  params.set('session', item.sessionId!);
-                                  const path = `/scanning-sessions/${item.sessionId}`;
-                                  window.history.replaceState({}, '', path);
-                                  window.dispatchEvent(new Event('app:locationchange'));
-                                }, 50);
                               } else if (item.load) {
                                 navigateToLoad(item.load.sub_inventory_name);
                               }
@@ -1068,13 +1054,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                         onClick={() => {
                           if (item.type === 'session' && item.sessionId) {
                             onViewChange?.('sessions');
-                            setTimeout(() => {
-                              const params = new URLSearchParams(window.location.search);
-                              params.set('session', item.sessionId!);
-                              const path = `/scanning-sessions/${item.sessionId}`;
-                              window.history.replaceState({}, '', path);
-                              window.dispatchEvent(new Event('app:locationchange'));
-                            }, 50);
                           } else if (item.load) {
                             navigateToLoad(item.load.sub_inventory_name);
                           }
@@ -1113,13 +1092,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                             onClick={() => {
                               if (item.type === 'session' && item.sessionId) {
                                 onViewChange?.('sessions');
-                                setTimeout(() => {
-                                  const params = new URLSearchParams(window.location.search);
-                                  params.set('session', item.sessionId!);
-                                  const path = `/scanning-sessions/${item.sessionId}`;
-                                  window.history.replaceState({}, '', path);
-                                  window.dispatchEvent(new Event('app:locationchange'));
-                                }, 50);
                               } else if (item.load) {
                                 navigateToLoad(item.load.sub_inventory_name);
                               }
@@ -1194,13 +1166,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                             onClick={() => {
                               if (item.sessionId) {
                                 onViewChange?.('sessions');
-                                setTimeout(() => {
-                                  const params = new URLSearchParams(window.location.search);
-                                  params.set('session', item.sessionId!);
-                                  const path = `/scanning-sessions/${item.sessionId}`;
-                                  window.history.replaceState({}, '', path);
-                                  window.dispatchEvent(new Event('app:locationchange'));
-                                }, 50);
                               }
                             }}
                             className="flex items-center gap-4 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition hover:bg-accent w-full"

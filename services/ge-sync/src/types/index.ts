@@ -106,6 +106,7 @@ export interface SyncResult {
   message?: string;
   stats: SyncStats;
   changes?: GEChange[];
+  log?: string[];
   error?: string;
   duration?: number;
 }

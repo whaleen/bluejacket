@@ -29,9 +29,8 @@ export type RouteState = {
 
 const baseSessionPath = '/scanning-sessions';
 
-export function getPathForView(view: AppView, sessionId?: string | null, displayId?: string | null): string {
+export function getPathForView(view: AppView, _sessionId?: string | null, displayId?: string | null): string {
   if (view === 'sessions') {
-    if (sessionId) return `${baseSessionPath}/${sessionId}`;
     return baseSessionPath;
   }
   if (view === 'floor-display') {
@@ -121,7 +120,7 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'agent' };
     case 'scanning-sessions':
     case 'sessions':
-      return { view: 'sessions', sessionId: second ?? null };
+      return { view: 'sessions' };
     case 'settings':
       switch (second) {
         case 'location':

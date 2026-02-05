@@ -20,7 +20,7 @@ MapLibre-based map on a blank canvas. Renders:
 
 ## Position Capture
 
-Position capture integrated into `ScanningSessionView.tsx`:
+Position capture runs from map scan flows:
 - Runs async after successful scan (non-blocking)
 - Logs to console with accuracy info
 - Handles GPS unavailable/denied gracefully

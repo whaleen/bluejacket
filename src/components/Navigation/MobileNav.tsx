@@ -75,8 +75,9 @@ export function MobileNav({ currentView, onViewChange }: MobileNavProps) {
       {/* Floating Action Button */}
       <Button
         size="lg"
+        variant="outline"
         className={`
-          fixed z-50 h-14 w-14 rounded-full shadow-lg
+          fixed z-50 h-14 w-14 rounded-full shadow-lg bg-background/95 backdrop-blur-sm border border-border text-foreground
           transition-all duration-300
           ${fabPositionClass}
           ${fabVisible ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0'}

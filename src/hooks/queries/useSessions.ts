@@ -3,14 +3,13 @@ import supabase from '@/lib/supabase';
 import { queryKeys } from '@/lib/queryKeys';
 import { getActiveLocationContext } from '@/lib/tenant';
 import {
-  createSession,
   deleteSession,
   getSession,
   getSessionSummaries,
   updateSessionScannedItems,
   updateSessionStatus,
 } from '@/lib/sessionManager';
-import type { InventoryItem, InventoryType } from '@/types/inventory';
+import type { InventoryType } from '@/types/inventory';
 import type { ScanningSession, SessionStatus, SessionSummary } from '@/types/session';
 
 type LoadMetadataSummary = {
@@ -52,64 +51,6 @@ export function useSessionDetail(sessionId: string) {
       return data;
     },
     enabled: !!locationId && !!sessionId,
-  });
-}
-
-export function useCreateSessionFromInventory() {
-  const queryClient = useQueryClient();
-  const { locationId } = getActiveLocationContext();
-
-  return useMutation({
-    mutationFn: async ({
-      name,
-      inventoryType,
-      subInventory,
-      createdBy,
-    }: {
-      name: string;
-      inventoryType: InventoryType;
-      subInventory?: string;
-      createdBy?: string;
-    }) => {
-      if (!locationId) {
-        throw new Error('No active location selected');
-      }
-
-      let query = supabase
-        .from('inventory_items')
-        .select('*')
-        .eq('location_id', locationId)
-        .eq('inventory_type', inventoryType);
-
-      if (subInventory && subInventory !== 'all') {
-        query = query.eq('sub_inventory', subInventory);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        throw new Error('No items found for this inventory type');
-      }
-
-      const { data: session, error: sessionError } = await createSession({
-        name,
-        inventoryType,
-        subInventory,
-        items: data as InventoryItem[],
-        createdBy,
-      });
-
-      if (sessionError || !session) {
-        throw sessionError ?? new Error('Failed to create session');
-      }
-
-      return session;
-    },
-    onSuccess: () => {
-      if (locationId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all(locationId) });
-      }
-    },
   });
 }
 

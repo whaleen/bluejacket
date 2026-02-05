@@ -6,24 +6,24 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Map as MapComponent, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, type MapRef } from '@/components/ui/map';
+import { Map as MapComponent, MapMarker, MarkerContent, MarkerPopup, MarkerTooltip, MapControls, MapControlGroup, MapControlButton, mapDefaultStyles, type MapRef } from '@/components/ui/map';
 import { Button } from '@/components/ui/button';
-import { Globe, Package, Pencil, ScanLine, Trash2, X, Layers, Zap, Map as MapIcon } from 'lucide-react';
+import { Globe, Package, Pencil, ScanLine, Trash2, X, Layers } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
-import { useDeleteProductLocation, useClearAllScans, useDeleteSessionScans } from '@/hooks/queries/useMap';
+import { useDeleteProductLocation, useClearAllScans, useDeleteSessionScans, useInventoryItemCount } from '@/hooks/queries/useMap';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
 import { findItemOwningSession } from '@/lib/sessionScanner';
 import { getOrCreateAdHocSession, getOrCreateFogOfWarSession } from '@/lib/sessionManager';
-import { useSessionDetail, useSessionSummaries, useUpdateSessionScannedItems } from '@/hooks/queries/useSessions';
+import { useSessionSummaries } from '@/hooks/queries/useSessions';
 import { useAuth } from '@/context/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { feedbackScanDetected, feedbackSuccess, feedbackError } from '@/lib/feedback';
-import { MinimalScanOverlay, type SessionOption } from '@/components/Scanner/MinimalScanOverlay';
+import { MinimalScanOverlay } from '@/components/Scanner/MinimalScanOverlay';
 import { BarcodeScanner } from '@/components/Scanner/BarcodeScanner';
 import type { ProductLocationForMap } from '@/types/map';
 import { blankMapStyle } from './BlankMapStyle';
@@ -75,15 +75,15 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [scanAlert, setScanAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [scanFeedback, setScanFeedback] = useState('');
+  const fogCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Get active session details
   const activeSession = allSessions.find(s => s.id === activeSessionId);
-  const sessionDetailQuery = useSessionDetail(activeSessionId ?? '');
-  const updateSessionMutation = useUpdateSessionScannedItems();
 
   const deleteLocation = useDeleteProductLocation();
   const clearAllScans = useClearAllScans();
   const deleteSessionScans = useDeleteSessionScans();
+  const inventoryItemCountQuery = useInventoryItemCount();
   const savedView = useMemo<SavedViewState | null>(() => {
     if (typeof window === 'undefined') return null;
     const raw = window.localStorage.getItem(VIEW_STATE_STORAGE_KEY);
@@ -132,16 +132,31 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   }, [locations]);
 
   // Filter visible locations based on hidden sessions
+  const getLocationGroupKey = useCallback((loc: ProductLocationForMap) => {
+    if (loc.owning_session_id) return `session:${loc.owning_session_id}`;
+    if (loc.sub_inventory) return `load:${loc.sub_inventory}`;
+    return 'unassigned';
+  }, []);
+
   const visibleLocations = useMemo(() => {
     return validLocations.filter(loc => {
-      const sessionId = loc.scanning_session_id || '';
-      return !hiddenSessions.has(sessionId);
+      const groupKey = getLocationGroupKey(loc);
+      return !hiddenSessions.has(groupKey);
     });
-  }, [validLocations, hiddenSessions]);
+  }, [getLocationGroupKey, hiddenSessions, validLocations]);
 
   const totalScanCount = validLocations.length;
   const visibleScanCount = visibleLocations.length;
   const hiddenScanCount = Math.max(0, totalScanCount - visibleScanCount);
+  const scannedInventoryItemCount = useMemo(() => {
+    const ids = new Set(
+      validLocations
+        .map((loc) => loc.inventory_item_id)
+        .filter(Boolean)
+    );
+    return ids.size;
+  }, [validLocations]);
+  const totalInventoryItemCount = inventoryItemCountQuery.data ?? 0;
 
   // Get current GPS position
   useEffect(() => {
@@ -177,6 +192,65 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     }
   }, [scanOverlayOpen]);
 
+  const drawFogLayer = useCallback(() => {
+    if (!mapInstance || !fogCanvasRef.current) return;
+    const canvas = fogCanvasRef.current;
+    const container = mapInstance.getContainer();
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    if (width === 0 || height === 0) return;
+
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+    const fogColor = isDark ? 'rgba(0, 0, 0, 0.98)' : 'rgba(226, 232, 240, 0.7)';
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = fogColor;
+    ctx.fillRect(0, 0, width, height);
+
+    const zoom = mapInstance.getZoom();
+    const radius = Math.max(60, Math.min(160, zoom * 7));
+
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const loc of visibleLocations) {
+      if (loc.raw_lat == null || loc.raw_lng == null) continue;
+      const point = mapInstance.project([loc.raw_lng, loc.raw_lat]);
+      const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius);
+      gradient.addColorStop(0, 'rgba(0, 0, 0, 0.95)');
+      gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.6)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }, [mapInstance, visibleLocations]);
+
+  useEffect(() => {
+    drawFogLayer();
+  }, [drawFogLayer]);
+
+  useEffect(() => {
+    if (!mapInstance) return;
+    const handleRender = () => drawFogLayer();
+    mapInstance.on('move', handleRender);
+    mapInstance.on('zoom', handleRender);
+    mapInstance.on('resize', handleRender);
+    return () => {
+      mapInstance.off('move', handleRender);
+      mapInstance.off('zoom', handleRender);
+      mapInstance.off('resize', handleRender);
+    };
+  }, [drawFogLayer, mapInstance]);
+
   const showScanAlert = (type: 'success' | 'error', message: string, duration = 3000) => {
     setScanAlert({ type, message });
     setTimeout(() => setScanAlert(null), duration);
@@ -204,7 +278,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       // Check if this is a special session (ad-hoc or fog-of-war)
       const isAdHoc = activeSession?.name === '🧪 Ad-hoc Scans';
       const isFogOfWar = activeSession?.name === '🗺️ Fog of War';
-      const isRegularSession = !isAdHoc && !isFogOfWar;
 
       const result = await findItemOwningSession(barcode);
 
@@ -218,7 +291,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
         if (isFogOfWar) {
           const logResult = await logProductLocation({
-            scanning_session_id: activeSessionId,
             raw_lat: position.latitude,
             raw_lng: position.longitude,
             accuracy: position.accuracy,
@@ -249,7 +321,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       if (result.type === 'multiple') {
         feedbackError();
         setScanFeedback('Multiple matches');
-        showScanAlert('error', 'Multiple matches found - use session view', 5000);
+        showScanAlert('error', 'Multiple matches found - use load context', 5000);
         return;
       }
 
@@ -261,13 +333,10 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         return;
       }
 
-      const isSameSession = owningSession.id === activeSessionId;
-
       if (isAdHoc) {
         const logResult = await logProductLocation({
           product_id: item.products?.id ?? item.product_fk,
           inventory_item_id: item.id,
-          scanning_session_id: activeSessionId,
           raw_lat: position.latitude,
           raw_lng: position.longitude,
           accuracy: position.accuracy,
@@ -293,7 +362,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         const logResult = await logProductLocation({
           product_id: item.products?.id ?? item.product_fk,
           inventory_item_id: item.id,
-          scanning_session_id: activeSessionId,
           raw_lat: position.latitude,
           raw_lng: position.longitude,
           accuracy: position.accuracy,
@@ -314,87 +382,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         queryClient.invalidateQueries({ queryKey: ['product-locations', locationId] });
         return;
       }
-
-      if (isRegularSession) {
-        const sessionDetail = sessionDetailQuery.data;
-        if (!sessionDetail) {
-          feedbackError();
-          setScanFeedback('Session unavailable');
-          showScanAlert('error', 'Session data unavailable');
-          return;
-        }
-
-        if (isSameSession) {
-          const itemId = item.id;
-          if (!itemId) {
-            feedbackError();
-            setScanFeedback('Item data missing');
-            showScanAlert('error', 'Item data missing');
-            return;
-          }
-
-          if (sessionDetail.scannedItemIds.includes(itemId)) {
-            feedbackError();
-            setScanFeedback('Already scanned');
-            showScanAlert('error', 'Item already scanned');
-            return;
-          }
-
-          const nextScanned = [...sessionDetail.scannedItemIds, itemId];
-          await updateSessionMutation.mutateAsync({
-            sessionId: sessionDetail.id,
-            scannedItemIds: nextScanned,
-            updatedBy: userDisplayName,
-          });
-
-          const logResult = await logProductLocation({
-            product_id: item.products?.id ?? item.product_fk,
-            inventory_item_id: item.id,
-            scanning_session_id: activeSessionId,
-            raw_lat: position.latitude,
-            raw_lng: position.longitude,
-            accuracy: position.accuracy,
-            scanned_by: userDisplayName,
-            product_type: item.product_type,
-            sub_inventory: item.sub_inventory ?? undefined,
-          });
-
-          if (!logResult.success) {
-            feedbackError();
-            showScanAlert('error', `Failed: ${logResult.error instanceof Error ? logResult.error.message : 'Unknown error'}`);
-            return;
-          }
-
-          feedbackSuccess();
-          setScanFeedback(`Scanned - ${owningSession.name}`);
-          showScanAlert('success', `Scanned - ${owningSession.name}`);
-          queryClient.invalidateQueries({ queryKey: ['product-locations', locationId] });
-          return;
-        }
-
-        const logResult = await logProductLocation({
-          product_id: item.products?.id ?? item.product_fk,
-          inventory_item_id: item.id,
-          scanning_session_id: activeSessionId,
-          raw_lat: position.latitude,
-          raw_lng: position.longitude,
-          accuracy: position.accuracy,
-          scanned_by: userDisplayName,
-          product_type: item.product_type,
-          sub_inventory: item.sub_inventory ?? undefined,
-        });
-
-        if (!logResult.success) {
-          feedbackError();
-          showScanAlert('error', `Failed: ${logResult.error instanceof Error ? logResult.error.message : 'Unknown error'}`);
-          return;
-        }
-
-        feedbackSuccess();
-        setScanFeedback(`Belongs to ${owningSession.name} - marker updated`);
-        showScanAlert('success', `Belongs to ${owningSession.name} - marker updated`);
-        queryClient.invalidateQueries({ queryKey: ['product-locations', locationId] });
-      }
     } catch (err) {
       feedbackError();
       setScanFeedback('Scan failed');
@@ -407,11 +394,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const handleCameraScan = (code: string) => {
     setCameraOpen(false);
     handleScan(code);
-  };
-
-  const handleSessionSelect = (sessionId: string) => {
-    // All sessions can be set as active for map scanning
-    setActiveSessionId(sessionId);
   };
 
   const handleActivateAdHoc = useCallback(async () => {
@@ -432,13 +414,13 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
     }
   }, []);
 
-  const toggleSessionVisibility = (sessionId: string) => {
+  const toggleSessionVisibility = (groupKey: string) => {
     setHiddenSessions(prev => {
       const next = new Set(prev);
-      if (next.has(sessionId)) {
-        next.delete(sessionId);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
       } else {
-        next.add(sessionId);
+        next.add(groupKey);
       }
       return next;
     });
@@ -456,7 +438,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       Array.from(
         new Set(
           validLocations
-            .map(loc => loc.scanning_session_id)
+            .map(loc => loc.owning_session_id)
             .filter(Boolean)
         )
       ) as string[],
@@ -486,176 +468,70 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
   // Group locations by session for legend
   const sessionGroups = useMemo(() => {
-    const groups = new Map<string, { sessionId: string; name: string; color: string; count: number; subInventory: string | null }>();
-    let noSessionCount = 0;
+    const groups = new Map<string, { key: string; name: string; color: string; count: number; subInventory: string | null; locationIds: string[]; inventoryType: string | null }>();
 
     validLocations.forEach(loc => {
-      const sessionId = loc.scanning_session_id;
-      if (!sessionId) {
-        noSessionCount++;
-        return;
-      }
-
-      const session = sessionMetadata.get(sessionId);
-      const sessionName = session?.name || sessionId.slice(0, 8);
-
-      // Get load metadata for display
-      const subInventory = loc.sub_inventory;
+      const groupKey = getLocationGroupKey(loc);
+      const subInventory = loc.sub_inventory ?? null;
       const load = subInventory ? loadMetadata.get(subInventory) : null;
       const friendlyName = load?.friendly_name;
       const csoLast4 = load?.ge_cso ? load.ge_cso.slice(-4) : null;
-
-      // Build display name: "Session Name - Friendly Name [1234]"
-      let displayName = sessionName;
-      if (friendlyName) {
-        displayName += ` - ${friendlyName}`;
-      }
-      if (csoLast4) {
-        displayName += ` [${csoLast4}]`;
-      }
-
       const color = loc.load_color || '#94a3b8';
 
-      if (groups.has(sessionId)) {
-        groups.get(sessionId)!.count++;
-      } else {
-        groups.set(sessionId, { sessionId, name: displayName, color, count: 1, subInventory });
+      let displayName = 'Unassigned';
+      if (groupKey.startsWith('session:')) {
+        const sessionId = groupKey.replace('session:', '');
+        const session = sessionMetadata.get(sessionId);
+        const sessionName = session?.name || sessionId.slice(0, 8);
+        displayName = sessionName;
+        if (friendlyName) {
+          displayName += ` - ${friendlyName}`;
+        }
+        if (csoLast4) {
+          displayName += ` [${csoLast4}]`;
+        }
+      } else if (subInventory) {
+        displayName = friendlyName || subInventory;
+        if (csoLast4) {
+          displayName += ` [${csoLast4}]`;
+        }
       }
-    });
 
-    const result = Array.from(groups.values());
-
-    // Add "No Session" group at the end if there are orphaned scans
-    if (noSessionCount > 0) {
-      result.push({
-        sessionId: '',
-        name: 'No Session',
-        color: '#64748b',
-        count: noSessionCount,
-        subInventory: null,
-      });
-    }
-
-    return result;
-  }, [validLocations, sessionMetadata, loadMetadata]);
-
-  // Build session options for scanner overlay
-  const sessionOptions = useMemo<SessionOption[]>(() => {
-    const options: SessionOption[] = [];
-
-    // Special sessions
-    options.push({
-      id: 'adhoc',
-      name: 'Ad-hoc Scans',
-      icon: Zap,
-      isActive: activeSession?.name === '🧪 Ad-hoc Scans',
-      isSpecial: true,
-      onClick: handleActivateAdHoc,
-    });
-    options.push({
-      id: 'fogofwar',
-      name: 'Fog of War',
-      icon: MapIcon,
-      isActive: activeSession?.name === '🗺️ Fog of War',
-      isSpecial: true,
-      onClick: handleActivateFogOfWar,
-    });
-
-    // Regular sessions
-    const regularSessions = allSessions.filter(
-      s => s.name !== '🧪 Ad-hoc Scans' && s.name !== '🗺️ Fog of War'
-    );
-    regularSessions.forEach(session => {
-      // ASIS sessions: show friendly name, color, and total only
-      if (session.inventoryType === 'ASIS' && session.subInventory) {
-        const load = loadMetadata.get(session.subInventory);
-        const friendlyName = load?.friendly_name || session.subInventory;
-        const color = load?.primary_color || '#94a3b8';
-        const csoLast4 = load?.ge_cso ? load.ge_cso.slice(-4) : null;
-
-        const details = csoLast4
-          ? `${session.totalItems} items • [${csoLast4}]`
-          : `${session.totalItems} items`;
-
-        options.push({
-          id: session.id,
-          name: friendlyName,
-          isActive: session.id === activeSessionId,
-          isSpecial: false,
-          color: color,
-          showAsBox: true,
-          details: details,
-          onClick: () => handleSessionSelect(session.id),
-        });
-      } else if (session.inventoryType === 'FG') {
-        // FG sessions: show in box without color
-        options.push({
-          id: session.id,
-          name: session.subInventory || 'FG',
-          isActive: session.id === activeSessionId,
-          isSpecial: false,
-          showAsBox: true,
-          details: `${session.totalItems} items`,
-          onClick: () => handleSessionSelect(session.id),
-        });
+      const existing = groups.get(groupKey);
+      if (existing) {
+        existing.count += 1;
+        existing.locationIds.push(loc.id);
+        if (!existing.inventoryType && loc.inventory_type) {
+          existing.inventoryType = loc.inventory_type;
+        }
       } else {
-        // Other sessions: show full details
-        options.push({
-          id: session.id,
-          name: session.name,
-          isActive: session.id === activeSessionId,
-          isSpecial: false,
-          details: `${session.inventoryType} • ${session.subInventory || 'All'} • ${session.scannedCount}/${session.totalItems}`,
-          onClick: () => handleSessionSelect(session.id),
+        groups.set(groupKey, {
+          key: groupKey,
+          name: displayName,
+          color,
+          count: 1,
+          subInventory,
+          locationIds: [loc.id],
+          inventoryType: loc.inventory_type ?? null,
         });
       }
     });
 
-    return options;
-  }, [activeSession, activeSessionId, allSessions, handleActivateAdHoc, handleActivateFogOfWar, loadMetadata]);
+    return Array.from(groups.values());
+  }, [getLocationGroupKey, loadMetadata, sessionMetadata, validLocations]);
 
-  // Get display name and color for active session
-  const activeSessionDisplay = useMemo(() => {
-    if (!activeSession) return { displayName: undefined, color: undefined };
-
-    // ASIS sessions: use friendly name and color from load metadata
-    if (activeSession.inventoryType === 'ASIS' && activeSession.subInventory) {
-      const load = loadMetadata.get(activeSession.subInventory);
-      const friendlyName = load?.friendly_name || activeSession.subInventory;
-
-      return {
-        displayName: friendlyName,
-        color: load?.primary_color || '#94a3b8',
-      };
-    }
-
-    // Special sessions: strip emoji from name
-    if (activeSession.name === '🧪 Ad-hoc Scans') {
-      return {
-        displayName: 'Ad-hoc Scans',
-        color: undefined,
-      };
-    }
-    if (activeSession.name === '🗺️ Fog of War') {
-      return {
-        displayName: 'Fog of War',
-        color: undefined,
-      };
-    }
-
-    // Other sessions: use session name, no color
-    return {
-      displayName: activeSession.name,
-      color: undefined,
-    };
-  }, [activeSession, loadMetadata]);
+  const scanMode = activeSession?.name === '🧪 Ad-hoc Scans' ? 'adhoc' : 'fog';
 
   const mapStyles = useMemo(
-    () => ({
-      light: blankMapStyle(false),
-      dark: blankMapStyle(true),
-    }),
-    []
+    () => (
+      showWorldMap
+        ? mapDefaultStyles
+        : {
+            light: blankMapStyle(false),
+            dark: blankMapStyle(true),
+          }
+    ),
+    [showWorldMap]
   );
 
   useEffect(() => {
@@ -770,7 +646,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         zoom={19}
         minZoom={10}
         maxZoom={24}
-        styles={showWorldMap ? undefined : mapStyles}
+        styles={mapStyles}
       >
         <MapControls
           position="top-left"
@@ -778,21 +654,49 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
           showCompass
           showLocate
           showFullscreen={!isMobile}
-        />
+        >
+          <MapControlGroup>
+            <MapControlButton
+              onClick={() => {
+                setShowWorldMap((prev) => {
+                  const next = !prev;
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
+                  }
+                  return next;
+                });
+              }}
+              label={showWorldMap ? 'Hide world map' : 'Show world map'}
+            >
+              <Globe className="size-4" />
+            </MapControlButton>
+          </MapControlGroup>
+        </MapControls>
         {visibleLocations.map((location) => (
-          <MapMarker
-            key={location.id}
-            longitude={location.raw_lng!}
-            latitude={location.raw_lat!}
-          >
-            <MarkerContent>
-              <div className="cursor-pointer">
-                <div
-                  className="size-4 rounded-full border-2 border-white shadow-lg hover:scale-125 transition-transform"
-                  style={{ backgroundColor: location.load_color || '#94a3b8' }}
-                />
-              </div>
-            </MarkerContent>
+            <MapMarker
+              key={location.id}
+              longitude={location.raw_lng!}
+              latitude={location.raw_lat!}
+            >
+              <MarkerContent>
+                <div className="cursor-pointer">
+                  {location.inventory_type === 'FG' ? (
+                    <div className="size-5 rounded-sm border-2 border-white shadow-lg bg-sky-300 text-black flex items-center justify-center text-[9px] font-semibold tracking-tight hover:scale-110 transition-transform">
+                      FG
+                    </div>
+                  ) : location.inventory_type === 'STA' ? (
+                    <div
+                      className="size-4 rounded-sm border-2 border-white shadow-lg hover:scale-125 transition-transform"
+                      style={{ backgroundColor: location.load_color || '#94a3b8' }}
+                    />
+                  ) : (
+                    <div
+                      className="size-4 rounded-full border-2 border-white shadow-lg hover:scale-125 transition-transform"
+                      style={{ backgroundColor: location.load_color || '#94a3b8' }}
+                    />
+                  )}
+                </div>
+              </MarkerContent>
             {!isMobile && (
               <MarkerTooltip className="px-2 py-1 text-xs font-medium">
                 {location.model ?? 'Unknown'}
@@ -827,10 +731,21 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
                 {(location.sub_inventory || location.load_friendly_name) && (
                   <div className="flex items-center gap-2 pt-1 border-t">
-                    <div
-                      className="size-2 rounded-sm shrink-0"
-                      style={{ backgroundColor: location.load_color || '#94a3b8' }}
-                    />
+                    {location.inventory_type === 'FG' ? (
+                      <div className="h-4 px-1.5 rounded-sm border border-white bg-sky-300 text-black text-[9px] font-semibold tracking-tight flex items-center">
+                        FG
+                      </div>
+                    ) : location.inventory_type === 'STA' ? (
+                      <div
+                        className="size-3 rounded-sm shrink-0 border border-white"
+                        style={{ backgroundColor: location.load_color || '#94a3b8' }}
+                      />
+                    ) : (
+                      <div
+                        className="size-3 rounded-full shrink-0 border border-white"
+                        style={{ backgroundColor: location.load_color || '#94a3b8' }}
+                      />
+                    )}
                     <span className="text-xs font-medium">
                       {location.load_friendly_name || location.sub_inventory}
                     </span>
@@ -909,13 +824,19 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         )}
       </MapComponent>
 
+      <canvas
+        ref={fogCanvasRef}
+        className="absolute inset-0 pointer-events-none z-[1]"
+        aria-hidden="true"
+      />
+
 
       {/* Inventory button */}
-      <div className="absolute bottom-10 left-4">
+      <div className="absolute bottom-10 left-4 z-10">
         <Button
           type="button"
           variant="outline"
-          className="h-14 w-14 p-0 shadow-lg"
+          className="h-14 w-14 p-0 shadow-lg bg-background/95 backdrop-blur-sm border border-border"
           onClick={() => setInventoryDrawerOpen(true)}
           aria-label="Open inventory"
         >
@@ -951,29 +872,58 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 <div className="space-y-6">
+                  <div className="rounded-md border border-border/60 bg-background/60 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="size-2.5 rounded-full bg-blue-500" />
+                        <span className="font-medium text-foreground">Fog of War</span>
+                        <span className="text-muted-foreground">All scans</span>
+                      </div>
+                      <span className="tabular-nums text-foreground">
+                        {scannedInventoryItemCount}/{totalInventoryItemCount || '—'}
+                      </span>
+                    </div>
+                  </div>
                   <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground font-medium">Sessions (tap to toggle)</div>
+                    <div className="text-xs text-muted-foreground font-medium">Loads / Buckets (tap to toggle)</div>
 
                     {sessionGroups.length === 0 ? (
                       <div className="text-sm text-muted-foreground">No scans yet.</div>
                     ) : (
                       <div className="space-y-1">
                         {sessionGroups.map((group) => {
-                          const isHidden = hiddenSessions.has(group.sessionId);
+                          const isHidden = hiddenSessions.has(group.key);
                           return (
-                            <div key={group.sessionId} className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-2"
-                                onClick={() => toggleSessionVisibility(group.sessionId)}
-                              >
-                                <div
-                                  className="size-3 rounded-sm shrink-0"
-                                  style={{
-                                    backgroundColor: group.color,
-                                    opacity: isHidden ? 0.3 : 1,
-                                  }}
-                                />
+                            <div key={group.key} className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-2"
+                                  onClick={() => toggleSessionVisibility(group.key)}
+                                >
+                                  {group.inventoryType === 'FG' ? (
+                                    <div
+                                      className="h-4 px-1.5 rounded-sm border border-white bg-sky-300 text-black text-[9px] font-semibold tracking-tight flex items-center"
+                                      style={{ opacity: isHidden ? 0.3 : 1 }}
+                                    >
+                                      FG
+                                    </div>
+                                  ) : group.inventoryType === 'STA' ? (
+                                    <div
+                                      className="size-3 rounded-sm shrink-0 border border-white"
+                                      style={{
+                                        backgroundColor: group.color,
+                                        opacity: isHidden ? 0.3 : 1,
+                                      }}
+                                    />
+                                  ) : (
+                                    <div
+                                      className="size-3 rounded-full shrink-0 border border-white"
+                                      style={{
+                                        backgroundColor: group.color,
+                                        opacity: isHidden ? 0.3 : 1,
+                                      }}
+                                    />
+                                  )}
                                 <span className={`truncate flex-1 text-left text-sm ${isHidden ? 'opacity-40 line-through' : ''}`}>
                                   {group.name}
                                 </span>
@@ -990,11 +940,11 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                                 onClick={() => {
                                   if (deleteSessionScans.isPending) return;
                                   if (confirm(`Delete ${group.count} scans from "${group.name}"?`)) {
-                                    deleteSessionScans.mutate(group.sessionId);
+                                    deleteSessionScans.mutate(group.locationIds);
                                   }
                                 }}
                                 disabled={deleteSessionScans.isPending}
-                                aria-label={`Delete session ${group.name}`}
+                                aria-label={`Delete scans for ${group.name}`}
                               >
                                 {deleteSessionScans.isPending ? (
                                   <Spinner size="sm" />
@@ -1010,25 +960,6 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                   </div>
 
                   <div className="border-t pt-3 space-y-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start gap-2"
-                      onClick={() => {
-                        setShowWorldMap((prev) => {
-                          const next = !prev;
-                          if (typeof window !== 'undefined') {
-                            window.localStorage.setItem(WORLD_MAP_STORAGE_KEY, String(next));
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      <Globe className="h-4 w-4" />
-                      {showWorldMap ? 'Hide' : 'Show'} World Map
-                    </Button>
-
                     <Button
                       type="button"
                       variant="ghost"
@@ -1056,10 +987,11 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
 
       {/* Scanner controls */}
-      <div className="absolute bottom-10 right-4 flex gap-2">
+      <div className="absolute bottom-10 right-4 z-10 flex gap-2">
         {/* Keyboard scan button */}
         <Button
-          className="h-14 gap-2 shadow-lg"
+          variant="outline"
+          className="h-14 gap-2 shadow-lg bg-background/95 backdrop-blur-sm border border-border"
           onClick={() => setScanOverlayOpen(true)}
         >
           <ScanLine className="h-5 w-5" />
@@ -1079,10 +1011,9 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         isProcessing={isProcessing}
         alert={scanAlert}
         feedbackText={scanFeedback}
-        activeSessionName={activeSession?.name}
-        activeSessionDisplayName={activeSessionDisplay.displayName}
-        activeSessionColor={activeSessionDisplay.color}
-        sessionOptions={sessionOptions}
+        mode={scanMode}
+        onSelectFog={handleActivateFogOfWar}
+        onSelectAdHoc={handleActivateAdHoc}
       />
 
       {/* Camera scanner */}

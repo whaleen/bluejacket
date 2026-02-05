@@ -1,7 +1,7 @@
 import { AppHeader } from "@/components/Navigation/AppHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Database, Package, Truck } from "lucide-react";
+import { RefreshCw, Database, Package, Truck, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { PageContainer } from "@/components/Layout/PageContainer";
 import { getActiveLocationContext } from "@/lib/tenant";
@@ -12,7 +12,7 @@ interface GESyncViewProps {
   onMenuClick?: () => void;
 }
 
-type SyncType = "asis" | "fg" | "sta";
+type SyncType = "asis" | "fg" | "sta" | "inbound";
 
 interface SyncStatus {
   type: SyncType;
@@ -25,6 +25,7 @@ interface SyncStatus {
     updatedItems: number;
     changesLogged: number;
   };
+  log?: string[];
 }
 
 export function GESyncView({ onMenuClick }: GESyncViewProps) {
@@ -35,6 +36,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
     asis: { type: "asis", loading: false, success: null, error: null },
     fg: { type: "fg", loading: false, success: null, error: null },
     sta: { type: "sta", loading: false, success: null, error: null },
+    inbound: { type: "inbound", loading: false, success: null, error: null },
   });
   const geSyncMutation = useGeSync();
 
@@ -56,7 +58,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
 
     setSyncStatuses((prev) => ({
       ...prev,
-      [type]: { ...prev[type], loading: true, success: null, error: null, stats: undefined },
+      [type]: { ...prev[type], loading: true, success: null, error: null, stats: undefined, log: undefined },
     }));
 
     try {
@@ -69,6 +71,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
           success: true,
           error: null,
           stats: result.stats,
+          log: result.log,
         },
       }));
     } catch (error) {
@@ -81,6 +84,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
           success: false,
           error: message,
           stats: undefined,
+          log: undefined,
         },
       }));
     }
@@ -125,6 +129,17 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Changes Logged:</span>
                 <span className="font-medium">{status.stats.changesLogged}</span>
+              </div>
+            </div>
+          )}
+
+          {status.log && status.log.length > 0 && (
+            <div className="rounded-lg border border-border/60 bg-background/60 p-3 text-xs text-muted-foreground">
+              <div className="font-medium text-foreground mb-2">Sync log</div>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {status.log.map((line, index) => (
+                  <div key={`${status.type}-log-${index}`}>{line}</div>
+                ))}
               </div>
             </div>
           )}
@@ -185,6 +200,9 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
             </div>
 
             <div className="rounded-lg border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground space-y-2">
+              <p className="text-foreground">
+                <strong>Recommended order:</strong> Run ASIS first, then FG and STA.
+              </p>
               <p>
                 <strong>ASIS:</strong> As-Is inventory (open-box, damaged, discounted items)
               </p>
@@ -193,6 +211,9 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
               </p>
               <p>
                 <strong>STA:</strong> Staged inventory (items prepared for delivery/pickup)
+              </p>
+              <p>
+                <strong>Inbound:</strong> Receiving reports (arrival shipments)
               </p>
               <div className="pt-2 text-xs text-muted-foreground">
                 Endpoint: {geSyncUrl}
@@ -213,6 +234,8 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
           {renderSyncCard("fg", "Finished Goods", "Sync new finished goods inventory", Database)}
 
           {renderSyncCard("sta", "Staged Inventory", "Sync staged items for delivery", Truck)}
+
+          {renderSyncCard("inbound", "Inbound Receipts", "Sync inbound receiving reports", ClipboardList)}
         </div>
       </PageContainer>
     </div>

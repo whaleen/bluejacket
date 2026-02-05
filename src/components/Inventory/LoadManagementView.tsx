@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, Loader2, Info } from 'lucide-react';
+import { Loader2, Info } from 'lucide-react';
 import { getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
 import { useLoads } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -41,7 +41,6 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
 
   // Dialog states
   const [selectedLoadForDetail, setSelectedLoadForDetail] = useState<LoadMetadata | null>(null);
-  const [loadDetailSource, setLoadDetailSource] = useState<'loads' | 'dashboard' | 'external'>('external');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [loadPendingDelete, setLoadPendingDelete] = useState<LoadMetadata | null>(null);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
@@ -74,14 +73,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
     const pathLoad = segments[0] === 'loads' && segments[1] ? decodeURIComponent(segments[1]) : null;
     const loadParam = pathLoad || params.get('load');
     if (loadParam) {
-      const from = params.get('from');
       setPendingLoadSelection(loadParam);
-      setLoadDetailSource(from === 'loads' ? 'loads' : from === 'dashboard' ? 'dashboard' : 'external');
       setIsStandaloneDetail(params.get('from') !== 'loads');
     } else {
       setPendingLoadSelection(null);
       setSelectedLoadForDetail(null);
-      setLoadDetailSource('external');
       setIsStandaloneDetail(false);
     }
   };
@@ -142,10 +138,9 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
       const next = prev?.id === load.id ? null : load;
       const params = new URLSearchParams(window.location.search);
       params.delete('load');
-      if (next) {
-        params.set('from', 'loads');
-        setLoadDetailSource('loads');
-        const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
+        if (next) {
+          params.set('from', 'loads');
+          const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
         const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
         window.history.replaceState({}, '', nextUrl);
       } else {
@@ -156,16 +151,6 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
       window.dispatchEvent(new Event('app:locationchange'));
       return next;
     });
-  };
-
-  const openStandaloneDetail = (load: LoadMetadata) => {
-    const params = new URLSearchParams(window.location.search);
-    params.delete('from');
-    params.delete('load');
-    const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
-    const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
-    window.history.replaceState({}, '', nextUrl);
-    window.dispatchEvent(new Event('app:locationchange'));
   };
 
   const handleStandaloneClose = () => {
@@ -457,24 +442,11 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                   >
                     {selectedLoadForDetail ? (
                       <div className="space-y-3">
-                        {/* Back button - mobile only */}
-                        {loadDetailSource === 'loads' && (
-                          <Button
-                            variant="ghost"
-                            size="responsive"
-                            className="lg:hidden -ml-2"
-                            onClick={() => handleLoadClick(selectedLoadForDetail)}
-                          >
-                            <ArrowLeft className="mr-2 h-4 w-4" />
-                            Back to loads
-                          </Button>
-                        )}
                         <LoadDetailPanel
                           load={selectedLoadForDetail}
                           allLoads={loads}
                           onClose={() => setSelectedLoadForDetail(null)}
                           onDelete={handleDeleteClick}
-                          onOpenStandalone={() => openStandaloneDetail(selectedLoadForDetail)}
                           onMetaUpdated={(updates) => {
                             setLoads((prev) =>
                               prev.map((entry) =>

@@ -90,7 +90,7 @@ function useMap() {
   return context;
 }
 
-const defaultStyles = {
+const mapDefaultStyles = {
   dark: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 };
@@ -141,8 +141,8 @@ const Map = forwardRef<MapRef, MapProps>(function Map(
 
   const mapStyles = useMemo(
     () => ({
-      dark: styles?.dark ?? defaultStyles.dark,
-      light: styles?.light ?? defaultStyles.light,
+      dark: styles?.dark ?? mapDefaultStyles.dark,
+      light: styles?.light ?? mapDefaultStyles.light,
     }),
     [styles]
   );
@@ -621,6 +621,8 @@ type MapControlsProps = {
   className?: string;
   /** Callback with user coordinates when located */
   onLocate?: (coords: { longitude: number; latitude: number }) => void;
+  /** Additional control groups to render */
+  children?: React.ReactNode;
 };
 
 const positionClasses = {
@@ -673,6 +675,7 @@ function MapControls({
   showFullscreen = false,
   className,
   onLocate,
+  children,
 }: MapControlsProps) {
   const { map } = useMap();
   const [waitingForLocation, setWaitingForLocation] = useState(false);
@@ -769,6 +772,7 @@ function MapControls({
           </ControlButton>
         </ControlGroup>
       )}
+      {children}
     </div>
   );
 }
@@ -1370,6 +1374,9 @@ export {
   MarkerLabel,
   MapPopup,
   MapControls,
+  ControlGroup as MapControlGroup,
+  ControlButton as MapControlButton,
+  mapDefaultStyles,
   MapRoute,
   MapClusterLayer,
 };

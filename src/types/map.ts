@@ -50,6 +50,8 @@ export interface ProductLocationForMap {
   position_y: number;
   raw_lat: number | null;
   raw_lng: number | null;
+  inventory_item_id?: string | null;
+  inventory_type?: string | null;
   image_url?: string | null;
   load_item_count?: number | null;
   product_type: string | null;
@@ -61,6 +63,7 @@ export interface ProductLocationForMap {
   created_at: string;
   accuracy: number | null;
   scanning_session_id?: string | null;
+  owning_session_id?: string | null;
 }
 
 /**

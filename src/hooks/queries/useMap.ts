@@ -57,22 +57,39 @@ export function useClearAllScans() {
   });
 }
 
+export function useInventoryItemCount() {
+  const { locationId } = getActiveLocationContext();
+
+  return useQuery({
+    queryKey: ['inventory-item-count', locationId ?? 'none'],
+    enabled: !!locationId,
+    queryFn: async () => {
+      if (!locationId) return 0;
+      const { count, error } = await supabase
+        .from('inventory_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('location_id', locationId);
+
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+}
+
 export function useDeleteSessionScans() {
   const queryClient = useQueryClient();
   const { locationId } = getActiveLocationContext();
 
   return useMutation({
-    mutationFn: async (sessionId: string) => {
+    mutationFn: async (locationIds: string[]) => {
       if (!locationId) throw new Error('Location required');
-      // Empty sessionId means delete scans without a session
-      const query = supabase
+      if (locationIds.length === 0) return;
+
+      const { error } = await supabase
         .from('product_location_history')
         .delete()
-        .eq('location_id', locationId);
-
-      const { error } = sessionId
-        ? await query.eq('scanning_session_id', sessionId)
-        : await query.is('scanning_session_id', null);
+        .eq('location_id', locationId)
+        .in('id', locationIds);
 
       if (error) throw error;
     },

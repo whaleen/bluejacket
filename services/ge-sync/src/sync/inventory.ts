@@ -167,9 +167,11 @@ export async function syncSimpleInventory(
   locationId: string,
   inventoryType: 'FG' | 'STA'
 ): Promise<SyncResult> {
+  const log: string[] = [];
   console.log(`\n${'='.repeat(60)}`);
   console.log(`Starting ${inventoryType} Sync for location: ${locationId}`);
   console.log(`${'='.repeat(60)}\n`);
+  log.push(`Starting ${inventoryType} sync`);
 
   const startTime = Date.now();
   const changes: GEChange[] = [];
@@ -182,6 +184,7 @@ export async function syncSimpleInventory(
 
     console.log(`Company: ${config.companyId}`);
     console.log(`Location: ${locationId}`);
+    log.push(`Company ${config.companyId} • Location ${locationId}`);
 
     // Get authenticated cookies
     const cookieHeader = await getCookieHeader(locationId);
@@ -191,9 +194,22 @@ export async function syncSimpleInventory(
 
     // Fetch master inventory
     const inventory = await fetchMasterInventory(locationId, invOrg, inventoryType, cookieHeader);
+    log.push(`Fetched ${inventory.length} ERP rows`);
+    const debugSerial = process.env.DEBUG_SERIAL?.trim();
+    if (debugSerial) {
+      const matched = inventory.filter(
+        (item) => item['Serial #']?.trim() === debugSerial
+      );
+      console.log(`[${inventoryType}] DEBUG_SERIAL ${debugSerial} matches: ${matched.length}`);
+      if (matched.length > 0) {
+        console.log(`[${inventoryType}] DEBUG_SERIAL sample:`, matched[0]);
+      }
+      log.push(`DEBUG_SERIAL ${debugSerial} matches: ${matched.length}`);
+    }
 
     if (inventory.length === 0) {
       console.log(`[${inventoryType}] No inventory items found`);
+      log.push('No inventory items found');
       return {
         success: true,
         message: `No ${inventoryType} inventory found`,
@@ -208,6 +224,7 @@ export async function syncSimpleInventory(
           changesLogged: 0,
         },
         changes: [],
+        log,
       };
     }
 
@@ -224,6 +241,7 @@ export async function syncSimpleInventory(
     }
 
     console.log(`[${inventoryType}] Existing items in DB: ${existingItems?.length || 0}`);
+    log.push(`Existing items in DB: ${existingItems?.length || 0}`);
 
     // Build maps for comparison
     const existingBySerial = new Map(
@@ -371,6 +389,7 @@ export async function syncSimpleInventory(
     // Upsert items to database
     if (itemsToUpsert.length > 0) {
       console.log(`[${inventoryType}] Upserting ${itemsToUpsert.length} items...`);
+      log.push(`Upserting ${itemsToUpsert.length} items`);
 
       const upsertPayload = itemsToUpsert.map((item) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -381,7 +400,7 @@ export async function syncSimpleInventory(
       const { error: upsertError } = await db
         .from('inventory_items')
         .upsert(upsertPayload, {
-          onConflict: 'company_id,location_id,serial',
+          onConflict: 'company_id,location_id,serial,inventory_type',
           ignoreDuplicates: false,
         });
 
@@ -394,6 +413,7 @@ export async function syncSimpleInventory(
     const orphanedSerials = Array.from(existingBySerial.keys()).filter((s) => !geSerials.has(s));
     if (orphanedSerials.length > 0) {
       console.log(`[${inventoryType}] Deleting ${orphanedSerials.length} orphaned items...`);
+      log.push(`Deleting ${orphanedSerials.length} orphaned items`);
 
       const { error: deleteError } = await db
         .from('inventory_items')
@@ -429,12 +449,17 @@ export async function syncSimpleInventory(
     console.log(`Updated items: ${stats.updatedItems}`);
     console.log(`Changes logged: ${stats.changesLogged}`);
     console.log(`${'='.repeat(60)}\n`);
+    log.push(`Total items from GE: ${stats.totalGEItems}`);
+    log.push(`New items: ${stats.newItems}`);
+    log.push(`Updated items: ${stats.updatedItems}`);
+    log.push(`Changes logged: ${stats.changesLogged}`);
 
     return {
       success: true,
       message: `${inventoryType} sync completed successfully`,
       stats,
       changes,
+      log,
     };
   } catch (error) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -461,6 +486,7 @@ export async function syncSimpleInventory(
       },
       changes,
       error: errorMessage,
+      log,
     };
   }
 }

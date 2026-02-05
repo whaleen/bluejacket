@@ -15,11 +15,13 @@ export function useGeSync() {
         throw new Error('No active location selected');
       }
       const result = await syncGeInventory(type, targetLocationId);
-      const sessionResult = await createSessionsFromSync(type);
-      if (!sessionResult.success) {
-        throw sessionResult.error instanceof Error
-          ? sessionResult.error
-          : new Error('Failed to create sessions from GE sync');
+      if (type !== 'inbound') {
+        const sessionResult = await createSessionsFromSync(type);
+        if (!sessionResult.success) {
+          throw sessionResult.error instanceof Error
+            ? sessionResult.error
+            : new Error('Failed to create sessions from GE sync');
+        }
       }
       return result;
     },
