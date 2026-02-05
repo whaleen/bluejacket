@@ -10,6 +10,7 @@ import { useLoads } from '@/hooks/queries/useLoads';
 import { useRecentActivityRealtime } from '@/hooks/queries/useRealtimeSync';
 import { useDashboardInventoryItems, useDashboardLoadConflicts, useRecentActivity } from '@/hooks/queries/useDashboard';
 import { useSessionSummaries } from '@/hooks/queries/useSessions';
+import { useInventoryScanCounts } from '@/hooks/queries/useMap';
 import { useFogOfWar } from '@/hooks/queries/useFogOfWar';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { ReorderAlertsCard } from './ReorderAlertsCard';
@@ -137,6 +138,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   const conflictsQuery = useDashboardLoadConflicts();
   const recentActivityQuery = useRecentActivity(20);
   const sessionsQuery = useSessionSummaries();
+  const scanCountsQuery = useInventoryScanCounts();
   const fogOfWarQuery = useFogOfWar();
 
   const [selectedChartType, setSelectedChartType] = useState<'overview' | 'LocalStock' | 'FG' | 'ASIS'>('overview');
@@ -490,15 +492,20 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         }
       }
 
-      const progress = session.totalItems > 0
-        ? Math.round((session.scannedCount / session.totalItems) * 100)
+      const key = session.subInventory
+        ? `load:${session.subInventory}`
+        : `type:${session.inventoryType}`;
+      const scanned = scanCountsQuery.data?.scannedByKey.get(key) ?? session.scannedCount;
+      const total = scanCountsQuery.data?.totalByKey.get(key) ?? session.totalItems;
+      const progress = total > 0
+        ? Math.round((scanned / total) * 100)
         : 0;
       items.push({
         id: `session-${session.id}`,
         type: 'session',
         priority: 2,
         title: `Continue ${session.name}`,
-        subtitle: `${session.scannedCount}/${session.totalItems} scanned (${progress}%)`,
+        subtitle: `${scanned}/${total} scanned (${progress}%)`,
         sessionId: session.id,
         icon: ScanBarcode,
         color: 'text-blue-600 dark:text-blue-400',

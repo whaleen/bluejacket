@@ -76,6 +76,71 @@ export function useInventoryItemCount() {
   });
 }
 
+export function useInventoryScanCounts() {
+  const { locationId } = getActiveLocationContext();
+
+  return useQuery({
+    queryKey: ['inventory-scan-counts', locationId ?? 'none'],
+    enabled: !!locationId,
+    queryFn: async () => {
+      if (!locationId) {
+        return { totalByKey: new Map<string, number>(), scannedByKey: new Map<string, number>() };
+      }
+
+      const { data: inventoryItems, error: inventoryError } = await supabase
+        .from('inventory_items')
+        .select('id, sub_inventory, inventory_type')
+        .eq('location_id', locationId);
+
+      if (inventoryError) throw inventoryError;
+
+      const totalByKey = new Map<string, number>();
+      const itemMap = new Map<string, { sub_inventory: string | null; inventory_type: string | null }>();
+
+      for (const item of inventoryItems ?? []) {
+        if (!item.id) continue;
+        const isLoadItem = Boolean(item.sub_inventory);
+        if (isLoadItem && item.inventory_type !== 'ASIS') {
+          continue;
+        }
+        const key = item.sub_inventory
+          ? `load:${item.sub_inventory}`
+          : `type:${item.inventory_type ?? 'unknown'}`;
+        totalByKey.set(key, (totalByKey.get(key) ?? 0) + 1);
+        itemMap.set(item.id, {
+          sub_inventory: item.sub_inventory ?? null,
+          inventory_type: item.inventory_type ?? null,
+        });
+      }
+
+      const { data: scanRows, error: scanError } = await supabase
+        .from('product_location_history')
+        .select('inventory_item_id')
+        .eq('location_id', locationId)
+        .not('inventory_item_id', 'is', null);
+
+      if (scanError) throw scanError;
+
+      const scannedByKey = new Map<string, number>();
+      const scannedIds = new Set<string>();
+      for (const row of scanRows ?? []) {
+        if (row.inventory_item_id) scannedIds.add(row.inventory_item_id);
+      }
+
+      for (const id of scannedIds) {
+        const item = itemMap.get(id);
+        if (!item) continue;
+        const key = item.sub_inventory
+          ? `load:${item.sub_inventory}`
+          : `type:${item.inventory_type ?? 'unknown'}`;
+        scannedByKey.set(key, (scannedByKey.get(key) ?? 0) + 1);
+      }
+
+      return { totalByKey, scannedByKey };
+    },
+  });
+}
+
 export function useDeleteSessionScans() {
   const queryClient = useQueryClient();
   const { locationId } = getActiveLocationContext();

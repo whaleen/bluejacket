@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Info } from 'lucide-react';
+import { getLoadColorByName } from '@/lib/loadColors';
 import { getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
 import { useLoads } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -374,7 +375,10 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                           <div
                             className="h-3 w-3 rounded-full flex-shrink-0"
                             style={{
-                              backgroundColor: load.primary_color || '#9CA3AF',
+                              backgroundColor: load.primary_color || getLoadColorByName(
+                                loads.map((entry) => entry.sub_inventory_name).sort((a, b) => a.localeCompare(b)),
+                                load.sub_inventory_name
+                              ) || '#9CA3AF',
                             }}
                           />
 

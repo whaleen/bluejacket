@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
+import { useCallback } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, ScanBarcode, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +37,8 @@ export function MinimalScanOverlay({
   const [inputValue, setInputValue] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('scanner');
   const inputRef = useRef<HTMLInputElement>(null);
+  const bufferRef = useRef('');
+  const lastKeyRef = useRef(0);
 
   // Auto-focus input when opened
   useEffect(() => {
@@ -47,10 +50,19 @@ export function MinimalScanOverlay({
     }
   }, [isOpen]);
 
-  const handleSubmit = () => {
-    if (!inputValue.trim() || isProcessing) return;
-    onScan(inputValue.trim());
+  const submitValue = useCallback((value: string) => {
+    if (!value.trim() || isProcessing) return;
+    const sanitized = inputMode === 'scanner'
+      ? value.trim().replace(/[^A-Za-z0-9]/g, '')
+      : value.trim();
+    if (!sanitized) return;
+    onScan(sanitized);
+    bufferRef.current = '';
     setInputValue('');
+  }, [inputMode, isProcessing, onScan]);
+
+  const handleSubmit = () => {
+    submitValue(inputValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -62,6 +74,32 @@ export function MinimalScanOverlay({
       onClose();
     }
   };
+
+  useEffect(() => {
+    if (!isOpen || inputMode !== 'scanner') return;
+
+    const handleScannerKey = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitValue(bufferRef.current);
+        return;
+      }
+
+      if (event.key.length !== 1) return;
+      const now = Date.now();
+      if (now - lastKeyRef.current > 50) {
+        bufferRef.current = '';
+      }
+      lastKeyRef.current = now;
+      bufferRef.current += event.key;
+      setInputValue(bufferRef.current);
+    };
+
+    window.addEventListener('keydown', handleScannerKey);
+    return () => {
+      window.removeEventListener('keydown', handleScannerKey);
+    };
+  }, [inputMode, isOpen, submitValue]);
 
   if (!isOpen) return null;
 

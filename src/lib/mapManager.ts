@@ -253,7 +253,7 @@ export async function getProductLocations(): Promise<{
         .map((item) => resolveSubInventory(item))
         .filter((name): name is string => name != null)
     )
-  );
+  ).sort((a, b) => a.localeCompare(b));
 
   const loadItemCounts = new Map<string, number>();
   if (loadNames.length > 0) {
@@ -271,17 +271,20 @@ export async function getProductLocations(): Promise<{
     }
   }
 
-  const loadMetadataByName = new Map<string, { friendly_name: string | null }>();
+  const loadMetadataByName = new Map<string, { friendly_name: string | null; primary_color: string | null }>();
   if (loadNames.length > 0) {
     const { data: loadMetadata, error: loadError } = await supabase
       .from('load_metadata')
-      .select('sub_inventory_name, friendly_name')
+      .select('sub_inventory_name, friendly_name, primary_color')
       .eq('location_id', locationId)
       .in('sub_inventory_name', loadNames);
 
     if (!loadError && loadMetadata) {
-      for (const load of loadMetadata as { sub_inventory_name: string; friendly_name: string | null }[]) {
-        loadMetadataByName.set(load.sub_inventory_name, { friendly_name: load.friendly_name });
+      for (const load of loadMetadata as { sub_inventory_name: string; friendly_name: string | null; primary_color: string | null }[]) {
+        loadMetadataByName.set(load.sub_inventory_name, {
+          friendly_name: load.friendly_name,
+          primary_color: load.primary_color,
+        });
       }
     }
   }
@@ -290,10 +293,9 @@ export async function getProductLocations(): Promise<{
   const locationsWithColors: ProductLocationForMap[] = (data as ProductLocationHistory[]).map((item) => {
     const inventoryItem = item.inventory_item_id ? inventoryItemById.get(item.inventory_item_id) : undefined;
     const resolvedSubInventory = inventoryItem?.sub_inventory ?? item.sub_inventory;
-    const loadColor = getLoadColorByName(loadNames, resolvedSubInventory ?? null);
-    const loadFriendlyName = resolvedSubInventory
-      ? loadMetadataByName.get(resolvedSubInventory)?.friendly_name ?? null
-      : null;
+    const loadMeta = resolvedSubInventory ? loadMetadataByName.get(resolvedSubInventory) : null;
+    const loadColor = loadMeta?.primary_color || getLoadColorByName(loadNames, resolvedSubInventory ?? null);
+    const loadFriendlyName = loadMeta?.friendly_name ?? null;
     const resolvedProductId = item.product_id ?? inventoryItem?.product_fk ?? null;
     const product =
       (resolvedProductId ? productById.get(resolvedProductId) : undefined) ??

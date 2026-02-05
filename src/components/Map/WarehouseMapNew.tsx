@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
-import { useDeleteProductLocation, useClearAllScans, useDeleteSessionScans, useInventoryItemCount } from '@/hooks/queries/useMap';
+import { useDeleteProductLocation, useClearAllScans, useDeleteSessionScans, useInventoryItemCount, useInventoryScanCounts } from '@/hooks/queries/useMap';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getCurrentPosition, logProductLocation } from '@/lib/mapManager';
 import { findItemOwningSession } from '@/lib/sessionScanner';
@@ -84,6 +84,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
   const clearAllScans = useClearAllScans();
   const deleteSessionScans = useDeleteSessionScans();
   const inventoryItemCountQuery = useInventoryItemCount();
+  const inventoryScanCountsQuery = useInventoryScanCounts();
   const savedView = useMemo<SavedViewState | null>(() => {
     if (typeof window === 'undefined') return null;
     const raw = window.localStorage.getItem(VIEW_STATE_STORAGE_KEY);
@@ -479,22 +480,15 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
       const color = loc.load_color || '#94a3b8';
 
       let displayName = 'Unassigned';
-      if (groupKey.startsWith('session:')) {
-        const sessionId = groupKey.replace('session:', '');
-        const session = sessionMetadata.get(sessionId);
-        const sessionName = session?.name || sessionId.slice(0, 8);
-        displayName = sessionName;
-        if (friendlyName) {
-          displayName += ` - ${friendlyName}`;
-        }
-        if (csoLast4) {
-          displayName += ` [${csoLast4}]`;
-        }
-      } else if (subInventory) {
+      if (subInventory) {
         displayName = friendlyName || subInventory;
         if (csoLast4) {
-          displayName += ` [${csoLast4}]`;
+          displayName = `${displayName} · ${csoLast4}`;
         }
+      } else if (groupKey.startsWith('session:')) {
+        const sessionId = groupKey.replace('session:', '');
+        const session = sessionMetadata.get(sessionId);
+        displayName = session?.name || sessionId.slice(0, 8);
       }
 
       const existing = groups.get(groupKey);
@@ -928,7 +922,18 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                                   {group.name}
                                 </span>
                                 <span className={`text-muted-foreground shrink-0 text-xs tabular-nums ${isHidden ? 'opacity-40' : ''}`}>
-                                  {group.count}
+                        {(() => {
+                          if (!inventoryScanCountsQuery.data) return group.count;
+                          const key = group.subInventory
+                            ? `load:${group.subInventory}`
+                            : group.inventoryType
+                            ? `type:${group.inventoryType}`
+                            : null;
+                          if (!key) return group.count;
+                          const scanned = inventoryScanCountsQuery.data.scannedByKey.get(key) ?? 0;
+                          const total = inventoryScanCountsQuery.data.totalByKey.get(key) ?? 0;
+                          return `${scanned}/${total}`;
+                        })()}
                                 </span>
                               </button>
 
@@ -992,7 +997,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
         <Button
           variant="outline"
           className="h-14 gap-2 shadow-lg bg-background/95 backdrop-blur-sm border border-border"
-          onClick={() => setScanOverlayOpen(true)}
+          onClick={() => setScanOverlayOpen((prev) => !prev)}
         >
           <ScanLine className="h-5 w-5" />
           Scan
