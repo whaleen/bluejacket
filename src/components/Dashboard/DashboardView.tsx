@@ -56,7 +56,7 @@ interface DetailedStats {
     forSaleNeedsWrap: number;
     soldNeedsTag: number;
     soldNeedsWrap: number;
-    soldNeedsBoth: number;
+    soldNeedsPrep: number;
     pickupSoonNeedsPrep: number;
   };
 
@@ -83,7 +83,7 @@ const EMPTY_STATS: DetailedStats = {
     forSaleNeedsWrap: 0,
     soldNeedsTag: 0,
     soldNeedsWrap: 0,
-    soldNeedsBoth: 0,
+    soldNeedsPrep: 0,
     pickupSoonNeedsPrep: 0,
   },
   loads: { total: 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
@@ -208,21 +208,20 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
   // }, []);
 
   const { stats, loadDetails, asisActionLoads } = useMemo(() => {
-    const itemsData = inventoryItemsQuery.data ?? [];
+    const allItems = inventoryItemsQuery.data ?? [];
     const conflictCountMap = conflictsQuery.data ?? new Map<string, number>();
     const loads = (loadsData ?? []).map((load) => ({
       ...load,
       conflict_count: conflictCountMap.get(load.sub_inventory_name) ?? 0,
     }));
 
-    if (itemsData.length === 0 && loads.length === 0) {
+    if (allItems.length === 0 && loads.length === 0) {
       return { stats: EMPTY_STATS, loadDetails: EMPTY_LOAD_DETAILS, asisActionLoads: EMPTY_ASIS_ACTION_LOADS };
     }
 
-    // Count only active items (exclude ASIS items that are "away"/orphaned)
-    const activeItemCount = itemsData.filter(
-      item => !(item.inventory_type === 'ASIS' && item.ge_orphaned === true)
-    ).length;
+    // Filter out orphaned items (items no longer in GE) from all calculations
+    const itemsData = allItems.filter(item => item.ge_orphaned !== true);
+    const activeItemCount = itemsData.length;
 
     const newStats: DetailedStats = {
       totalItems: activeItemCount,
@@ -236,7 +235,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         forSaleNeedsWrap: 0,
         soldNeedsTag: 0,
         soldNeedsWrap: 0,
-        soldNeedsBoth: 0,
+        soldNeedsPrep: 0,
         pickupSoonNeedsPrep: 0,
       },
       loads: { total: loads.length || 0, active: 0, byType: { localStock: 0, fg: 0, asis: 0 } },
@@ -266,14 +265,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         newStats.fg.total++;
         newStats.fg.backhaul++;
       } else if (item.inventory_type === 'ASIS') {
-        // Skip "away" items (ge_orphaned) - items that were in the warehouse but are no longer here
-        // NOTE: This field should be renamed to 'ge_away' in the future - better semantic meaning
-        // (was at one time in the warehouse, but is no longer. if it should return we have our
-        // track record of it from when it was here last)
-        if (item.ge_orphaned === true) {
-          return;
-        }
-
         newStats.asis.total++;
 
         if (!item.sub_inventory) {
@@ -327,7 +318,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         const wrapped = Boolean(load.prep_wrapped);
         const needsTag = !tagged;
         const needsWrap = !wrapped;
-        const needsBoth = needsTag && needsWrap;
 
         const pickupDateValue = load.pickup_date ? new Date(load.pickup_date) : null;
         const pickupSoon =
@@ -351,8 +341,8 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
             newStats.asisLoads.sold += 1;
             if (needsTag) newStats.asisLoads.soldNeedsTag += 1;
             if (needsWrap) newStats.asisLoads.soldNeedsWrap += 1;
-            if (needsBoth || needsTag || needsWrap) {
-              newStats.asisLoads.soldNeedsBoth += 1;
+            if (needsTag || needsWrap) {
+              newStats.asisLoads.soldNeedsPrep += 1;
               nextAsisActions.soldNeedsPrep.push(load as AsisActionLoad);
             }
             if (pickupSoon && (needsTag || needsWrap)) {
@@ -423,14 +413,14 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     // Level 2: Sub-inventories for a specific type
     if (selectedChartType === 'overview') {
       return [
-        { name: 'Local Stock', value: stats.localStock.total, fill: 'var(--color-chart-1)' },
+        { name: 'STA', value: stats.localStock.total, fill: 'var(--color-chart-1)' },
         { name: 'FG', value: stats.fg.total, fill: 'var(--color-chart-2)' },
         { name: 'ASIS', value: stats.asis.total, fill: 'var(--color-chart-3)' },
       ];
     } else if (selectedChartType === 'LocalStock') {
       return [
         { name: 'Unassigned', value: stats.localStock.unassigned, fill: 'var(--color-chart-1)' },
-        { name: 'In Routes', value: stats.localStock.routes, fill: 'var(--color-chart-2)' },
+        { name: 'In Loads', value: stats.localStock.routes, fill: 'var(--color-chart-2)' },
         { name: 'Staged', value: stats.localStock.staged, fill: 'var(--color-chart-3)' },
       ];
     } else if (selectedChartType === 'FG') {
@@ -981,13 +971,13 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                         onClick={(data) => {
                           // Level 1: Overview -> drill to sub-inventories
                           if (selectedChartType === 'overview' && !selectedDrilldown) {
-                            if (data.name === 'Local Stock') setSelectedChartType('LocalStock');
+                            if (data.name === 'STA') setSelectedChartType('LocalStock');
                             else if (data.name === 'FG') setSelectedChartType('FG');
                             else if (data.name === 'ASIS') setSelectedChartType('ASIS');
                           }
                           // Level 2: Sub-inventories -> drill to loads
                           else if (!selectedDrilldown) {
-                            if (selectedChartType === 'LocalStock' && data.name === 'In Routes') {
+                            if (selectedChartType === 'LocalStock' && data.name === 'In Loads') {
                               setSelectedDrilldown('LocalStock-routes');
                             } else if (selectedChartType === 'FG' && data.name === 'BackHaul') {
                               setSelectedDrilldown('FG-backhaul');
@@ -1024,7 +1014,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
             </div>
               </Card>
 
-              {/* Local Stock - Compact */}
+              {/* STA - Compact */}
               <Card className="p-3">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -1032,13 +1022,13 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                       <div className="p-1.5 rounded" style={{ backgroundColor: 'oklch(var(--chart-1) / 0.1)' }}>
                         <PackageOpen className="h-4 w-4" style={{ color: 'oklch(var(--chart-1))' }} />
                       </div>
-                      <h4 className="text-sm font-semibold">Local Stock</h4>
+                      <h4 className="text-sm font-semibold">STA</h4>
                     </div>
                     <span className="text-lg font-bold">{stats.localStock.total}</span>
                   </div>
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Routes</span>
+                      <span className="text-muted-foreground">In Loads</span>
                       <span className="font-medium">{stats.localStock.routes}</span>
                     </div>
                     <div className="flex justify-between">

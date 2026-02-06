@@ -80,7 +80,7 @@ const PRODUCT_IMPORT_SOURCES_BY_FILTER: Record<'ASIS' | 'FG' | 'LocalStock', Pro
     csoValue: 'FG',
   },
   LocalStock: {
-    label: 'Local Stock (STA)',
+    label: 'STA',
     baseUrl: '/STA',
     fileName: 'ERP On Hand Qty.xls',
     inventoryType: 'STA',
@@ -370,7 +370,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
       const source = resolveProductImportSource(inventoryTypeFilter);
       if (!source) {
         toast.error('Missing source', {
-          description: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+          description: 'Pick ASIS, FG, or STA in the type filter before deleting inventory.',
         });
         return;
       }
@@ -404,7 +404,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
     const source = resolveProductImportSource(inventoryTypeFilter);
     if (!source) {
       toast.error('Missing source', {
-        description: 'Pick ASIS, FG, or Local Stock in the type filter before importing.',
+        description: 'Pick ASIS, FG, or STA in the type filter before importing.',
       });
       return;
     }
@@ -565,7 +565,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
   const handleNukeClick = () => {
     if (!selectedImportSource) {
       toast.error('Missing source', {
-        description: 'Pick ASIS, FG, or Local Stock in the type filter before deleting inventory.',
+        description: 'Pick ASIS, FG, or STA in the type filter before deleting inventory.',
       });
       return;
     }
@@ -630,7 +630,7 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
                 <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="ASIS">ASIS</SelectItem>
                 <SelectItem value="FG">FG</SelectItem>
-                <SelectItem value="LocalStock">Local Stock</SelectItem>
+                <SelectItem value="LocalStock">STA</SelectItem>
               </SelectContent>
             </Select>
 

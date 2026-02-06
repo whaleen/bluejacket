@@ -112,8 +112,8 @@ The inventory scanner now uses a **session-based workflow** where you create eph
 
 ### Cycle Count
 ```
-1. Start session: "Weekly Cycle Count - LocalStock"
-2. Filter: Local Stock
+1. Start session: "Weekly Cycle Count - STA"
+2. Filter: STA
 3. Scan warehouse stock
 4. Compare scanned vs. expected
 5. Note discrepancies
