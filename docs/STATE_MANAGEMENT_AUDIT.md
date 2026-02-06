@@ -8,10 +8,10 @@
 
 ## Executive Summary
 
-**Current State**: React Query (TanStack) with manual invalidation, no real-time sync
+**Current State**: TanStack Query (TanStack) with manual invalidation, no real-time sync
 **Scale**: ~2-3k inventory items (totally cacheable in memory)
 **Problem**: Data staleness, inconsistent updates, no live collaboration
-**Proposal**: Hybrid React Query + Supabase Realtime architecture
+**Proposal**: Hybrid TanStack Query + Supabase Realtime architecture
 
 ---
 
@@ -26,7 +26,7 @@ GE Sync Process (Updates Supabase)
     ↓
 Supabase Database (inventory_items, load_metadata, etc.)
     ↓
-React Query (Client Cache)
+TanStack Query (Client Cache)
     ↓
 UI Components
 ```
@@ -45,7 +45,7 @@ UI Components
 
 ---
 
-## Current React Query Usage Audit
+## Current TanStack Query Usage Audit
 
 ### ✅ Well-Implemented Queries
 
@@ -183,9 +183,9 @@ inventory_items (PRIMARY SOURCE)
 
 ### Core Concept
 
-**React Query**: Initial data loading, optimistic updates, mutations
+**TanStack Query**: Initial data loading, optimistic updates, mutations
 **Supabase Realtime**: Live updates from database changes
-**Integration**: Realtime events update React Query cache
+**Integration**: Realtime events update TanStack Query cache
 
 ### Architecture Diagram
 
@@ -208,7 +208,7 @@ inventory_items (PRIMARY SOURCE)
        │                  │
        ▼                  ▼
 ┌──────────────────────────────────┐
-│      React Query Cache           │
+│      TanStack Query Cache           │
 │  ┌────────────────────────────┐  │
 │  │ inventory-items (global)   │  │
 │  │ product-locations          │  │
@@ -224,7 +224,7 @@ inventory_items (PRIMARY SOURCE)
 
 ### Key Principles
 
-1. **Single Source of Truth**: React Query cache
+1. **Single Source of Truth**: TanStack Query cache
 2. **Real-Time Sync**: Supabase subscriptions keep cache fresh
 3. **Optimistic Updates**: Immediate UI feedback
 4. **Smart Invalidation**: Related queries update together
@@ -720,7 +720,7 @@ const debouncedInvalidate = useDebouncedCallback(
 
 ## Alternative: Lightweight State (Jotai/Zustand)
 
-If React Query feels too heavy, consider:
+If TanStack Query feels too heavy, consider:
 
 ```typescript
 // Using Jotai
@@ -741,11 +741,11 @@ supabase.channel('inventory').on('postgres_changes', (payload) => {
 - Less abstraction
 
 **Cons**:
-- Lose React Query features (loading states, error handling, retries)
+- Lose TanStack Query features (loading states, error handling, retries)
 - More manual work
 - Not leveraging existing patterns
 
-**Verdict**: Stick with React Query + Realtime (hybrid) for now.
+**Verdict**: Stick with TanStack Query + Realtime (hybrid) for now.
 
 ---
 
@@ -772,7 +772,7 @@ supabase.channel('inventory').on('postgres_changes', (payload) => {
 
 ### DevTools
 
-**React Query DevTools**:
+**TanStack Query DevTools**:
 ```typescript
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
@@ -804,7 +804,7 @@ channel.on('system', {}, (payload) => {
 ### Recommended Approach
 
 ✅ **Hybrid Architecture**:
-- React Query for data fetching & caching
+- TanStack Query for data fetching & caching
 - Supabase Realtime for live updates
 - Global inventory query (single source of truth)
 - Optimistic updates for instant feedback
