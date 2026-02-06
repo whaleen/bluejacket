@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { useCallback } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, ScanBarcode, Keyboard } from 'lucide-react';
+import { Loader2, ScanBarcode, Keyboard, ScanLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OverlayPortal } from '@/components/Layout/OverlayPortal';
 import { uiLayers } from '@/lib/uiLayers';
@@ -34,33 +34,50 @@ export function MinimalScanOverlay({
   onSelectFog,
   onSelectAdHoc,
 }: MinimalScanOverlayProps) {
-  const [inputValue, setInputValue] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('scanner');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [manualValue, setManualValue] = useState(''); // Only for keyboard mode
+  const [displayValue, setDisplayValue] = useState(''); // Only for scanner mode display
 
-  // Auto-focus input when opened, clear when closed
+  // Hidden input for scanner mode - NEVER re-renders, completely isolated
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  // Visible input for keyboard mode
+  const visibleInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus appropriate input when opened
   useEffect(() => {
-    if (isOpen) {
-      const timer = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-      return () => clearTimeout(timer);
-    } else {
-      // Clear both ref and state when closing
-      setInputValue('');
-      if (inputRef.current) {
-        inputRef.current.value = '';
+    if (!isOpen) {
+      // Clear everything when closing
+      setManualValue('');
+      setDisplayValue('');
+      if (hiddenInputRef.current) {
+        hiddenInputRef.current.value = '';
       }
+      return;
     }
-  }, [isOpen]);
+
+    // Focus the appropriate input based on mode
+    const timer = setTimeout(() => {
+      if (inputMode === 'scanner') {
+        hiddenInputRef.current?.focus();
+      } else {
+        visibleInputRef.current?.focus();
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, inputMode]);
+
+  // Update display value as user types in hidden input (scanner mode only)
+  const handleHiddenInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    // Only update display, don't trigger any other state changes
+    setDisplayValue(e.target.value);
+  }, []);
 
   const submitValue = useCallback(() => {
-    if (isProcessing) return;
-
-    // Read from ref in scanner mode, state in keyboard mode
+    // Read from appropriate source
     const rawValue = inputMode === 'scanner'
-      ? inputRef.current?.value || ''
-      : inputValue;
+      ? hiddenInputRef.current?.value || ''
+      : manualValue;
 
     if (!rawValue.trim()) return;
 
@@ -72,32 +89,61 @@ export function MinimalScanOverlay({
 
     onScan(sanitized);
 
-    // Clear input - ref in scanner mode, state in keyboard mode
-    if (inputMode === 'scanner' && inputRef.current) {
-      inputRef.current.value = '';
+    // Clear inputs
+    if (inputMode === 'scanner' && hiddenInputRef.current) {
+      hiddenInputRef.current.value = '';
+      setDisplayValue('');
     } else {
-      setInputValue('');
+      setManualValue('');
     }
-  }, [inputMode, inputValue, isProcessing, onScan]);
 
-  const handleSubmit = () => {
-    submitValue();
-  };
+    // Auto-switch back to scanner mode after successful manual entry
+    if (inputMode === 'keyboard') {
+      setTimeout(() => {
+        setInputMode('scanner');
+        setTimeout(() => hiddenInputRef.current?.focus(), 50);
+      }, 500);
+    }
+  }, [inputMode, manualValue, onScan]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleSubmit();
+      submitValue();
     }
     if (e.key === 'Escape') {
       onClose();
     }
-  };
+  }, [submitValue, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    inputRef.current?.focus();
-  }, [isOpen]);
+  const toggleInputMode = useCallback(() => {
+    setInputMode(prev => {
+      const newMode = prev === 'scanner' ? 'keyboard' : 'scanner';
+
+      // Sync values when switching
+      if (newMode === 'keyboard') {
+        // Scanner → Keyboard: copy hidden input to manual input
+        setManualValue(hiddenInputRef.current?.value || '');
+      } else {
+        // Keyboard → Scanner: copy manual input to hidden input
+        if (hiddenInputRef.current) {
+          hiddenInputRef.current.value = manualValue;
+          setDisplayValue(manualValue);
+        }
+      }
+
+      // Focus appropriate input after mode switch
+      setTimeout(() => {
+        if (newMode === 'scanner') {
+          hiddenInputRef.current?.focus();
+        } else {
+          visibleInputRef.current?.focus();
+        }
+      }, 0);
+
+      return newMode;
+    });
+  }, [manualValue]);
 
   if (!isOpen) return null;
 
@@ -133,73 +179,91 @@ export function MinimalScanOverlay({
             className="bg-background/95 backdrop-blur-sm rounded-lg shadow-2xl border p-4 space-y-3"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Input with mode toggle */}
-            <div className="relative">
-              {feedbackText && (
-                <div className="text-xs text-muted-foreground mb-2">{feedbackText}</div>
-              )}
-              <Input
-                ref={inputRef}
-                type="text"
-                inputMode={inputMode === 'scanner' ? 'none' : 'text'}
-                {...(inputMode === 'scanner'
-                  ? {
-                      // Uncontrolled for scanner - let native input handle rapid keystrokes
-                      defaultValue: ''
-                    }
-                  : {
-                      // Controlled for keyboard - normal React state behavior
-                      value: inputValue,
-                      onChange: (e: React.ChangeEvent<HTMLInputElement>) => setInputValue(e.target.value)
-                    }
-                )}
-                onKeyDown={handleKeyDown}
-                placeholder={inputMode === 'scanner' ? 'Scan barcode here...' : 'Type barcode...'}
-                className="h-12 text-base font-mono pr-20"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                disabled={isProcessing}
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                {isProcessing ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => {
-                      setInputMode(prev => {
-                        const newMode = prev === 'scanner' ? 'keyboard' : 'scanner';
+            {/* Scanner Mode: Hidden input + Read-only display */}
+            {inputMode === 'scanner' && (
+              <div className="relative">
+                {/* Hidden input - captures scanner, never re-renders */}
+                <input
+                  ref={hiddenInputRef}
+                  type="text"
+                  onChange={handleHiddenInputChange}
+                  onKeyDown={handleKeyDown}
+                  className="absolute opacity-0 pointer-events-none"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  tabIndex={-1}
+                />
 
-                        // Sync values when switching modes
-                        if (newMode === 'keyboard' && inputRef.current) {
-                          // Switching to keyboard: copy ref value to state
-                          setInputValue(inputRef.current.value);
-                        } else if (newMode === 'scanner' && inputRef.current) {
-                          // Switching to scanner: copy state value to ref
-                          inputRef.current.value = inputValue;
-                        }
-
-                        return newMode;
-                      });
-
-                      setTimeout(() => inputRef.current?.focus(), 0);
-                    }}
-                    title={inputMode === 'scanner' ? 'Switch to keyboard input' : 'Switch to scanner input'}
-                  >
-                    {inputMode === 'scanner' ? (
-                      <Keyboard className="h-4 w-4" />
+                {/* Read-only display showing accumulated value */}
+                <div className="relative">
+                  <div className="h-12 text-base font-mono px-3 flex items-center border-2 border-blue-500 rounded-md bg-blue-50 dark:bg-blue-950/20">
+                    <ScanLine className="h-4 w-4 text-blue-500 mr-2 animate-pulse" />
+                    <span className="flex-1 text-foreground">
+                      {displayValue || <span className="text-muted-foreground">Scan barcode here...</span>}
+                    </span>
+                  </div>
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {isProcessing ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
                     ) : (
-                      <Keyboard className="h-4 w-4 text-primary" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={toggleInputMode}
+                        title="Switch to keyboard input"
+                      >
+                        <Keyboard className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                      </Button>
                     )}
-                  </Button>
+                  </div>
+                </div>
+                {feedbackText && (
+                  <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">{feedbackText}</div>
                 )}
               </div>
-            </div>
+            )}
+
+            {/* Keyboard Mode: Normal editable input */}
+            {inputMode === 'keyboard' && (
+              <div className="relative">
+                <Input
+                  ref={visibleInputRef}
+                  type="text"
+                  value={manualValue}
+                  onChange={(e) => setManualValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Type barcode manually..."
+                  className="h-12 text-base font-mono pr-20 border-2 border-green-500 focus-visible:ring-green-500"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                  {isProcessing ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-green-500" />
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={toggleInputMode}
+                      title="Switch to scanner input"
+                    >
+                      <ScanLine className="h-4 w-4 text-green-500" />
+                    </Button>
+                  )}
+                </div>
+                {feedbackText && (
+                  <div className="text-xs text-green-600 dark:text-green-400 mt-1">{feedbackText}</div>
+                )}
+              </div>
+            )}
 
             {/* Alert */}
             {alert && (
@@ -208,20 +272,24 @@ export function MinimalScanOverlay({
               </Alert>
             )}
 
-            {/* Camera option */}
+            {/* Mode indicator and camera option */}
             <div className="flex items-center gap-2 pt-2">
               <div className="flex-1 border-t" />
+              <div className="text-xs text-muted-foreground px-2">
+                {inputMode === 'scanner' ? '📷 Scanner Mode' : '⌨️ Keyboard Mode'}
+              </div>
+              <div className="flex-1 border-t" />
+            </div>
+            <div className="flex items-center justify-center">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onOpenCamera}
-                disabled={isProcessing}
                 className="gap-2 text-xs"
               >
                 <ScanBarcode className="h-4 w-4" />
                 Use Camera Instead
               </Button>
-              <div className="flex-1 border-t" />
             </div>
           </div>
         </div>
