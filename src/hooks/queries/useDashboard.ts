@@ -15,6 +15,17 @@ export function useDashboardInventoryItems() {
         throw new Error('No active location selected');
       }
 
+      // Get delivered load names to exclude their items
+      const { data: deliveredLoads } = await supabase
+        .from('load_metadata')
+        .select('sub_inventory_name')
+        .eq('location_id', locationId)
+        .eq('ge_cso_status', 'Delivered');
+
+      const deliveredLoadNames = new Set(
+        deliveredLoads?.map(l => l.sub_inventory_name) ?? []
+      );
+
       let allItems: InventoryItem[] = [];
       let from = 0;
       const batchSize = 1000;
@@ -47,6 +58,10 @@ export function useDashboardInventoryItems() {
       );
 
       const deduplicatedItems = allItems.filter(item => {
+        // Exclude items from delivered loads
+        if (item.sub_inventory && deliveredLoadNames.has(item.sub_inventory)) {
+          return false;
+        }
         // Exclude ASIS items that have moved to STA
         if (item.inventory_type === 'ASIS' && item.serial && staSerials.has(item.serial)) {
           return false;

@@ -34,13 +34,14 @@ export function useVisualGuideData() {
         throw new Error('No active location');
       }
 
-      // Get all ASIS loads with their colors and categories
+      // Get all ASIS loads with their colors and categories (exclude delivered)
       const { data: loads, error: loadsError } = await supabase
         .from('load_metadata')
         .select('sub_inventory_name, friendly_name, primary_color, category')
         .eq('location_id', locationId)
         .eq('inventory_type', 'ASIS')
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .or('ge_cso_status.is.null,ge_cso_status.neq.Delivered');
 
       if (loadsError) throw loadsError;
 

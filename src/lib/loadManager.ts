@@ -166,9 +166,12 @@ export async function getLoadWithItems(
 /**
  * Get all loads, optionally filtered by inventory type
  * Returns metadata with item counts
+ * @param inventoryType - Filter by inventory type
+ * @param includeDelivered - Include delivered loads (default: false)
  */
 export async function getAllLoads(
-  inventoryType?: InventoryType
+  inventoryType?: InventoryType,
+  includeDelivered = false
 ): Promise<{ data: LoadMetadata[] | null; error: PostgrestError | null }> {
   const { locationId } = getActiveLocationContext();
   let query = supabase
@@ -184,6 +187,11 @@ export async function getAllLoads(
     } else {
       query = query.in('inventory_type', types);
     }
+  }
+
+  // Exclude delivered loads by default (loads no longer in the building)
+  if (!includeDelivered) {
+    query = query.or('ge_cso_status.is.null,ge_cso_status.neq.Delivered');
   }
 
   const { data, error } = await query;

@@ -27,11 +27,11 @@ interface LoadManagementViewProps {
 }
 
 export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
-  const { data: loadsData, isLoading: loading, refetch } = useLoads();
   const isMobile = useIsMobile();
   const [loads, setLoads] = useState<LoadWithCount[]>([]);
   const [loadingCounts, setLoadingCounts] = useState(false);
   const [showAway, setShowAway] = useState(false);
+  const { data: loadsData, isLoading: loading, refetch } = useLoads(undefined, showAway);
   const [pendingLoadSelection, setPendingLoadSelection] = useState<string | null>(null);
   const [isStandaloneDetail, setIsStandaloneDetail] = useState(false);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);

@@ -19,6 +19,17 @@ export function useGlobalInventory() {
     queryFn: async () => {
       if (!locationId) return [];
 
+      // Get delivered load names to exclude their items
+      const { data: deliveredLoads } = await supabase
+        .from('load_metadata')
+        .select('sub_inventory_name')
+        .eq('location_id', locationId)
+        .eq('ge_cso_status', 'Delivered');
+
+      const deliveredLoadNames = new Set(
+        deliveredLoads?.map(l => l.sub_inventory_name) ?? []
+      );
+
       const { data, error } = await supabase
         .from('inventory_items')
         .select('*, products(*)')
@@ -26,8 +37,13 @@ export function useGlobalInventory() {
 
       if (error) throw error;
 
+      // Filter out items from delivered loads
+      const activeItems = (data ?? []).filter(
+        item => !item.sub_inventory || !deliveredLoadNames.has(item.sub_inventory)
+      );
+
       // Apply ASIS/STA deduplication (STA wins)
-      return deduplicateAsisStaItems((data ?? []) as InventoryItem[]);
+      return deduplicateAsisStaItems(activeItems as InventoryItem[]);
     },
     staleTime: Infinity, // Never goes stale - updated via Realtime
     gcTime: 30 * 60 * 1000, // Keep in cache for 30 minutes

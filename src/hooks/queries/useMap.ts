@@ -65,13 +65,38 @@ export function useInventoryItemCount() {
     enabled: !!locationId,
     queryFn: async () => {
       if (!locationId) return 0;
-      const { count, error } = await supabase
+
+      // Get delivered load names to exclude their items from count
+      const { data: deliveredLoads } = await supabase
+        .from('load_metadata')
+        .select('sub_inventory_name')
+        .eq('location_id', locationId)
+        .eq('ge_cso_status', 'Delivered');
+
+      const deliveredLoadNames = deliveredLoads?.map(l => l.sub_inventory_name) ?? [];
+
+      // If no delivered loads, use simple count
+      if (deliveredLoadNames.length === 0) {
+        const { count, error } = await supabase
+          .from('inventory_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('location_id', locationId);
+
+        if (error) throw error;
+        return count ?? 0;
+      }
+
+      // Otherwise, fetch all items and filter
+      const { data, error } = await supabase
         .from('inventory_items')
-        .select('id', { count: 'exact', head: true })
+        .select('id, sub_inventory')
         .eq('location_id', locationId);
 
       if (error) throw error;
-      return count ?? 0;
+
+      return (data ?? []).filter(
+        item => !item.sub_inventory || !deliveredLoadNames.includes(item.sub_inventory)
+      ).length;
     },
   });
 }

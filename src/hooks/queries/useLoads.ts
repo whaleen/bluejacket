@@ -12,14 +12,14 @@ import { queryKeys } from '@/lib/queryKeys';
 import { getActiveLocationContext } from '@/lib/tenant';
 import type { InventoryType, LoadStatus } from '@/types/inventory';
 
-export function useLoads(inventoryType?: InventoryType) {
+export function useLoads(inventoryType?: InventoryType, includeDelivered = false) {
   const { locationId } = getActiveLocationContext();
 
   return useQuery({
     queryKey: inventoryType
-      ? queryKeys.loads.byType(locationId ?? 'none', inventoryType)
-      : queryKeys.loads.all(locationId ?? 'none'),
-    queryFn: () => getAllLoads(inventoryType),
+      ? [...queryKeys.loads.byType(locationId ?? 'none', inventoryType), includeDelivered]
+      : [...queryKeys.loads.all(locationId ?? 'none'), includeDelivered],
+    queryFn: () => getAllLoads(inventoryType, includeDelivered),
     select: (data) => data.data,
     enabled: !!locationId,
   });
