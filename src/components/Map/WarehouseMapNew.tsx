@@ -711,20 +711,19 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
 
                 {(location.sub_inventory || location.load_friendly_name) && (
                   <div className="flex items-center gap-2 pt-1 border-t">
-                    {location.inventory_type === 'FG' ? (
-                      <div className="h-4 px-1.5 rounded-sm border border-white bg-sky-300 text-black text-[9px] font-semibold tracking-tight flex items-center">
-                        FG
-                      </div>
-                    ) : location.inventory_type === 'STA' ? (
+                    {location.inventory_type === 'ASIS' ? (
                       <div
-                        className="size-3 rounded-sm shrink-0 border border-white"
-                        style={{ backgroundColor: location.load_color || '#94a3b8' }}
+                        className="h-6 w-6 rounded-md shrink-0 border border-border shadow-sm"
+                        style={{ backgroundColor: location.load_color || '#ef4444' }}
                       />
                     ) : (
-                      <div
-                        className="size-3 rounded-full shrink-0 border border-white"
-                        style={{ backgroundColor: location.load_color || '#94a3b8' }}
-                      />
+                      <div className="h-6 w-6 rounded-sm shrink-0 border-2 border-border shadow-sm bg-gray-500 text-white flex items-center justify-center text-[9px] font-semibold">
+                        {location.inventory_type === 'FG' ? 'FG' :
+                         location.inventory_type === 'STA' ? 'ST' :
+                         location.inventory_type === 'BackHaul' ? 'BH' :
+                         location.inventory_type === 'Inbound' ? 'IN' :
+                         location.inventory_type?.substring(0, 2) || '?'}
+                      </div>
                     )}
                     <span className="text-xs font-medium">
                       {location.load_friendly_name || location.sub_inventory}
@@ -880,29 +879,25 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                                   className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-2"
                                   onClick={() => toggleSessionVisibility(group.key)}
                                 >
-                                  {group.inventoryType === 'FG' ? (
+                                  {group.inventoryType === 'ASIS' ? (
                                     <div
-                                      className="h-4 px-1.5 rounded-sm border border-white bg-sky-300 text-black text-[9px] font-semibold tracking-tight flex items-center"
-                                      style={{ opacity: isHidden ? 0.3 : 1 }}
-                                    >
-                                      FG
-                                    </div>
-                                  ) : group.inventoryType === 'STA' ? (
-                                    <div
-                                      className="size-3 rounded-sm shrink-0 border border-white"
+                                      className="h-8 w-8 rounded-md shrink-0 border border-border shadow-sm"
                                       style={{
-                                        backgroundColor: group.color,
+                                        backgroundColor: group.color || '#ef4444',
                                         opacity: isHidden ? 0.3 : 1,
                                       }}
                                     />
                                   ) : (
                                     <div
-                                      className="size-3 rounded-full shrink-0 border border-white"
-                                      style={{
-                                        backgroundColor: group.color,
-                                        opacity: isHidden ? 0.3 : 1,
-                                      }}
-                                    />
+                                      className="h-8 w-8 rounded-sm shrink-0 border-2 border-border shadow-sm bg-gray-500 text-white flex items-center justify-center text-[10px] font-semibold"
+                                      style={{ opacity: isHidden ? 0.3 : 1 }}
+                                    >
+                                      {group.inventoryType === 'FG' ? 'FG' :
+                                       group.inventoryType === 'STA' ? 'ST' :
+                                       group.inventoryType === 'BackHaul' ? 'BH' :
+                                       group.inventoryType === 'Inbound' ? 'IN' :
+                                       group.inventoryType?.substring(0, 2) || '?'}
+                                    </div>
                                   )}
                                 <span className={`truncate flex-1 text-left text-sm ${isHidden ? 'opacity-40 line-through' : ''}`}>
                                   {group.name}
