@@ -13,6 +13,8 @@ import { Badge } from '@/components/ui/badge';
 import { AppHeader } from '@/components/Navigation/AppHeader';
 import { PageContainer } from '@/components/Layout/PageContainer';
 import { useVisualGuideData } from '@/hooks/queries/useVisualGuideData';
+import { LoadDisplay } from '@/components/Loads/LoadDisplay';
+import type { LoadMetadata } from '@/types/inventory';
 
 interface InventoryVisualGuideProps {
   onMenuClick?: () => void;
@@ -549,6 +551,131 @@ export function InventoryVisualGuide({ onMenuClick }: InventoryVisualGuideProps)
 
             <div className="text-xs text-muted-foreground p-3 bg-muted rounded">
               <strong>Note:</strong> The vibrant ASIS load color (red) clearly stands out from both the grayscale non-ASIS types and the muted warning state, eliminating visual confusion.
+            </div>
+          </Card>
+
+          {/* LoadDisplay Component Examples */}
+          <Card className="p-6 space-y-6">
+            <div className="border-b pb-4">
+              <h2 className="text-lg font-semibold mb-1">LoadDisplay Component</h2>
+              <p className="text-sm text-muted-foreground">
+                Unified load display component with variants for different contexts. Uses the three-tier color system.
+              </p>
+            </div>
+
+            {/* Example Loads */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Card Variant (Full Detail)</h3>
+                <LoadDisplay
+                  load={{
+                    inventory_type: 'ASIS',
+                    sub_inventory_name: 'ASIS-001',
+                    friendly_name: 'Red Load',
+                    primary_color: '#ef4444',
+                    ge_cso: '12345',
+                    ge_source_status: 'Sold - Picked Up',
+                    ge_units: '25',
+                    prep_tagged: true,
+                    prep_wrapped: true,
+                    items_scanned_count: 20,
+                    items_total_count: 25,
+                    sanity_check_requested: false,
+                    sanity_completed_at: new Date().toISOString(),
+                    status: 'active',
+                  } as LoadMetadata}
+                  variant="card"
+                  showProgress={true}
+                  showCSO={true}
+                  showActions={true}
+                />
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Compact Variant (Action Items)</h3>
+                <div className="space-y-2">
+                  <LoadDisplay
+                    load={{
+                      inventory_type: 'ASIS',
+                      sub_inventory_name: 'ASIS-002',
+                      friendly_name: 'Blue Load',
+                      primary_color: '#3b82f6',
+                      ge_source_status: 'Sold - Ready for Delivery',
+                      ge_units: '15',
+                      prep_tagged: false,
+                      prep_wrapped: true,
+                      status: 'active',
+                    } as LoadMetadata}
+                    variant="compact"
+                    showProgress={true}
+                  />
+                  <LoadDisplay
+                    load={{
+                      inventory_type: 'FG',
+                      sub_inventory_name: 'FG-MAIN',
+                      friendly_name: 'Finished Goods',
+                      ge_units: '42',
+                      prep_tagged: true,
+                      prep_wrapped: true,
+                      status: 'active',
+                    } as LoadMetadata}
+                    variant="compact"
+                    showProgress={true}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Sidebar Variant (Map Context)</h3>
+                <LoadDisplay
+                  load={{
+                    inventory_type: 'ASIS',
+                    sub_inventory_name: 'ASIS-003',
+                    friendly_name: 'Green Load',
+                    primary_color: '#22c55e',
+                    ge_cso: '67890',
+                    ge_units: '30',
+                    prep_tagged: true,
+                    prep_wrapped: false,
+                    items_scanned_count: 30,
+                    items_total_count: 30,
+                    scanning_complete: true,
+                    status: 'active',
+                  } as LoadMetadata}
+                  variant="sidebar"
+                  showProgress={true}
+                  showCSO={true}
+                  showActions={true}
+                />
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold mb-3">Marker Variant (Minimal)</h3>
+                <LoadDisplay
+                  load={{
+                    inventory_type: 'ASIS',
+                    sub_inventory_name: 'ASIS-004',
+                    friendly_name: 'Yellow Load',
+                    primary_color: '#eab308',
+                    ge_units: '8',
+                    status: 'active',
+                  } as LoadMetadata}
+                  variant="marker"
+                />
+              </div>
+            </div>
+
+            {/* Usage Notes */}
+            <div className="border-t pt-4 space-y-2">
+              <div className="text-sm font-semibold">Usage Notes:</div>
+              <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                <li><strong>Card:</strong> Full detail view for load management and load detail panels</li>
+                <li><strong>Compact:</strong> Action items and dashboard cards where space is limited</li>
+                <li><strong>Sidebar:</strong> Map sidebar showing load context with medium detail</li>
+                <li><strong>Marker:</strong> Map marker popovers with minimal information</li>
+                <li>All variants use the same color system and maintain visual consistency</li>
+                <li>Progress indicators automatically show/hide based on what's required</li>
+              </ul>
             </div>
           </Card>
         </div>

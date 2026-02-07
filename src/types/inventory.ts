@@ -106,6 +106,17 @@ export interface ScanResult {
 // Load Management Types
 export type LoadStatus = 'active' | 'staged' | 'in_transit' | 'delivered';
 
+export interface SanityCheckParameters {
+  checkGrouping: boolean;
+  checkWrapping: boolean;
+  checkTagging: boolean;
+  checkEndCapMarkers: boolean;
+  checkNoExtraItems: boolean;
+  checkVisuallyLocatable: boolean;
+  geStatus?: string;
+  notes?: string;
+}
+
 export interface LoadMetadata {
   id?: string;
   company_id?: string;
@@ -113,6 +124,18 @@ export interface LoadMetadata {
   inventory_type: InventoryType;
   sub_inventory_name: string;
   friendly_name?: string | null;
+
+  // Scanning progress
+  items_scanned_count?: number;
+  items_total_count?: number;
+  scanning_complete?: boolean;
+
+  // Enhanced sanity checks
+  sanity_check_stage?: 'early' | 'final' | null;
+  sanity_check_parameters?: SanityCheckParameters;
+  sanity_last_checked_at?: string | null;
+  sanity_last_checked_by?: string | null;
+
   // GE-sourced fields
   ge_source_status?: string;
   ge_cso_status?: string;

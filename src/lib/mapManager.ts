@@ -9,6 +9,7 @@ import supabase from './supabase';
 import { getActiveLocationContext } from './tenant';
 import type { RawGPSPosition, ProductLocationHistory, ProductLocationForMap } from '@/types/map';
 import { getLoadColorByName } from './loadColors';
+import { updateLoadScanningProgress } from './loadScanningProgress';
 
 /**
  * Capture current GPS position from device
@@ -100,6 +101,13 @@ export async function logProductLocation(input: {
         })
         .eq('id', recent.id);
 
+      // Update load scanning progress if item is part of a load
+      if (!error && input.sub_inventory) {
+        updateLoadScanningProgress(input.sub_inventory).catch(err =>
+          console.warn('Failed to update load scanning progress:', err)
+        );
+      }
+
       return { success: !error, error, action: !error ? 'updated' : undefined };
     }
   }
@@ -123,6 +131,13 @@ export async function logProductLocation(input: {
       product_type: input.product_type ?? null,
       sub_inventory: input.sub_inventory ?? null,
     });
+
+  // Update load scanning progress if item is part of a load
+  if (!error && input.sub_inventory) {
+    updateLoadScanningProgress(input.sub_inventory).catch(err =>
+      console.warn('Failed to update load scanning progress:', err)
+    );
+  }
 
   return { success: !error, error, action: !error ? 'created' : undefined };
 }
@@ -167,22 +182,27 @@ export async function getProductLocations(): Promise<{
     }
   >();
   if (inventoryItemIds.length > 0) {
-    const { data: inventoryItems, error: inventoryError } = await supabase
-      .from('inventory_items')
-      .select('id, model, serial, product_type, product_fk, sub_inventory, inventory_type')
-      .in('id', inventoryItemIds);
+    // Batch queries to avoid URL length limits (max ~100 IDs per request)
+    const batchSize = 100;
+    for (let i = 0; i < inventoryItemIds.length; i += batchSize) {
+      const batch = inventoryItemIds.slice(i, i + batchSize);
+      const { data: inventoryItems, error: inventoryError } = await supabase
+        .from('inventory_items')
+        .select('id, model, serial, product_type, product_fk, sub_inventory, inventory_type')
+        .in('id', batch);
 
-    if (!inventoryError && inventoryItems) {
-      for (const item of inventoryItems as {
-        id: string;
-        model: string | null;
-        serial: string | null;
-        product_type: string | null;
-        product_fk: string | null;
-        sub_inventory: string | null;
-        inventory_type: string | null;
-      }[]) {
-        inventoryItemById.set(item.id, item);
+      if (!inventoryError && inventoryItems) {
+        for (const item of inventoryItems as {
+          id: string;
+          model: string | null;
+          serial: string | null;
+          product_type: string | null;
+          product_fk: string | null;
+          sub_inventory: string | null;
+          inventory_type: string | null;
+        }[]) {
+          inventoryItemById.set(item.id, item);
+        }
       }
     }
   }
@@ -198,16 +218,21 @@ export async function getProductLocations(): Promise<{
 
   const allProductIds = Array.from(new Set([...productIds, ...productIdsFromInventory]));
   if (allProductIds.length > 0) {
-    const { data: products, error: productError } = await supabase
-      .from('products')
-      .select('id, model, product_type, image_url')
-      .in('id', allProductIds);
+    // Batch queries to avoid URL length limits
+    const batchSize = 100;
+    for (let i = 0; i < allProductIds.length; i += batchSize) {
+      const batch = allProductIds.slice(i, i + batchSize);
+      const { data: products, error: productError } = await supabase
+        .from('products')
+        .select('id, model, product_type, image_url')
+        .in('id', batch);
 
-    if (!productError && products) {
-      for (const product of products as { id: string; model: string | null; product_type: string | null; image_url: string | null }[]) {
-        productById.set(product.id, product);
-        if (product.model) {
-          productByModel.set(product.model, product);
+      if (!productError && products) {
+        for (const product of products as { id: string; model: string | null; product_type: string | null; image_url: string | null }[]) {
+          productById.set(product.id, product);
+          if (product.model) {
+            productByModel.set(product.model, product);
+          }
         }
       }
     }
@@ -222,18 +247,23 @@ export async function getProductLocations(): Promise<{
   );
 
   if (modelsFromInventory.length > 0) {
-    const { data: productsByModel, error: productsByModelError } = await supabase
-      .from('products')
-      .select('id, model, product_type, image_url')
-      .in('model', modelsFromInventory);
+    // Batch queries to avoid URL length limits
+    const batchSize = 100;
+    for (let i = 0; i < modelsFromInventory.length; i += batchSize) {
+      const batch = modelsFromInventory.slice(i, i + batchSize);
+      const { data: productsByModel, error: productsByModelError } = await supabase
+        .from('products')
+        .select('id, model, product_type, image_url')
+        .in('model', batch);
 
-    if (!productsByModelError && productsByModel) {
-      for (const product of productsByModel as { id: string; model: string | null; product_type: string | null; image_url: string | null }[]) {
-        if (!productById.has(product.id)) {
-          productById.set(product.id, product);
-        }
-        if (product.model) {
-          productByModel.set(product.model, product);
+      if (!productsByModelError && productsByModel) {
+        for (const product of productsByModel as { id: string; model: string | null; product_type: string | null; image_url: string | null }[]) {
+          if (!productById.has(product.id)) {
+            productById.set(product.id, product);
+          }
+          if (product.model) {
+            productByModel.set(product.model, product);
+          }
         }
       }
     }
@@ -305,6 +335,8 @@ export async function getProductLocations(): Promise<{
     const imageUrl = product?.image_url ?? null;
     const loadItemCount = resolvedSubInventory ? loadItemCounts.get(resolvedSubInventory) ?? null : null;
 
+    const finalInventoryType = inventoryItem?.inventory_type ?? loadMeta?.inventory_type ?? null;
+
     return {
       id: item.id,
       position_x: item.position_x,
@@ -312,7 +344,7 @@ export async function getProductLocations(): Promise<{
       raw_lat: item.raw_lat != null ? Number(item.raw_lat) : null,
       raw_lng: item.raw_lng != null ? Number(item.raw_lng) : null,
       inventory_item_id: item.inventory_item_id,
-      inventory_type: inventoryItem?.inventory_type ?? loadMeta?.inventory_type ?? null,
+      inventory_type: finalInventoryType,
       image_url: imageUrl,
       load_item_count: loadItemCount,
       product_type: productType,
