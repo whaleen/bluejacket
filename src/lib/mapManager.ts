@@ -269,19 +269,20 @@ export async function getProductLocations(): Promise<{
     }
   }
 
-  const loadMetadataByName = new Map<string, { friendly_name: string | null; primary_color: string | null }>();
+  const loadMetadataByName = new Map<string, { friendly_name: string | null; primary_color: string | null; inventory_type: string | null }>();
   if (loadNames.length > 0) {
     const { data: loadMetadata, error: loadError } = await supabase
       .from('load_metadata')
-      .select('sub_inventory_name, friendly_name, primary_color')
+      .select('sub_inventory_name, friendly_name, primary_color, inventory_type')
       .eq('location_id', locationId)
       .in('sub_inventory_name', loadNames);
 
     if (!loadError && loadMetadata) {
-      for (const load of loadMetadata as { sub_inventory_name: string; friendly_name: string | null; primary_color: string | null }[]) {
+      for (const load of loadMetadata as { sub_inventory_name: string; friendly_name: string | null; primary_color: string | null; inventory_type: string | null }[]) {
         loadMetadataByName.set(load.sub_inventory_name, {
           friendly_name: load.friendly_name,
           primary_color: load.primary_color,
+          inventory_type: load.inventory_type,
         });
       }
     }
@@ -311,7 +312,7 @@ export async function getProductLocations(): Promise<{
       raw_lat: item.raw_lat != null ? Number(item.raw_lat) : null,
       raw_lng: item.raw_lng != null ? Number(item.raw_lng) : null,
       inventory_item_id: item.inventory_item_id,
-      inventory_type: inventoryItem?.inventory_type ?? null,
+      inventory_type: inventoryItem?.inventory_type ?? loadMeta?.inventory_type ?? null,
       image_url: imageUrl,
       load_item_count: loadItemCount,
       product_type: productType,
