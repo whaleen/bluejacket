@@ -236,6 +236,201 @@ app.post('/sync/sta', async (req, res) => {
   }
 });
 
+// Sync all inventory types in correct order (FG → ASIS → STA)
+app.post('/sync/inventory', async (req, res) => {
+  const startTime = Date.now();
+
+  try {
+    const { locationId } = req.body;
+
+    if (!locationId) {
+      return res.status(400).json({ error: 'locationId is required' });
+    }
+
+    console.log('\n' + '='.repeat(80));
+    console.log('🚀 Starting UNIFIED INVENTORY SYNC');
+    console.log('='.repeat(80));
+    console.log(`Location: ${locationId}`);
+    console.log('Order: FG → ASIS → STA');
+    console.log('='.repeat(80) + '\n');
+
+    const results: {
+      fg: SyncResult | null;
+      asis: SyncResult | null;
+      sta: SyncResult | null;
+    } = {
+      fg: null,
+      asis: null,
+      sta: null,
+    };
+
+    const errors: string[] = [];
+
+    // 1. Sync FG (Finished Goods) - Independent
+    try {
+      console.log('\n📦 [1/3] Syncing FG (Finished Goods)...\n');
+      results.fg = await syncSimpleInventory(locationId, 'FG');
+      console.log(`✅ FG sync completed: ${results.fg.stats?.newItems || 0} new, ${results.fg.stats?.updatedItems || 0} updated`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`❌ FG sync failed: ${message}`);
+      errors.push(`FG: ${message}`);
+      results.fg = {
+        success: false,
+        message: `FG sync failed: ${message}`,
+        stats: {
+          totalGEItems: 0,
+          itemsInLoads: 0,
+          unassignedItems: 0,
+          newItems: 0,
+          updatedItems: 0,
+          forSaleLoads: 0,
+          pickedLoads: 0,
+          changesLogged: 0,
+        },
+        changes: [],
+        error: message,
+      };
+    }
+
+    // 2. Sync ASIS (As-Is inventory - "for sale")
+    try {
+      console.log('\n🏪 [2/3] Syncing ASIS (For Sale inventory)...\n');
+      results.asis = await syncASIS(locationId);
+      console.log(`✅ ASIS sync completed: ${results.asis.stats?.newItems || 0} new, ${results.asis.stats?.updatedItems || 0} updated`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`❌ ASIS sync failed: ${message}`);
+      errors.push(`ASIS: ${message}`);
+      results.asis = {
+        success: false,
+        message: `ASIS sync failed: ${message}`,
+        stats: {
+          totalGEItems: 0,
+          itemsInLoads: 0,
+          unassignedItems: 0,
+          newItems: 0,
+          updatedItems: 0,
+          forSaleLoads: 0,
+          pickedLoads: 0,
+          changesLogged: 0,
+        },
+        changes: [],
+        error: message,
+      };
+    }
+
+    // 3. Sync STA (Staged inventory - "sold") - Migrates ASIS→STA as needed
+    try {
+      console.log('\n🎯 [3/3] Syncing STA (Staged inventory)...\n');
+      results.sta = await syncSimpleInventory(locationId, 'STA');
+      console.log(`✅ STA sync completed: ${results.sta.stats?.newItems || 0} new, ${results.sta.stats?.updatedItems || 0} updated`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`❌ STA sync failed: ${message}`);
+      errors.push(`STA: ${message}`);
+      results.sta = {
+        success: false,
+        message: `STA sync failed: ${message}`,
+        stats: {
+          totalGEItems: 0,
+          itemsInLoads: 0,
+          unassignedItems: 0,
+          newItems: 0,
+          updatedItems: 0,
+          forSaleLoads: 0,
+          pickedLoads: 0,
+          changesLogged: 0,
+        },
+        changes: [],
+        error: message,
+      };
+    }
+
+    const duration = Date.now() - startTime;
+    const allSucceeded = results.fg?.success && results.asis?.success && results.sta?.success;
+
+    // Combine stats
+    const combinedStats = {
+      totalGEItems: (results.fg?.stats?.totalGEItems || 0) +
+                    (results.asis?.stats?.totalGEItems || 0) +
+                    (results.sta?.stats?.totalGEItems || 0),
+      itemsInLoads: (results.asis?.stats?.itemsInLoads || 0), // Only ASIS has loads
+      unassignedItems: (results.asis?.stats?.unassignedItems || 0), // Only ASIS has unassigned
+      newItems: (results.fg?.stats?.newItems || 0) +
+                (results.asis?.stats?.newItems || 0) +
+                (results.sta?.stats?.newItems || 0),
+      updatedItems: (results.fg?.stats?.updatedItems || 0) +
+                    (results.asis?.stats?.updatedItems || 0) +
+                    (results.sta?.stats?.updatedItems || 0),
+      forSaleLoads: (results.asis?.stats?.forSaleLoads || 0), // Only ASIS has loads
+      pickedLoads: (results.asis?.stats?.pickedLoads || 0), // Only ASIS has loads
+      changesLogged: (results.fg?.stats?.changesLogged || 0) +
+                     (results.asis?.stats?.changesLogged || 0) +
+                     (results.sta?.stats?.changesLogged || 0),
+    };
+
+    // Combine all changes
+    const allChanges = [
+      ...(results.fg?.changes || []),
+      ...(results.asis?.changes || []),
+      ...(results.sta?.changes || []),
+    ];
+
+    console.log('\n' + '='.repeat(80));
+    console.log('✨ UNIFIED INVENTORY SYNC COMPLETE');
+    console.log('='.repeat(80));
+    console.log(`Duration: ${(duration / 1000).toFixed(2)}s`);
+    console.log(`Total items from GE: ${combinedStats.totalGEItems}`);
+    console.log(`New items: ${combinedStats.newItems}`);
+    console.log(`Updated items: ${combinedStats.updatedItems}`);
+    console.log(`Changes logged: ${combinedStats.changesLogged}`);
+    if (errors.length > 0) {
+      console.log(`Errors: ${errors.length}`);
+      errors.forEach(err => console.log(`  - ${err}`));
+    }
+    console.log('='.repeat(80) + '\n');
+
+    const result: SyncResult = {
+      success: allSucceeded,
+      message: allSucceeded
+        ? 'All inventory types synced successfully'
+        : `Sync completed with errors: ${errors.join(', ')}`,
+      stats: combinedStats,
+      changes: allChanges,
+      duration,
+      error: errors.length > 0 ? errors.join('; ') : undefined,
+      // Include individual results for debugging
+      details: results,
+    };
+
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Unified inventory sync failed:', message);
+
+    const result: SyncResult = {
+      success: false,
+      message: `Unified inventory sync failed: ${message}`,
+      stats: {
+        totalGEItems: 0,
+        itemsInLoads: 0,
+        unassignedItems: 0,
+        newItems: 0,
+        updatedItems: 0,
+        forSaleLoads: 0,
+        pickedLoads: 0,
+        changesLogged: 0,
+      },
+      changes: [],
+      error: message,
+      duration: Date.now() - startTime,
+    };
+
+    res.status(500).json(result);
+  }
+});
+
 // Sync inbound receiving reports
 app.post('/sync/inbound', async (req, res) => {
   const startTime = Date.now();

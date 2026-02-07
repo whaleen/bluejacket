@@ -12,7 +12,7 @@ interface GESyncViewProps {
   onMenuClick?: () => void;
 }
 
-type SyncType = "asis" | "fg" | "sta" | "inbound";
+type SyncType = "asis" | "fg" | "sta" | "inbound" | "inventory";
 
 interface SyncStatus {
   type: SyncType;
@@ -33,6 +33,7 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
   const geSyncUrl = (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? "http://localhost:3001";
   const geSyncKeyConfigured = Boolean(import.meta.env.VITE_GE_SYNC_API_KEY);
   const [syncStatuses, setSyncStatuses] = useState<Record<SyncType, SyncStatus>>({
+    inventory: { type: "inventory", loading: false, success: null, error: null },
     asis: { type: "asis", loading: false, success: null, error: null },
     fg: { type: "fg", loading: false, success: null, error: null },
     sta: { type: "sta", loading: false, success: null, error: null },
@@ -201,20 +202,26 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
 
             <div className="rounded-lg border border-border/60 bg-background/60 p-4 text-sm text-muted-foreground space-y-2">
               <p className="text-foreground">
-                <strong>Recommended order:</strong> Run ASIS first, then FG and STA.
+                <strong>💡 Recommended:</strong> Use "Sync All Inventory" below for best results.
               </p>
-              <p>
-                <strong>ASIS:</strong> As-Is inventory (open-box, damaged, discounted items)
+              <p className="text-xs">
+                The unified sync runs in the correct order (FG → ASIS → STA) and handles ASIS→STA migrations automatically.
               </p>
-              <p>
-                <strong>FG:</strong> Finished Goods (new, ready-to-sell appliances)
-              </p>
-              <p>
-                <strong>STA:</strong> Staged inventory (items prepared for delivery/pickup)
-              </p>
-              <p>
-                <strong>Inbound:</strong> Receiving reports (arrival shipments)
-              </p>
+              <div className="border-t border-border/40 my-3 pt-3">
+                <p className="text-xs font-medium text-foreground mb-1">Inventory Types:</p>
+                <p className="text-xs">
+                  <strong>FG:</strong> Finished Goods (new, ready-to-sell appliances)
+                </p>
+                <p className="text-xs">
+                  <strong>ASIS:</strong> As-Is inventory (open-box, damaged, discounted items)
+                </p>
+                <p className="text-xs">
+                  <strong>STA:</strong> Staged inventory (items prepared for delivery/pickup)
+                </p>
+                <p className="text-xs">
+                  <strong>Inbound:</strong> Receiving reports (arrival shipments)
+                </p>
+              </div>
               <div className="pt-2 text-xs text-muted-foreground">
                 Endpoint: {geSyncUrl}
               </div>
@@ -223,6 +230,20 @@ export function GESyncView({ onMenuClick }: GESyncViewProps) {
               </div>
             </div>
           </Card>
+
+          {renderSyncCard(
+            "inventory",
+            "Sync All Inventory",
+            "Unified sync: FG → ASIS → STA (recommended)",
+            RefreshCw
+          )}
+
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
+            <p className="font-medium text-amber-900 dark:text-amber-100 mb-2">Individual Syncs</p>
+            <p className="text-amber-800 dark:text-amber-200 text-xs mb-3">
+              Only use these if you need to sync a specific inventory type. Running in the wrong order may cause data inconsistencies.
+            </p>
+          </div>
 
           {renderSyncCard(
             "asis",

@@ -21,6 +21,7 @@ export type GEChangeType =
   | 'item_reserved'
   | 'item_load_changed'
   | 'item_qty_changed'
+  | 'item_migrated'
   | 'load_appeared'
   | 'load_disappeared'
   | 'load_sold'
@@ -109,6 +110,7 @@ export interface SyncResult {
   log?: string[];
   error?: string;
   duration?: number;
+  details?: Record<string, SyncResult | null>; // For unified sync results
 }
 
 export interface AuthStatus {

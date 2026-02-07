@@ -79,7 +79,7 @@ export async function findItemOwningSession(barcode: string): Promise<ItemMatchR
     .from('inventory_items')
     .select('*, products(*)')
     .eq('location_id', locationId)
-    .or(`serial.eq.${trimmedBarcode},cso.eq.${trimmedBarcode},model.eq.${trimmedBarcode}`);
+    .or(`serial.ilike.${trimmedBarcode},cso.ilike.${trimmedBarcode},model.ilike.${trimmedBarcode}`);
 
   if (error) {
     throw error;
@@ -87,8 +87,11 @@ export async function findItemOwningSession(barcode: string): Promise<ItemMatchR
 
   let matches = (data ?? []) as InventoryItem[];
   if (matches.length === 0) {
+    console.log('❌ Barcode not found:', trimmedBarcode, '| Searched: serial/cso/model');
     return { type: 'not_found' };
   }
+
+  console.log('✅ Found', matches.length, 'match(es) for:', trimmedBarcode);
 
   // Deduplicate ASIS/STA conflicts (STA wins)
   matches = deduplicateAsisStaItems(matches);

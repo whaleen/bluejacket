@@ -1,4 +1,4 @@
-export type GeSyncType = 'asis' | 'fg' | 'sta' | 'inbound';
+export type GeSyncType = 'asis' | 'fg' | 'sta' | 'inbound' | 'inventory';
 
 const GE_SYNC_URL =
   (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? 'http://localhost:3001';

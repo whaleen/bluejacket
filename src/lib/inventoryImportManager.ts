@@ -88,9 +88,15 @@ const findCrossTypeSerials = async (
     if (error) throw error;
 
     (data ?? []).forEach((row) => {
-      if (row.serial) {
-        conflictSerials.add(row.serial);
+      if (!row.serial) return;
+
+      // Allow ASIS→STA migration (if importing STA and existing is ASIS, allow it)
+      if (inventoryType === 'STA' && row.inventory_type === 'ASIS') {
+        return; // Not a conflict - allow migration
       }
+
+      // Block all other cross-type conflicts
+      conflictSerials.add(row.serial);
     });
   }
 
@@ -185,11 +191,18 @@ export async function importInventorySnapshot(params: {
 
   const uniqueItems = [...itemsWithoutSerial, ...uniqueBySerial.values()];
 
+  // For STA imports, also fetch ASIS items to allow ASIS→STA migration
+  // This respects GE as source of truth: if it's STA in GE, it's STA in our system
+  const inventoryTypesToFetch = [source.inventoryType];
+  if (source.inventoryType === 'STA') {
+    inventoryTypesToFetch.push('ASIS');
+  }
+
   const { data: existingItems, error: existingError } = await supabase
     .from('inventory_items')
-    .select('id, serial')
+    .select('id, serial, inventory_type')
     .eq('location_id', locationId)
-    .eq('inventory_type', source.inventoryType);
+    .in('inventory_type', inventoryTypesToFetch);
 
   if (existingError) throw existingError;
 
@@ -198,7 +211,13 @@ export async function importInventorySnapshot(params: {
 
   (existingItems ?? []).forEach((item) => {
     if (!item.serial || !item.id) return;
-    if (!existingBySerial.has(item.serial)) {
+    // For STA imports, prefer existing STA items over ASIS items
+    // (in case of duplicates, which shouldn't happen but safety first)
+    const existing = existingBySerial.get(item.serial);
+    if (!existing) {
+      existingBySerial.set(item.serial, item.id);
+    } else if (source.inventoryType === 'STA' && item.inventory_type === 'STA') {
+      // If we're importing STA and found an existing STA item, use it over ASIS
       existingBySerial.set(item.serial, item.id);
     }
     existingIds.add(item.id);
@@ -219,6 +238,8 @@ export async function importInventorySnapshot(params: {
       matchedIds.add(existingId);
     }
 
+    // Note: If importing STA and existingId is an ASIS item, this will
+    // migrate it to STA (update inventory_type). This respects GE as source of truth.
     return {
       ...item,
       id: existingId,
@@ -227,14 +248,37 @@ export async function importInventorySnapshot(params: {
     };
   });
 
-  const payloadWithId = payload.filter((item) => item.id);
-  const payloadWithoutId = payload
-    .filter((item) => !item.id)
-    .map((item) => {
+  // Deduplicate by id to prevent "cannot affect row a second time" error
+  const payloadById = new Map<string, typeof payload[0]>();
+  const payloadWithoutIdArray: (typeof payload[0] & { id?: never })[] = [];
+
+  payload.forEach((item) => {
+    if (item.id) {
+      // Keep last occurrence for each id (in case of duplicates)
+      if (payloadById.has(item.id)) {
+        console.warn('⚠️ Duplicate ID detected in payload:', {
+          id: item.id,
+          serial: item.serial,
+          inventory_type: item.inventory_type,
+        });
+      }
+      payloadById.set(item.id, item);
+    } else {
       const rest = { ...item } as typeof item & { id?: string };
       delete rest.id;
-      return rest;
-    });
+      payloadWithoutIdArray.push(rest);
+    }
+  });
+
+  const payloadWithId = Array.from(payloadById.values());
+  const payloadWithoutId = payloadWithoutIdArray;
+
+  console.log('📊 Payload stats:', {
+    total: payload.length,
+    withId: payloadWithId.length,
+    withoutId: payloadWithoutId.length,
+    duplicatesRemoved: payload.filter(p => p.id).length - payloadWithId.length,
+  });
 
   let insertedCount = 0;
   for (const chunk of chunkArray(payloadWithoutId, batchSize)) {
