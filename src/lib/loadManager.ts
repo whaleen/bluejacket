@@ -1,6 +1,6 @@
 import supabase from './supabase';
 import type { PostgrestError } from '@supabase/supabase-js';
-import type { LoadMetadata, LoadWithItems, InventoryType, LoadStatus, InventoryItem, LoadConflict } from '@/types/inventory';
+import type { LoadMetadata, LoadWithItems, InventoryType, LoadStatus, InventoryItem, LoadConflict, SanityCheckParameters } from '@/types/inventory';
 import { getActiveLocationContext } from '@/lib/tenant';
 
 /**
@@ -89,7 +89,7 @@ export async function updateLoadMetadata(
     sanity_check_requested_at?: string | null;
     sanity_check_requested_by?: string | null;
     sanity_check_stage?: 'early' | 'final' | null;
-    sanity_check_parameters?: Record<string, unknown> | null;
+    sanity_check_parameters?: SanityCheckParameters | null;
     sanity_check_completed_at?: string | null;
     sanity_check_completed_by?: string | null;
     sanity_last_checked_at?: string | null;
