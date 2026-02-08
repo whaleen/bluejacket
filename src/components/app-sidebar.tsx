@@ -3,6 +3,7 @@ import type { ComponentType } from "react"
 import {
   Building2,
   Bot,
+  CheckSquare,
   ClipboardList,
   Database,
   FileBarChart,
@@ -13,7 +14,6 @@ import {
   Monitor,
   Package,
   Palette,
-  ScanBarcode,
   Settings2,
   TruckIcon,
   Users,
@@ -21,7 +21,6 @@ import {
 
 import type { AppView } from "@/lib/routes"
 import { LocationSwitcher } from "@/components/Navigation/LocationSwitcher"
-import { NotificationBell } from "@/components/Navigation/NotificationBell"
 import { NavUser } from "@/components/nav-user"
 import { getActiveCompanyId, getActiveLocationId } from "@/lib/tenant"
 import { useCompanies, useLocations } from "@/hooks/queries/useSettings"
@@ -76,6 +75,13 @@ const baseNavSections: NavSection[] = [
         isActive: (currentView) => currentView === "dashboard",
       },
       {
+        label: "Action Items",
+        icon: CheckSquare,
+        view: "actions",
+        applyParams: clearPartsParams,
+        isActive: (currentView) => currentView === "actions",
+      },
+      {
         label: "Agent",
         icon: Bot,
         view: "agent",
@@ -102,13 +108,6 @@ const baseNavSections: NavSection[] = [
         isActive: (currentView) => currentView === "inventory",
       },
       {
-        label: "Visual Guide",
-        icon: Palette,
-        view: "inventory-guide",
-        applyParams: clearPartsParams,
-        isActive: (currentView) => currentView === "inventory-guide",
-      },
-      {
         label: "ASIS Loads",
         icon: TruckIcon,
         view: "loads",
@@ -121,13 +120,6 @@ const baseNavSections: NavSection[] = [
         view: "map",
         applyParams: clearPartsParams,
         isActive: (currentView) => currentView === "map",
-      },
-      {
-        label: "Scanning Sessions",
-        icon: ScanBarcode,
-        view: "sessions",
-        applyParams: clearPartsParams,
-        isActive: (currentView) => currentView === "sessions",
       },
     ],
   },
@@ -163,6 +155,13 @@ const baseNavSections: NavSection[] = [
         applyParams: clearPartsParams,
         isActive: (currentView) => currentView === "data-quality",
       },
+      {
+        label: "Visual Guide",
+        icon: Palette,
+        view: "inventory-guide",
+        applyParams: clearPartsParams,
+        isActive: (currentView) => currentView === "inventory-guide",
+      }
     ],
   },
 ]
@@ -308,9 +307,6 @@ export function AppSidebar({ currentView, onViewChange, ...props }: AppSidebarPr
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <LocationSwitcher onManageLocations={handleManageLocations} />
-        <div className="lg:hidden px-2 pt-2">
-          <NotificationBell />
-        </div>
       </SidebarHeader>
       <SidebarSeparator />
       <SidebarContent>

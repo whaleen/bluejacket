@@ -73,7 +73,8 @@ export default defineConfig(({ mode }) => {
       brotliSize: true,
       open: true,
     }) as PluginOption),
-    VitePWA({
+    // Only enable PWA in production to avoid console spam
+    !isDev && VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
@@ -134,10 +135,6 @@ export default defineConfig(({ mode }) => {
             }
           }
         ]
-      },
-      devOptions: {
-        enabled: true,
-        type: 'module'
       }
     })
   ].filter((plugin): plugin is NonNullable<typeof plugin> => Boolean(plugin)),

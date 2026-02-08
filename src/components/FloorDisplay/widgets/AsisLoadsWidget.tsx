@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { useLoads } from '@/hooks/queries/useLoads';
+import { useLoadData } from '@/hooks/useLoadData';
 import type { LoadBoardConfig } from '@/types/display';
 import { CheckCircle2, Circle } from 'lucide-react';
 
@@ -90,8 +90,8 @@ const formatCso = (cso?: string | null) => {
 };
 
 export function AsisLoadsWidget({ title = 'ASIS Loads', locationId, className, config }: Props) {
-  const { data, isLoading: loading } = useLoads('ASIS');
-  const loads = (data ?? []) as LoadRow[];
+  const { loads: data, isLoading: loading } = useLoadData({ inventoryType: 'ASIS' });
+  const loads = useMemo(() => (data ?? []) as LoadRow[], [data]);
   const [pageIndex, setPageIndex] = useState(0);
 
   const statusFilter = config?.statusFilter ?? 'both';

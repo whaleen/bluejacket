@@ -4,6 +4,8 @@ import { getAuthStatus, refreshAuth } from './auth/playwright.js';
 import { syncASIS } from './sync/asis.js';
 import { syncSimpleInventory } from './sync/inventory.js';
 import { syncInboundReceipts } from './sync/inbound.js';
+import { logSyncActivity } from './db/activityLog.js';
+import { getLocationConfig } from './db/supabase.js';
 import type { SyncResult, AuthStatus } from './types/index.js';
 
 const app = express();
@@ -121,9 +123,24 @@ app.post('/sync/asis', async (req, res) => {
 
     console.log(`Starting ASIS sync for location: ${locationId}`);
 
+    // Get location config for activity logging
+    const config = await getLocationConfig(locationId);
+
     const result: SyncResult = await syncASIS(locationId);
 
     console.log(`ASIS sync completed in ${result.duration}ms`, result.stats);
+
+    // Log successful sync to activity_log
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'asis_sync',
+      success: true,
+      details: {
+        duration_ms: result.duration,
+        ...result.stats,
+      },
+    });
 
     res.json(result);
   } catch (error) {
@@ -146,6 +163,26 @@ app.post('/sync/asis', async (req, res) => {
       },
     };
 
+    // Log failed sync to activity_log
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'asis_sync',
+          success: false,
+          details: {
+            duration_ms: result.duration,
+          },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log sync error:', logError);
+    }
+
     res.status(500).json(result);
   }
 });
@@ -163,9 +200,21 @@ app.post('/sync/fg', async (req, res) => {
 
     console.log(`Starting FG sync for location: ${locationId}`);
 
+    const config = await getLocationConfig(locationId);
     const result: SyncResult = await syncSimpleInventory(locationId, 'FG');
 
     console.log(`FG sync completed in ${Date.now() - startTime}ms`, result.stats);
+
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'fg_sync',
+      success: true,
+      details: {
+        duration_ms: Date.now() - startTime,
+        ...result.stats,
+      },
+    });
 
     res.json(result);
   } catch (error) {
@@ -189,6 +238,23 @@ app.post('/sync/fg', async (req, res) => {
       error: message,
     };
 
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'fg_sync',
+          success: false,
+          details: { duration_ms: Date.now() - startTime },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log sync error:', logError);
+    }
+
     res.status(500).json(result);
   }
 });
@@ -206,9 +272,21 @@ app.post('/sync/sta', async (req, res) => {
 
     console.log(`Starting STA sync for location: ${locationId}`);
 
+    const config = await getLocationConfig(locationId);
     const result: SyncResult = await syncSimpleInventory(locationId, 'STA');
 
     console.log(`STA sync completed in ${Date.now() - startTime}ms`, result.stats);
+
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'sta_sync',
+      success: true,
+      details: {
+        duration_ms: Date.now() - startTime,
+        ...result.stats,
+      },
+    });
 
     res.json(result);
   } catch (error) {
@@ -231,6 +309,23 @@ app.post('/sync/sta', async (req, res) => {
       changes: [],
       error: message,
     };
+
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'sta_sync',
+          success: false,
+          details: { duration_ms: Date.now() - startTime },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log sync error:', logError);
+    }
 
     res.status(500).json(result);
   }
@@ -404,6 +499,20 @@ app.post('/sync/inventory', async (req, res) => {
       details: results,
     };
 
+    // Log activity
+    const config = await getLocationConfig(locationId);
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'inventory_sync',
+      success: allSucceeded,
+      details: {
+        duration_ms: duration,
+        ...combinedStats,
+      },
+      ...(errors.length > 0 ? { error: errors.join('; ') } : {}),
+    });
+
     res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -427,6 +536,24 @@ app.post('/sync/inventory', async (req, res) => {
       duration: Date.now() - startTime,
     };
 
+    // Log error activity
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'inventory_sync',
+          success: false,
+          details: { duration_ms: Date.now() - startTime },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log sync error:', logError);
+    }
+
     res.status(500).json(result);
   }
 });
@@ -447,6 +574,19 @@ app.post('/sync/inbound', async (req, res) => {
     const result: SyncResult = await syncInboundReceipts(locationId);
 
     console.log(`Inbound receipts sync completed in ${Date.now() - startTime}ms`, result.stats);
+
+    // Log activity
+    const config = await getLocationConfig(locationId);
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'inbound_sync',
+      success: result.success,
+      details: {
+        duration_ms: Date.now() - startTime,
+        ...result.stats,
+      },
+    });
 
     res.json(result);
   } catch (error) {
@@ -469,6 +609,24 @@ app.post('/sync/inbound', async (req, res) => {
       changes: [],
       error: message,
     };
+
+    // Log error activity
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'inbound_sync',
+          success: false,
+          details: { duration_ms: Date.now() - startTime },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log sync error:', logError);
+    }
 
     res.status(500).json(result);
   }

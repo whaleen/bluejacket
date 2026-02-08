@@ -130,25 +130,61 @@ export function LoadDisplay({
         </div>
 
         {showProgress && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {wrappingRequired && !load.prep_wrapped && (
-              <div className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-                <AlertTriangle className="w-3 h-3" />
-                <span>Wrap</span>
+          <div className="flex items-center gap-1.5 flex-shrink-0 text-xs">
+            {/* Wrapped status */}
+            {wrappingRequired && (
+              <div className={cn(
+                "flex items-center gap-0.5 px-1.5 py-0.5 rounded",
+                load.prep_wrapped
+                  ? "text-green-700 dark:text-green-400"
+                  : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+              )}>
+                {load.prep_wrapped ? (
+                  <CheckCircle className="w-3 h-3" />
+                ) : (
+                  <AlertTriangle className="w-3 h-3" />
+                )}
+                <span className="text-[10px] font-medium">W</span>
               </div>
             )}
-            {taggingRequired && !load.prep_tagged && (
-              <div className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
-                <AlertTriangle className="w-3 h-3" />
-                <span>Tag</span>
+
+            {/* Tagged status */}
+            {taggingRequired && (
+              <div className={cn(
+                "flex items-center gap-0.5 px-1.5 py-0.5 rounded",
+                load.prep_tagged
+                  ? "text-green-700 dark:text-green-400"
+                  : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+              )}>
+                {load.prep_tagged ? (
+                  <CheckCircle className="w-3 h-3" />
+                ) : (
+                  <AlertTriangle className="w-3 h-3" />
+                )}
+                <span className="text-[10px] font-medium">T</span>
               </div>
             )}
-            {sanityRequested && (
-              <div className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400">
-                <AlertTriangle className="w-3 h-3" />
-                <span>Check</span>
+
+            {/* Scanning progress */}
+            {load.items_total_count ? (
+              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-muted-foreground">
+                <MapPin className="w-3 h-3" />
+                <span className="text-[10px] font-medium">{scanningProgress}%</span>
               </div>
-            )}
+            ) : null}
+
+            {/* Sanity check status */}
+            {sanityCompleted ? (
+              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-green-700 dark:text-green-400">
+                <CheckCircle className="w-3 h-3" />
+                <span className="text-[10px] font-medium">S</span>
+              </div>
+            ) : sanityRequested ? (
+              <div className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400">
+                <AlertTriangle className="w-3 h-3" />
+                <span className="text-[10px] font-medium">S</span>
+              </div>
+            ) : null}
           </div>
         )}
 

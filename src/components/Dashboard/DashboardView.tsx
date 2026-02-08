@@ -4,9 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Package, TruckIcon, PackageOpen, ScanBarcode, ArrowRight, Check, AlertTriangle } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Legend } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { useLoads } from '@/hooks/queries/useLoads';
+import { useLoadData } from '@/hooks/useLoadData';
 import { useRecentActivityRealtime } from '@/hooks/queries/useRealtimeSync';
 import { useDashboardInventoryItems, useDashboardLoadConflicts, useRecentActivity } from '@/hooks/queries/useDashboard';
 import { useSessionSummaries } from '@/hooks/queries/useSessions';
@@ -133,7 +133,7 @@ type ActivityLogEntry = {
 export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps) {
   const isMobile = useIsMobile();
 
-  const { data: loadsData, isLoading: loadsLoading } = useLoads();
+  const { loads: loadsData, isLoading: loadsLoading } = useLoadData();
   useRecentActivityRealtime(20);
   const inventoryItemsQuery = useDashboardInventoryItems();
   const conflictsQuery = useDashboardLoadConflicts();
@@ -327,7 +327,8 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
         const csoStatus = normalizeStatus(load.ge_cso_status);
         const isShippedOrDelivered = csoStatus === 'delivered' || csoStatus === 'shipped';
 
-        if (load.sanity_check_requested) {
+        // Only show action items for loads still in the building (not delivered)
+        if (load.sanity_check_requested && !isShippedOrDelivered) {
           nextAsisActions.sanityCheckRequested.push(load as AsisActionLoad);
         }
 
@@ -475,12 +476,15 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
     const loadsMap = new Map((loadsData ?? []).map(l => [l.sub_inventory_name, l]));
 
     activeSessions.forEach((session) => {
-      // Only show sessions for ASIS loads that are for sale or sold
+      // Only show sessions for ASIS loads that are for sale or sold AND not delivered
       if (session.subInventory) {
         const load = loadsMap.get(session.subInventory);
         const status = load?.ge_source_status?.toLowerCase().trim();
-        if (!status || (status !== 'for sale' && status !== 'sold')) {
-          return; // Skip this session
+        const csoStatus = load?.ge_cso_status?.toLowerCase().trim();
+        const isDelivered = csoStatus === 'delivered';
+
+        if (!status || (status !== 'for sale' && status !== 'sold') || isDelivered) {
+          return; // Skip delivered loads or non-ASIS loads
         }
         const friendly = load?.friendly_name?.trim() || session.subInventory;
         const csoValue = load?.ge_cso?.trim() || '';
@@ -937,8 +941,7 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
 
               <div className="w-full aspect-square">
                 <ChartContainer config={chartConfig} className="w-full h-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                    <PieChart width={354} height={354}>
                       <Pie
                         data={chartData}
                         cx="50%"
@@ -983,7 +986,6 @@ export function DashboardView({ onViewChange, onMenuClick }: DashboardViewProps)
                         }}
                       />
                     </PieChart>
-                  </ResponsiveContainer>
                 </ChartContainer>
               </div>
 

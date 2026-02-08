@@ -17,7 +17,7 @@ export type AppView =
   | 'settings-gesync'
   | 'loads'
   | 'activity'
-  | 'sessions'
+  | 'actions'
   | 'floor-display'
   | 'map'
   | 'agent'
@@ -29,12 +29,7 @@ export type RouteState = {
   displayId?: string | null;
 };
 
-const baseSessionPath = '/scanning-sessions';
-
 export function getPathForView(view: AppView, _sessionId?: string | null, displayId?: string | null): string {
-  if (view === 'sessions') {
-    return baseSessionPath;
-  }
   if (view === 'floor-display') {
     if (displayId) return `/display/${displayId}`;
     return '/display';
@@ -63,6 +58,8 @@ export function getPathForView(view: AppView, _sessionId?: string | null, displa
       return '/loads';
     case 'activity':
       return '/activity';
+    case 'actions':
+      return '/actions';
     case 'map':
       return '/map';
     case 'agent':
@@ -122,15 +119,14 @@ export function parseRoute(pathname: string): RouteState {
       return { view: 'loads' };
     case 'activity':
       return { view: 'activity' };
+    case 'actions':
+      return { view: 'actions' };
     case 'map':
       return { view: 'map' };
     case 'agent':
       return { view: 'agent' };
     case 'data-quality':
       return { view: 'data-quality' };
-    case 'scanning-sessions':
-    case 'sessions':
-      return { view: 'sessions' };
     case 'settings':
       switch (second) {
         case 'location':

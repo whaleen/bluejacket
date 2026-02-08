@@ -36,12 +36,14 @@ interface InventoryItemDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   itemId: string;
+  onFilterByLoad?: (loadName: string) => void;
 }
 
 export function InventoryItemDetailDialog({
   open,
   onOpenChange,
   itemId,
+  onFilterByLoad,
 }: InventoryItemDetailDialogProps) {
   const { data: item, isLoading: loading } = useInventoryItemDetail(itemId, open);
 
@@ -241,7 +243,41 @@ export function InventoryItemDetailDialog({
                 )}
               </div>
             </Card>
-            
+
+            {/* Load Actions */}
+            {item.sub_inventory && (
+              <Card className="p-4 space-y-3">
+                <h3 className="font-semibold">Load Actions</h3>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      onFilterByLoad?.(item.sub_inventory!);
+                      onOpenChange(false);
+                    }}
+                  >
+                    Show Only This Load
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      const path = `/loads/${encodeURIComponent(item.sub_inventory!)}`;
+                      window.history.pushState({}, '', path);
+                      window.dispatchEvent(new Event('app:locationchange'));
+                      onOpenChange(false);
+                    }}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Edit Load
+                  </Button>
+                </div>
+              </Card>
+            )}
+
             {/* Model Data */}
             {item.products ? (
               <Card className="p-4 space-y-4">

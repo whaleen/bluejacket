@@ -8,11 +8,20 @@ type ActivityUser = {
 };
 
 export type ActivityAction =
+  // GE Sync actions (system)
   | 'asis_sync'
   | 'asis_wipe'
+  | 'fg_sync'
+  | 'sta_sync'
+  | 'inventory_sync'
+  | 'inbound_sync'
+  // User actions
   | 'load_update'
   | 'sanity_check_requested'
-  | 'sanity_check_completed';
+  | 'sanity_check_completed'
+  | 'item_scanned'
+  | 'session_started'
+  | 'session_completed';
 
 export type ActivityLogInput = {
   companyId: string;
@@ -33,15 +42,25 @@ export async function logActivity({
   entityId,
   details,
 }: ActivityLogInput): Promise<void> {
-  if (!companyId || !locationId || !user) {
-    throw new Error('Missing required activity log context.');
+  // Require at least locationId and user
+  if (!locationId) {
+    console.error('Activity log failed: missing locationId');
+    return; // Fail silently rather than throwing
   }
 
+  if (!user || !user.id) {
+    console.error('Activity log failed: missing user or user.id');
+    return; // Fail silently rather than throwing
+  }
+
+  // Use locationId as company_id fallback
+  const finalCompanyId = companyId || locationId;
+
   const payload = {
-    company_id: companyId,
+    company_id: finalCompanyId,
     location_id: locationId,
     user_id: user.id,
-    actor_name: user.username ?? user.email ?? 'Unknown',
+    actor_name: user.username ?? user.email ?? 'Unknown User',
     actor_image: user.image ?? null,
     action,
     entity_type: entityType ?? null,
@@ -51,6 +70,7 @@ export async function logActivity({
 
   const { error } = await supabase.from('activity_log').insert(payload);
   if (error) {
-    throw error;
+    console.error('Activity log insert failed:', error);
+    // Don't throw - fail silently to not break the app
   }
 }

@@ -2,6 +2,7 @@
  * Load Scanning Progress Tracking
  *
  * Automatically updates scanning progress counts when items are scanned/mapped
+ * Note: Query invalidation is handled automatically by RealtimeContext subscriptions
  */
 
 import supabase from './supabase';
@@ -16,56 +17,73 @@ export async function updateLoadScanningProgress(loadName: string): Promise<void
   if (!locationId || !loadName) return;
 
   try {
-    // Get total items in load
-    const { count: totalCount, error: totalError } = await supabase
-      .from('inventory_items')
-      .select('*', { count: 'exact', head: true })
+    // Get load metadata for ge_units (GE sync is source of truth for totals)
+    const { data: loadData, error: loadError } = await supabase
+      .from('load_metadata')
+      .select('ge_units')
       .eq('location_id', locationId)
-      .eq('sub_inventory', loadName);
+      .eq('sub_inventory_name', loadName)
+      .single();
 
-    if (totalError) {
-      console.error('Failed to count total items in load:', totalError);
+    if (loadError) {
+      console.error('Failed to get load metadata:', loadError);
       return;
     }
 
-    // Get count of scanned items (items with location history)
-    const { data: scannedItemIds, error: scannedError } = await supabase
-      .from('product_location_history')
-      .select('inventory_item_id')
+    const totalCount = loadData?.ge_units || 0;
+
+    // Get all items in this load (regardless of inventory_type - items can change type when sold)
+    const { data: loadItems, error: itemsError } = await supabase
+      .from('inventory_items')
+      .select('id')
       .eq('location_id', locationId)
-      .not('inventory_item_id', 'is', null);
+      .eq('sub_inventory', loadName);
+
+    if (itemsError) {
+      console.error('Failed to get load items:', itemsError);
+      return;
+    }
+
+    const loadItemIds = (loadItems || []).map(item => item.id);
+
+    if (loadItemIds.length === 0) {
+      // No items found - set counts to 0
+      const { error: updateError } = await supabase
+        .from('load_metadata')
+        .update({
+          items_scanned_count: 0,
+          items_total_count: totalCount,
+          scanning_complete: false,
+        })
+        .eq('location_id', locationId)
+        .eq('sub_inventory_name', loadName);
+
+      if (updateError) {
+        console.error('Failed to update load scanning progress:', updateError);
+      }
+      return;
+    }
+
+    // Count distinct items that have location history (are mapped)
+    const { count: scannedCount, error: scannedError } = await supabase
+      .from('product_location_history')
+      .select('inventory_item_id', { count: 'exact', head: true })
+      .eq('location_id', locationId)
+      .in('inventory_item_id', loadItemIds);
 
     if (scannedError) {
       console.error('Failed to count scanned items:', scannedError);
       return;
     }
 
-    // Get unique scanned item IDs for this load
-    const { data: loadItems, error: loadItemsError } = await supabase
-      .from('inventory_items')
-      .select('id')
-      .eq('location_id', locationId)
-      .eq('sub_inventory', loadName);
-
-    if (loadItemsError) {
-      console.error('Failed to get load items:', loadItemsError);
-      return;
-    }
-
-    const loadItemIds = new Set((loadItems || []).map(item => item.id).filter(Boolean));
-    const scannedIds = new Set(
-      (scannedItemIds || []).map(row => row.inventory_item_id).filter(Boolean)
-    );
-
-    const scannedCount = Array.from(loadItemIds).filter(id => scannedIds.has(id)).length;
-    const scanningComplete = scannedCount === (totalCount || 0) && (totalCount || 0) > 0;
+    const scanningComplete = totalCount > 0 && (scannedCount || 0) >= totalCount;
 
     // Update load metadata
     const { error: updateError } = await supabase
       .from('load_metadata')
       .update({
-        items_scanned_count: scannedCount,
-        items_total_count: totalCount || 0,
+        items_scanned_count: scannedCount || 0,
+        items_total_count: totalCount,
         scanning_complete: scanningComplete,
       })
       .eq('location_id', locationId)
@@ -75,6 +93,7 @@ export async function updateLoadScanningProgress(loadName: string): Promise<void
       console.error('Failed to update load scanning progress:', updateError);
     } else {
       console.log(`✅ Updated scanning progress for ${loadName}: ${scannedCount}/${totalCount}`);
+      // UI will auto-refresh via Realtime subscription
     }
   } catch (error) {
     console.error('Error updating load scanning progress:', error);
@@ -107,6 +126,7 @@ export async function recalculateAllLoadScanningProgress(): Promise<void> {
     }
 
     console.log(`✅ Recalculated scanning progress for ${loads?.length || 0} loads`);
+    // UI will auto-refresh via Realtime subscriptions
   } catch (error) {
     console.error('Error recalculating load scanning progress:', error);
   }

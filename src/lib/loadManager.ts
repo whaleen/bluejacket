@@ -249,6 +249,10 @@ export async function getLoadConflicts(
   return { data: data ?? [], error };
 }
 
+// REMOVED: getBatchLoadItemCounts and getBatchLoadConflictCounts
+// These functions were inefficient - they fetched ALL rows to count them
+// Instead, use items_total_count from load_metadata (already populated by GE sync)
+
 /**
  * Delete a load (metadata only - items remain but with null sub_inventory)
  */

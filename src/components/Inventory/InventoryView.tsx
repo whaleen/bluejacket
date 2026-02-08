@@ -890,6 +890,9 @@ export function InventoryView({ onMenuClick }: InventoryViewProps) {
         open={itemDetailOpen}
         onOpenChange={setItemDetailOpen}
         itemId={selectedItemId}
+        onFilterByLoad={(loadName) => {
+          setSubInventoryFilter(loadName);
+        }}
       />
 
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>

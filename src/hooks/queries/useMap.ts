@@ -136,13 +136,6 @@ export function useInventoryScanCounts() {
         scannedByKey.set(row.key, Number(row.scanned_count));
       }
 
-      console.log('=== INVENTORY COUNTS (DB Functions) ===');
-      console.log(`Total counts returned: ${totalCounts?.length ?? 0} groups`);
-      console.log(`Scanned counts returned: ${scannedCounts?.length ?? 0} groups`);
-      console.log(`Load E total: ${totalByKey.get('load:9SU20260203102320') ?? 'NOT FOUND'}`);
-      console.log(`Load E scanned: ${scannedByKey.get('load:9SU20260203102320') ?? 0}`);
-      console.log('========================================');
-
       return { totalByKey, scannedByKey };
     },
   });

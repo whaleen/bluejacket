@@ -1,7 +1,10 @@
-import { createContext, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import supabase from '@/lib/supabase';
 import { getActiveLocationContext } from '@/lib/tenant';
+import { queryKeys } from '@/lib/queryKeys';
+// Removed: useLoadStore - using TanStack Query as single source of truth
 
 interface RealtimeContextValue {
   connected: boolean; // Future: track connection status
@@ -16,7 +19,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!locationId) return;
 
-    console.log('🔴 Realtime: Subscribing to changes for location:', locationId);
+    if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_REALTIME) {
+      // console.log('🔴 Realtime: Subscribing to changes for location:', locationId);
+    }
 
     // Subscribe to inventory_items changes
     const inventoryChannel = supabase
@@ -29,15 +34,25 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           table: 'inventory_items',
           filter: `location_id=eq.${locationId}`,
         },
-        (payload) => {
-          console.log('📦 Inventory change:', payload.eventType, payload.new || payload.old);
+        () => {
+          // console.log('📦 Inventory change:', payload.eventType, payload.new || payload.old);
 
-          // Invalidate global inventory
+          // Invalidate ALL inventory queries
           queryClient.invalidateQueries({
-            queryKey: ['inventory', 'global', locationId],
+            queryKey: queryKeys.inventory.all(locationId),
           });
 
-          // Invalidate related queries
+          // Invalidate loads (item counts may have changed)
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.loads.all(locationId),
+          });
+
+          // Invalidate map data (markers may have changed)
+          queryClient.invalidateQueries({
+            queryKey: ['product-locations', locationId],
+          });
+
+          // Legacy keys
           queryClient.invalidateQueries({
             queryKey: ['inventory-scan-counts-v4', locationId],
           });
@@ -45,15 +60,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           queryClient.invalidateQueries({
             queryKey: ['data-quality'],
           });
-
-          // Invalidate ASIS overview stats (dashboard)
-          queryClient.invalidateQueries({
-            queryKey: ['inventory', locationId, 'asis-overview'],
-          });
         }
       )
-      .subscribe((status) => {
-        console.log('📦 Inventory channel status:', status);
+      .subscribe(() => {
+        // console.log('📦 Inventory channel status:', status);
       });
 
     // Subscribe to product_location_history (scan events)
@@ -67,22 +77,32 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           table: 'product_location_history',
           filter: `location_id=eq.${locationId}`,
         },
-        (payload) => {
-          console.log('📍 New scan:', payload.new);
+        () => {
+          // console.log('📍 New scan:', payload.new);
 
-          // Invalidate map locations
+          // Invalidate map locations (new marker added)
           queryClient.invalidateQueries({
             queryKey: ['product-locations', locationId],
           });
 
-          // Invalidate scan counts
+          // Invalidate loads (scanning progress changed)
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.loads.all(locationId),
+          });
+
+          // Invalidate map metadata (load scanning progress in popovers)
+          queryClient.invalidateQueries({
+            queryKey: ['map-metadata', locationId],
+          });
+
+          // Legacy keys
           queryClient.invalidateQueries({
             queryKey: ['inventory-scan-counts-v4', locationId],
           });
         }
       )
-      .subscribe((status) => {
-        console.log('📍 Scan channel status:', status);
+      .subscribe(() => {
+        // console.log('📍 Scan channel status:', status);
       });
 
     // Subscribe to scanning_sessions changes
@@ -96,16 +116,22 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           table: 'scanning_sessions',
           filter: `location_id=eq.${locationId}`,
         },
-        (payload) => {
-          console.log('🎯 Session change:', payload.eventType, payload.new || payload.old);
+        () => {
+          // console.log('🎯 Session change:', payload.eventType, payload.new || payload.old);
 
+          // Invalidate ALL session queries
           queryClient.invalidateQueries({
-            queryKey: ['sessions'],
+            queryKey: queryKeys.sessions.all(locationId),
+          });
+
+          // Invalidate map metadata (sessions show in popovers)
+          queryClient.invalidateQueries({
+            queryKey: ['map-metadata', locationId],
           });
         }
       )
-      .subscribe((status) => {
-        console.log('🎯 Session channel status:', status);
+      .subscribe(() => {
+        // console.log('🎯 Session channel status:', status);
       });
 
     // Subscribe to load_metadata changes
@@ -119,31 +145,31 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           table: 'load_metadata',
           filter: `location_id=eq.${locationId}`,
         },
-        (payload) => {
-          console.log('🚚 Load metadata change:', payload.eventType, payload.new || payload.old);
+        () => {
+          // console.log('🚚 Load metadata change:', payload.eventType, payload.new || payload.old);
 
+          // Single source of truth: TanStack Query
           queryClient.invalidateQueries({
-            queryKey: ['loads'],
+            queryKey: queryKeys.loads.all(locationId),
           });
 
+          // Invalidate map queries (they show load data)
           queryClient.invalidateQueries({
-            queryKey: ['map-metadata'],
+            queryKey: ['map-metadata', locationId],
           });
 
-          // Invalidate product-locations because getProductLocations()
-          // fetches load_metadata.primary_color and friendly_name
           queryClient.invalidateQueries({
             queryKey: ['product-locations', locationId],
           });
         }
       )
-      .subscribe((status) => {
-        console.log('🚚 Load channel status:', status);
+      .subscribe(() => {
+        // console.log('🚚 Load channel status:', status);
       });
 
     // Cleanup on unmount or location change
     return () => {
-      console.log('🔴 Realtime: Unsubscribing from all channels');
+      // console.log('🔴 Realtime: Unsubscribing from all channels');
       inventoryChannel.unsubscribe();
       scanChannel.unsubscribe();
       sessionChannel.unsubscribe();

@@ -660,13 +660,13 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
             >
               <MarkerContent>
                 <div className="cursor-pointer">
-                  {/* ASIS loads - use vibrant load_color */}
-                  {location.inventory_type === 'ASIS' ? (
+                  {/* Items in a load (ASIS or sold) - use vibrant load_color */}
+                  {location.sub_inventory ? (
                     <div
                       className="size-4 rounded-full border-2 border-white shadow-lg hover:scale-125 transition-transform"
                       style={{ backgroundColor: location.load_color || '#ef4444' }}
                     />
-                  ) : /* Non-ASIS types - grayscale with label */ (
+                  ) : /* Non-load items - grayscale with type label */ (
                     <div className="size-5 rounded-sm border-2 border-white shadow-lg bg-gray-500 text-white flex items-center justify-center text-[9px] font-semibold tracking-tight hover:scale-110 transition-transform">
                       {location.inventory_type === 'FG' ? 'FG' :
                        location.inventory_type === 'STA' ? 'ST' :
@@ -709,47 +709,104 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                   </div>
                 </div>
 
-                {(location.sub_inventory || location.load_friendly_name) && (
-                  <div className="flex items-center gap-2 pt-1 border-t">
-                    {location.inventory_type === 'ASIS' ? (
-                      <div
-                        className="h-6 w-6 rounded-md shrink-0 border border-border shadow-sm"
-                        style={{ backgroundColor: location.load_color || '#ef4444' }}
-                      />
-                    ) : (
-                      <div className="h-6 w-6 rounded-sm shrink-0 border-2 border-border shadow-sm bg-gray-500 text-white flex items-center justify-center text-[9px] font-semibold">
-                        {location.inventory_type === 'FG' ? 'FG' :
-                         location.inventory_type === 'STA' ? 'ST' :
-                         location.inventory_type === 'BackHaul' ? 'BH' :
-                         location.inventory_type === 'Inbound' ? 'IN' :
-                         location.inventory_type?.substring(0, 2) || '?'}
+                {location.sub_inventory && (() => {
+                  const load = loadMetadata.get(location.sub_inventory);
+                  return load ? (
+                    <div className="pt-2 border-t space-y-2">
+                      {/* Load Info */}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-4 h-4 rounded"
+                            style={{ backgroundColor: location.load_color || '#ef4444' }}
+                          />
+                          <span className="font-medium text-sm">
+                            {load.friendly_name || load.sub_inventory_name}
+                          </span>
+                        </div>
+
+                        {/* Status & CSO */}
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {load.ge_source_status && (
+                            <Badge variant="secondary" className="text-xs">
+                              {load.ge_source_status}
+                            </Badge>
+                          )}
+                          {load.ge_cso && (
+                            <span className="font-mono">CSO: {load.ge_cso.slice(-4)}</span>
+                          )}
+                        </div>
+
+                        {/* Item count & scan progress */}
+                        <div className="text-xs text-muted-foreground">
+                          {load.items_total_count ? (
+                            <span>
+                              {load.items_scanned_count || 0}/{load.items_total_count} scanned
+                              {load.scanning_complete && ' ✓'}
+                            </span>
+                          ) : load.ge_units ? (
+                            <span>{load.ge_units} items</span>
+                          ) : null}
+                        </div>
+
+                        {/* Prep status indicators */}
+                        <div className="flex items-center gap-1.5 text-xs pt-1">
+                          {/* Wrapped */}
+                          <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${
+                            load.prep_wrapped
+                              ? 'text-green-700 dark:text-green-400'
+                              : 'text-muted-foreground'
+                          }`}>
+                            {load.prep_wrapped ? '✓' : '○'} W
+                          </div>
+
+                          {/* Tagged */}
+                          <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${
+                            load.prep_tagged
+                              ? 'text-green-700 dark:text-green-400'
+                              : 'text-muted-foreground'
+                          }`}>
+                            {load.prep_tagged ? '✓' : '○'} T
+                          </div>
+
+                          {/* Sanity check */}
+                          <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${
+                            load.sanity_check_completed_at
+                              ? 'text-green-700 dark:text-green-400'
+                              : load.sanity_check_requested
+                              ? 'text-red-700 dark:text-red-400'
+                              : 'text-muted-foreground'
+                          }`}>
+                            {load.sanity_check_completed_at ? '✓' : load.sanity_check_requested ? '!' : '○'} S
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    <span className="text-xs font-medium">
-                      {location.load_friendly_name || location.sub_inventory}
-                    </span>
-                    {location.sub_inventory && (
+
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
+                        variant="outline"
+                        size="sm"
+                        className=""
                         onClick={() => {
-                          if (!location.sub_inventory) return;
-                          const path = `/loads/${encodeURIComponent(location.sub_inventory)}`;
+                          const path = `/loads/${encodeURIComponent(location.sub_inventory!)}`;
                           const params = new URLSearchParams(window.location.search);
                           params.set('from', 'map');
                           const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
                           window.history.replaceState({}, '', nextUrl);
                           window.dispatchEvent(new Event('app:locationchange'));
                         }}
-                        aria-label="Edit load"
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3 w-3 mr-1" />
                       </Button>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 pt-1 border-t">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {location.load_friendly_name || location.sub_inventory}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {location.created_at && (
                   <p className="text-xs text-muted-foreground pt-1 border-t">
@@ -879,7 +936,7 @@ export function WarehouseMapNew({ locations }: WarehouseMapNewProps) {
                                   className="flex items-center gap-2 flex-1 min-w-0 hover:bg-accent rounded px-2 py-2"
                                   onClick={() => toggleSessionVisibility(group.key)}
                                 >
-                                  {group.inventoryType === 'ASIS' ? (
+                                  {group.subInventory ? (
                                     <div
                                       className="h-8 w-8 rounded-md shrink-0 border border-border shadow-sm"
                                       style={{

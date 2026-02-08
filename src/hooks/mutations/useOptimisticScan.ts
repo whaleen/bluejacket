@@ -64,6 +64,7 @@ export function useOptimisticScan() {
         ]
       );
 
+      // Load scanning progress will update via Realtime → query invalidation
       return { previous };
     },
 
@@ -84,6 +85,10 @@ export function useOptimisticScan() {
       });
       queryClient.invalidateQueries({
         queryKey: ['inventory-scan-counts-v4', locationId],
+      });
+      // Invalidate loads to update scan counts (Realtime will also do this, but this ensures consistency)
+      queryClient.invalidateQueries({
+        queryKey: ['loads', locationId],
       });
     },
   });

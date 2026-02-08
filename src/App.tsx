@@ -1,4 +1,5 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 // import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { ThemeProvider } from "@/components/theme-provider";
 import { useAuth } from "@/context/AuthContext";
@@ -18,7 +19,6 @@ import { SpeedInsights } from "@vercel/speed-insights/react";
 
 // Lazy load heavy components for code splitting
 const LoadManagementView = lazy(() => import("@/components/Inventory/LoadManagementView").then(m => ({ default: m.LoadManagementView })));
-const SessionsView = lazy(() => import("@/components/Session/SessionsView").then(m => ({ default: m.SessionsView })));
 const ProductEnrichment = lazy(() => import("./components/Products/ProductEnrichment").then(m => ({ default: m.ProductEnrichment })));
 const InventoryView = lazy(() => import("./components/Inventory/InventoryView").then(m => ({ default: m.InventoryView })));
 const InventoryVisualGuide = lazy(() => import("./components/InventoryGuide/InventoryVisualGuide").then(m => ({ default: m.InventoryVisualGuide })));
@@ -32,23 +32,10 @@ const SignupView = lazy(() => import("@/components/Auth/SignupView").then(m => (
 const ResetPasswordView = lazy(() => import("@/components/Auth/ResetPasswordView").then(m => ({ default: m.ResetPasswordView })));
 const UpdatePasswordView = lazy(() => import("@/components/Auth/UpdatePasswordView").then(m => ({ default: m.UpdatePasswordView })));
 const ActivityLogView = lazy(() => import("@/components/Activity/ActivityLogView").then(m => ({ default: m.ActivityLogView })));
+const ActionsView = lazy(() => import("@/components/Actions/ActionsView").then(m => ({ default: m.ActionsView })));
 const MapView = lazy(() => import("@/components/Map/MapView").then(m => ({ default: m.MapView })));
 const AgentView = lazy(() => import("@/components/Agent/AgentView").then(m => ({ default: m.AgentView })));
 const DataQualityDashboard = lazy(() => import("@/components/Dashboard/DataQualityDashboard").then(m => ({ default: m.DataQualityDashboard })));
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,      // 5 minutes (inventory changes slowly)
-      gcTime: 1000 * 60 * 30,        // 30 minutes cache retention
-      retry: 1,
-      refetchOnWindowFocus: false,   // Warehouse kiosks stay open
-    },
-    mutations: {
-      retry: 0,
-    },
-  },
-});
 
 function App() {
   const { user, loading, logout } = useAuth();
@@ -80,7 +67,7 @@ function App() {
         'settings-gesync',
         'loads',
         'activity',
-        'sessions',
+        'actions',
       ].includes(legacyView)
     ) {
       const mappedView = legacyView === 'settings'
@@ -91,8 +78,6 @@ function App() {
           legacyView === 'settings-displays-list' ||
           legacyView === 'settings-displays-settings'
         ? 'settings-displays'
-        : legacyView === 'create-session'
-        ? 'sessions'
         : legacyView;
       return { view: mappedView as AppView, sessionId: null };
     }
@@ -309,6 +294,9 @@ function App() {
                     {currentView === "activity" && (
                       <ActivityLogView />
                     )}
+                    {currentView === "actions" && (
+                      <ActionsView />
+                    )}
                     {currentView === "map" && (
                       <MapView />
                     )}
@@ -317,11 +305,6 @@ function App() {
                     )}
                     {currentView === "data-quality" && (
                       <DataQualityDashboard />
-                    )}
-                    {currentView === "sessions" && (
-                        <SessionsView
-                          onViewChange={handleViewChange}
-                        />
                     )}
                     {currentView === "settings-locations" && (
                       <SettingsView section="locations" />
@@ -386,6 +369,9 @@ function App() {
                     {currentView === "activity" && (
                       <ActivityLogView />
                     )}
+                    {currentView === "actions" && (
+                      <ActionsView />
+                    )}
                     {currentView === "map" && (
                       <MapView />
                     )}
@@ -394,11 +380,6 @@ function App() {
                     )}
                     {currentView === "data-quality" && (
                       <DataQualityDashboard />
-                    )}
-                    {currentView === "sessions" && (
-                        <SessionsView
-                          onViewChange={handleViewChange}
-                        />
                     )}
                     {currentView === "settings-locations" && (
                       <SettingsView section="locations" />

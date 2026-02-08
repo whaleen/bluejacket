@@ -4,8 +4,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Loader2, Info } from 'lucide-react';
-import { getLoadItemCount, getLoadConflictCount, deleteLoad } from '@/lib/loadManager';
-import { useLoads } from '@/hooks/queries/useLoads';
+import { deleteLoad } from '@/lib/loadManager';
+import { useLoadData } from '@/hooks/useLoadData';
 import type { LoadMetadata } from '@/types/inventory';
 import { LoadDetailPanel } from './LoadDetailPanel';
 import { LoadInfoModal } from './LoadInfoModal';
@@ -28,10 +28,18 @@ interface LoadManagementViewProps {
 
 export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const isMobile = useIsMobile();
-  const [loads, setLoads] = useState<LoadWithCount[]>([]);
-  const [loadingCounts, setLoadingCounts] = useState(false);
   const [showAway, setShowAway] = useState(false);
-  const { data: loadsData, isLoading: loading, refetch } = useLoads(undefined, showAway);
+
+  // USE ZUSTAND - no local state, no duplicate queries
+  const { loads: loadsData, isLoading: loading } = useLoadData({ includeDelivered: showAway });
+
+  // Add counts from load_metadata (already on the records from Zustand)
+  const loads: LoadWithCount[] = loadsData.map(load => ({
+    ...load,
+    item_count: load.items_total_count || 0,
+    conflict_count: 0, // TODO: Add to load_metadata if needed
+  }));
+
   const [pendingLoadSelection, setPendingLoadSelection] = useState<string | null>(null);
   const [isStandaloneDetail, setIsStandaloneDetail] = useState(false);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
@@ -47,28 +55,6 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const [loadPendingDelete, setLoadPendingDelete] = useState<LoadMetadata | null>(null);
   const [infoModalOpen, setInfoModalOpen] = useState(false);
   const [infoModalLoad, setInfoModalLoad] = useState<LoadWithCount | null>(null);
-
-  const fetchLoadCounts = async (baseLoads: LoadMetadata[]) => {
-    setLoadingCounts(true);
-    // Fetch item counts for each load
-    const loadsWithCounts = await Promise.all(
-      baseLoads.map(async (load) => {
-        const [{ count: itemCount }, { count: conflictCount }] = await Promise.all([
-          getLoadItemCount(load.inventory_type, load.sub_inventory_name),
-          getLoadConflictCount(load.inventory_type, load.sub_inventory_name),
-        ]);
-        return { ...load, item_count: itemCount, conflict_count: conflictCount };
-      })
-    );
-    setLoads(loadsWithCounts);
-    setLoadingCounts(false);
-  };
-
-  useEffect(() => {
-    if (loadsData) {
-      fetchLoadCounts(loadsData);
-    }
-  }, [loadsData]);
 
   const syncLocationFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
@@ -113,7 +99,8 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
       setSelectedLoadForDetail(null);
       return;
     }
-    if (updated !== selectedLoadForDetail) {
+    // Only update if the data actually changed (compare by updated_at timestamp)
+    if (updated.updated_at !== selectedLoadForDetail.updated_at) {
       setSelectedLoadForDetail(updated);
     }
   }, [loads, selectedLoadForDetail]);
@@ -127,23 +114,29 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
   const normalizeGeStatus = (status?: string | null) => status?.toLowerCase().trim() ?? '';
 
   const handleLoadClick = (load: LoadMetadata) => {
-    setSelectedLoadForDetail((prev) => {
-      const next = prev?.id === load.id ? null : load;
-      const params = new URLSearchParams(window.location.search);
-      params.delete('load');
-        if (next) {
-          params.set('from', 'loads');
-          const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
-        const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
-        window.history.replaceState({}, '', nextUrl);
-      } else {
-        params.delete('from');
-        const nextUrl = params.toString() ? `/loads?${params.toString()}` : '/loads';
-        window.history.replaceState({}, '', nextUrl);
-      }
-      window.dispatchEvent(new Event('app:locationchange'));
-      return next;
-    });
+    // Determine next state
+    const next = selectedLoadForDetail?.id === load.id ? null : load;
+
+    // Update URL (side effect - do BEFORE setState)
+    const params = new URLSearchParams(window.location.search);
+    params.delete('load');
+
+    if (next) {
+      params.set('from', 'loads');
+      const path = `/loads/${encodeURIComponent(load.sub_inventory_name)}`;
+      const nextUrl = params.toString() ? `${path}?${params.toString()}` : path;
+      window.history.replaceState({}, '', nextUrl);
+    } else {
+      params.delete('from');
+      const nextUrl = params.toString() ? `/loads?${params.toString()}` : '/loads';
+      window.history.replaceState({}, '', nextUrl);
+    }
+
+    // Dispatch event BEFORE setState
+    window.dispatchEvent(new Event('app:locationchange'));
+
+    // Finally update state
+    setSelectedLoadForDetail(next);
   };
 
   const handleStandaloneClose = () => {
@@ -177,7 +170,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
       if (selectedLoadForDetail?.id === loadPendingDelete.id) {
         setSelectedLoadForDetail(null);
       }
-      refetch();
+      // Realtime will auto-update the list
     } else {
       toast.error(`Failed to delete load: ${error?.message || 'Unknown error'}`);
     }
@@ -271,7 +264,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
 
             {/* Load List */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              {loading || loadingCounts ? (
+              {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-6 w-6 animate-spin" />
                 </div>
@@ -306,13 +299,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                         onClose={handleStandaloneClose}
                         onDelete={handleDeleteClick}
                         onMetaUpdated={(updates) => {
-                          setLoads((prev) =>
-                            prev.map((entry) =>
-                              entry.id === selectedLoadForDetail.id
-                                ? { ...entry, ...updates }
-                                : entry
-                            )
-                          );
+                          // Zustand + Realtime will auto-update
                           setSelectedLoadForDetail((prev) =>
                             prev ? { ...prev, ...updates } : prev
                           );
@@ -397,13 +384,7 @@ export function LoadManagementView({ onMenuClick }: LoadManagementViewProps) {
                           onClose={() => setSelectedLoadForDetail(null)}
                           onDelete={handleDeleteClick}
                           onMetaUpdated={(updates) => {
-                            setLoads((prev) =>
-                              prev.map((entry) =>
-                                entry.id === selectedLoadForDetail.id
-                                  ? { ...entry, ...updates }
-                                  : entry
-                              )
-                            );
+                            // Zustand + Realtime will auto-update
                             setSelectedLoadForDetail((prev) =>
                               prev ? { ...prev, ...updates } : prev
                             );

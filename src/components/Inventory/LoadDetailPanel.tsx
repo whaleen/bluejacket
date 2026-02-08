@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, Search, X, Trash2, Printer } from 'lucide-react';
+import { Loader2, Search, X, Trash2, Printer, CheckCircle2, Circle } from 'lucide-react';
 import { updateLoadMetadata } from '@/lib/loadManager';
 import { useLoadDetail, useLoadConflicts } from '@/hooks/queries/useLoads';
 import type { LoadMetadata } from '@/types/inventory';
@@ -222,24 +222,31 @@ export function LoadDetailPanel({
     } else {
       onMetaUpdated?.(updates);
       triggerSavePulse();
-      if (!options?.skipActivityLog && companyId && locationId) {
-        try {
-          await logActivityMutation.mutateAsync({
-            companyId,
-            locationId,
-            user,
-            action: 'load_update',
-            entityType: 'ASIS_LOAD',
-            entityId: load.sub_inventory_name,
-            details: {
-              loadNumber: load.sub_inventory_name,
-              friendlyName: load.friendly_name ?? null,
-              fields: Object.keys(updates),
-              updates,
-            },
-          });
-        } catch (activityError) {
-          console.warn('Failed to log activity (load_update):', activityError);
+      // Always try to log activity (unless explicitly skipped)
+      if (!options?.skipActivityLog) {
+        if (!locationId) {
+          console.error('Cannot log activity: missing locationId');
+        } else if (!user) {
+          console.error('Cannot log activity: user not authenticated');
+        } else {
+          try {
+            await logActivityMutation.mutateAsync({
+              companyId: companyId || locationId, // Use locationId as fallback
+              locationId,
+              user,
+              action: 'load_update',
+              entityType: 'ASIS_LOAD',
+              entityId: load.sub_inventory_name,
+              details: {
+                loadNumber: load.sub_inventory_name,
+                friendlyName: load.friendly_name ?? null,
+                fields: Object.keys(updates),
+                updates,
+              },
+            });
+          } catch (activityError) {
+            console.error('Failed to log activity (load_update):', activityError);
+          }
         }
       }
     }
@@ -437,10 +444,16 @@ export function LoadDetailPanel({
     } else {
       onMetaUpdated?.(updates);
       triggerSavePulse();
-      if (companyId && locationId) {
+
+      // Always try to log activity
+      if (!locationId) {
+        console.error('Cannot log activity: missing locationId');
+      } else if (!user) {
+        console.error('Cannot log activity: user not authenticated');
+      } else {
         try {
           await logActivityMutation.mutateAsync({
-            companyId,
+            companyId: companyId || locationId, // Use locationId as fallback
             locationId,
             user,
             action: 'load_update',
@@ -454,7 +467,7 @@ export function LoadDetailPanel({
             },
           });
         } catch (activityError) {
-          console.warn('Failed to log activity (load_update):', activityError);
+          console.error('Failed to log activity (load_update):', activityError);
         }
       }
     }
@@ -741,6 +754,30 @@ export function LoadDetailPanel({
                   <Checkbox checked={prepWrapped} onCheckedChange={handleWrappedChange} disabled={savingPrep} />
                   Wrapped
                 </label>
+
+                {/* Scanning Progress */}
+                {load.items_total_count ? (
+                  <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${
+                    load.scanning_complete
+                      ? 'border-green-500/50 bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400'
+                      : 'border-border bg-background text-muted-foreground'
+                  }`}>
+                    {load.scanning_complete ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      <Circle className="h-4 w-4" />
+                    )}
+                    <span>
+                      Scanned: {load.items_scanned_count || 0}/{load.items_total_count}
+                      {load.items_total_count > 0 && (
+                        <span className="ml-1 text-xs">
+                          ({Math.round(((load.items_scanned_count || 0) / load.items_total_count) * 100)}%)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+
                 <Button
                   type="button"
                   size="sm"
