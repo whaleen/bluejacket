@@ -807,7 +807,7 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     // Fetch existing items from DB
     const { data: existingItems, error: fetchError } = await db
       .from('inventory_items')
-      .select('id, serial, model, sub_inventory, ge_availability_status, ge_availability_message, ge_inv_qty, ge_orphaned')
+      .select('id, serial, model, sub_inventory, cso, ge_availability_status, ge_availability_message, ge_inv_qty, ge_orphaned')
       .eq('company_id', config.companyId)
       .eq('location_id', locationId)
       .eq('inventory_type', 'ASIS');
@@ -817,12 +817,30 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     }
     log.push(`Existing ASIS items in DB: ${existingItems?.length || 0}`);
 
+    // Fetch serials that already exist as STA — these should NOT be recreated as ASIS
+    // (When a load is "picked", GE starts reporting its items in STA too)
+    const { data: staItems } = await db
+      .from('inventory_items')
+      .select('serial')
+      .eq('company_id', config.companyId)
+      .eq('location_id', locationId)
+      .eq('inventory_type', 'STA')
+      .not('serial', 'is', null);
+
+    const staSerials = new Set(
+      (staItems ?? []).map(item => item.serial).filter(Boolean)
+    );
+    if (staSerials.size > 0) {
+      log.push(`STA serials to exclude from ASIS: ${staSerials.size}`);
+    }
+
     // Build existing items map
     interface ExistingItem {
       id: string;
       serial: string;
       model?: string;
       sub_inventory?: string;
+      cso?: string;
       ge_availability_status?: string;
       ge_availability_message?: string;
       ge_inv_qty?: number;
@@ -845,9 +863,17 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
     let updatedItems = 0;
     let itemsInLoads = 0;
 
+    let staExcluded = 0;
+
     for (const geItem of inventory) {
       const serial = geItem['Serial #']?.trim();
       if (!serial) continue;
+
+      // Skip items that already exist as STA — STA is the source of truth for picked loads
+      if (staSerials.has(serial)) {
+        staExcluded++;
+        continue;
+      }
 
       const model = geItem['Model #']?.trim() || '';
       const product = getProductForModel(model, productLookup);
@@ -1050,6 +1076,47 @@ export async function syncASIS(locationId: string): Promise<SyncResult> {
       console.log(`Backfilled ${backfilledCount} ASIS items with product links.`);
     }
     log.push(`Backfilled product links: ${backfilledCount}`);
+
+    // Clean up ASIS/STA duplicates: backfill CSO to STA items, then delete ASIS dupes
+    if (staSerials.size > 0) {
+      // Backfill CSO from ASIS to STA items that are missing it
+      for (const item of existingItems ?? []) {
+        if (item.serial && item.cso && staSerials.has(item.serial)) {
+          await db
+            .from('inventory_items')
+            .update({ cso: item.cso })
+            .eq('company_id', config.companyId)
+            .eq('location_id', locationId)
+            .eq('inventory_type', 'STA')
+            .eq('serial', item.serial)
+            .is('cso', null);
+        }
+      }
+
+      // Delete ASIS rows that are duplicated in STA
+      const staSerialArray = Array.from(staSerials);
+      const chunkSize = 500;
+      let cleanedUp = 0;
+      for (let i = 0; i < staSerialArray.length; i += chunkSize) {
+        const chunk = staSerialArray.slice(i, i + chunkSize);
+        const { count } = await db
+          .from('inventory_items')
+          .delete()
+          .eq('company_id', config.companyId)
+          .eq('location_id', locationId)
+          .eq('inventory_type', 'ASIS')
+          .in('serial', chunk);
+        cleanedUp += count ?? 0;
+      }
+      if (cleanedUp > 0) {
+        console.log(`Cleaned up ${cleanedUp} ASIS rows that exist in STA`);
+        log.push(`Cleaned up ${cleanedUp} ASIS/STA duplicate rows`);
+      }
+    }
+
+    if (staExcluded > 0) {
+      log.push(`Excluded ${staExcluded} items already in STA`);
+    }
 
     // Orphans are not a concept for ASIS-only syncs; clear any stale flags.
     const { error: clearOrphansError } = await db
