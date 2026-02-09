@@ -8,7 +8,9 @@
 - HTML: /ge-dms-archive/09-dms-erp-aws-prd-geappliances-com-dms-orderdata.html
 - Text: /ge-dms-archive/09-dms-erp-aws-prd-geappliances-com-dms-orderdata.txt
 ## Notes
-- Review the screenshot + HTML to document fields and workflow steps.
+- Filters: Show, Status, Orders for Date + More Days.
+- Additional search options: CSO, Tracking #, Inbound Shipment # (only one at a time).
+- Order Data - Enhanced exports JSON with deliveries + line items.
 
 ## Related Docs
 - GE DMS Overview: [/docs?doc=docs%2Fge-dms%2Foverview.md](/docs?doc=docs%2Fge-dms%2Foverview.md)

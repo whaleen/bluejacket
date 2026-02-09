@@ -199,6 +199,69 @@ Response:
 }
 ```
 
+### `POST /sync/inbound`
+Sync inbound receipts from GE DMS.
+
+Behavior:
+- Pulls inbound shipment numbers from **Inbound Summary** (`/dms/inbound`).
+- For each shipment, queries **Inbound ASN** (`/dms/inbound/inboundasn`) by ERP Shipment and parses the HTML table.
+- Stores shipment-level summary units and ASN row count to highlight gaps for non-serialized items.
+
+Request:
+```json
+{
+  "locationId": "uuid-of-location"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "stats": {
+    "totalGEItems": 143,
+    "newItems": 143,
+    "updatedItems": 0,
+    "changesLogged": 0
+  },
+  "duration": 8200
+}
+```
+
+### `POST /sync/orders`
+Sync orders from GE DMS Order Data (JSON export).
+
+Behavior:
+- Pulls a rolling window of orders (default: 90 days back, 30 days forward).
+- Uses the **Order Data - Enhanced** JSON export.
+- Upserts orders, deliveries, and line items.
+
+Request:
+```json
+{
+  "locationId": "uuid-of-location"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "stats": {
+    "totalGEItems": 1200,
+    "newItems": 1200,
+    "updatedItems": 0,
+    "changesLogged": 0
+  },
+  "duration": 9200
+}
+```
+
+Env overrides:
+- `ORDERDATA_DMS_LOC` (defaults to 19SU)
+- `ORDERDATA_DAYS_BACK` (default 90)
+- `ORDERDATA_DAYS_FORWARD` (default 30)
+
 ### `POST /sync/backhaul`
 Sync GE DMS Backhaul orders (open and optionally closed).
 

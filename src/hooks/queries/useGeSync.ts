@@ -9,12 +9,16 @@ export function useGeSync() {
   const { locationId } = getActiveLocationContext();
 
   return useMutation({
-    mutationFn: async ({ type, locationId: overrideLocationId }: { type: GeSyncType; locationId?: string }) => {
+    mutationFn: async ({
+      type,
+      locationId: overrideLocationId,
+      options,
+    }: { type: GeSyncType; locationId?: string; options?: Record<string, unknown> }) => {
       const targetLocationId = overrideLocationId ?? locationId;
       if (!targetLocationId) {
         throw new Error('No active location selected');
       }
-      const result = await syncGeInventory(type, targetLocationId);
+      const result = await syncGeInventory(type, targetLocationId, options);
 
       // Create sessions from sync results
       if (type === 'inventory') {
@@ -26,7 +30,7 @@ export function useGeSync() {
             // Don't throw - continue with other types
           }
         }
-      } else if (type !== 'inbound') {
+      } else if (type !== 'inbound' && type !== 'orders') {
         // Individual sync: create sessions for that type
         const sessionResult = await createSessionsFromSync(type);
         if (!sessionResult.success) {

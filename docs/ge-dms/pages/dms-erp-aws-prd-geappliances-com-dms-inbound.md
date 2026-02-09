@@ -8,7 +8,10 @@
 - HTML: /ge-dms-archive/06-dms-erp-aws-prd-geappliances-com-dms-inbound.html
 - Text: /ge-dms-archive/06-dms-erp-aws-prd-geappliances-com-dms-inbound.txt
 ## Notes
-- Review the screenshot + HTML to document fields and workflow steps.
+- Inbound Summary lists inbound shipments and unit counts.
+- Inbound ASN tab (`/dms/inbound/inboundasn`) provides the item-level table for a shipment when searched by ERP Shipment.
+- ASN Excel export can return only headers; use the HTML table instead.
+- Summary unit counts may exceed ASN rows when non-serialized items are collapsed.
 
 ## Related Docs
 - GE DMS Overview: [/docs?doc=docs%2Fge-dms%2Foverview.md](/docs?doc=docs%2Fge-dms%2Foverview.md)

@@ -36,6 +36,12 @@ export const ENDPOINTS = {
   // Inbound summary page (sets session state)
   INBOUND_BASE: `${GE_DMS_BASE}/dms/inbound`,
 
+  // Inbound ASN page
+  INBOUND_ASN: `${GE_DMS_BASE}/dms/inbound/inboundasn`,
+
+  // Inbound ASN search/export
+  INBOUND_ASN_SEARCH: `${GE_DMS_BASE}/dms/inbound/inboundAsnSearch`,
+
   // Inbound receiving report PDF
   INBOUND_EXPORT_PDF: `${GE_DMS_BASE}/dms/inbound/exportpdf`,
 
@@ -61,6 +67,7 @@ export const REFERERS = {
   ASIS_LOAD_DETAIL: `${GE_DMS_BASE}/dms/newasis`,
   ERP_INVENTORY: `${GE_DMS_BASE}/dms/erpCheckInventory`,
   INBOUND: `${GE_DMS_BASE}/dms/inbound`,
+  INBOUND_ASN: `${GE_DMS_BASE}/dms/inbound/inboundasn`,
   BACKHAUL: `${GE_DMS_BASE}/dms/backhaul`,
 };
 

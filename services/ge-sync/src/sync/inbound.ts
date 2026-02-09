@@ -2,7 +2,7 @@ import { ENDPOINTS, HEADERS, REFERERS } from './endpoints.js';
 import { getCookieHeader } from '../auth/playwright.js';
 import { getSupabase, getLocationConfig } from '../db/supabase.js';
 import type { SyncResult } from '../types/index.js';
-import pdfParse from 'pdf-parse';
+
 
 type InboundHistoryRow = {
   lineId: number;
@@ -14,39 +14,13 @@ type InboundHistoryRow = {
   schdArrivalTime: string;
   truckNumber: string;
   scac: string;
+  summaryUnits: number | null;
+  summaryPoints: number | null;
 };
 
-type ReceivingReportHeader = {
-  inboundShipmentNo: string | null;
-  scac: string | null;
-  truckNumber: string | null;
-  scheduledArrivalDate: string | null;
-  scheduledArrivalTime: string | null;
-  actualArrivalTime: string | null;
-  totalUnits: number | null;
-  totalPcUnits: number | null;
-  sealNumber: string | null;
-};
-
-type ReceivingReportItem = {
-  lineIndex: number;
-  inboundShipmentNo: string | null;
-  cso: string | null;
-  trackingNumber: string | null;
-  model: string | null;
-  serial: string | null;
-  inboundReplacement: string | null;
-  qty: number | null;
-  rcvd: number | null;
-  short: number | null;
-  damage: number | null;
-  serialMix: string | null;
-  rawLine: string;
-};
-
-type PdfTextItem = {
-  str?: string;
-  transform?: number[];
+type InboundAsnResult = {
+  headers: string[];
+  rows: string[][];
 };
 
 function formatDateForInbound(date: Date): string {
@@ -54,6 +28,164 @@ function formatDateForInbound(date: Date): string {
   const dd = String(date.getDate()).padStart(2, '0');
   const yyyy = date.getFullYear();
   return `${mm}-${dd}-${yyyy}`;
+}
+
+function normalizeInboundShipmentNo(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/[A-Z]\d{7}/);
+  if (match) return match[0];
+  return trimmed.split(/\s*-\s*/)[0] ?? trimmed;
+}
+
+function decodeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'");
+}
+
+function stripHtml(input: string): string {
+  return decodeHtmlEntities(input.replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractSelectedOptions(html: string): Record<string, string> {
+  const selections: Record<string, string> = {};
+  const selectRegex = /<select[^>]*name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/select>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = selectRegex.exec(html)) !== null) {
+    const name = match[1];
+    const optionsHtml = match[2];
+    const selectedMatch = optionsHtml.match(/<option[^>]*selected[^>]*>([\s\S]*?)<\/option>/i)
+      || optionsHtml.match(/<option[^>]*selected[^>]*value=["']([^"']*)["'][^>]*>([\s\S]*?)<\/option>/i);
+
+    if (selectedMatch) {
+      const valueMatch = selectedMatch[0].match(/value=["']([^"']*)["']/i);
+      const value = valueMatch ? valueMatch[1] : stripHtml(selectedMatch[1] ?? '');
+      if (value) selections[name] = value;
+      continue;
+    }
+
+    const firstOption = optionsHtml.match(/<option[^>]*>([\s\S]*?)<\/option>/i);
+    if (firstOption) {
+      const valueMatch = firstOption[0].match(/value=["']([^"']*)["']/i);
+      const value = valueMatch ? valueMatch[1] : stripHtml(firstOption[1] ?? '');
+      if (value) selections[name] = value;
+    }
+  }
+  return selections;
+}
+
+type SelectOption = { value: string; label: string; selected: boolean };
+
+function extractSelectOptions(html: string): Record<string, SelectOption[]> {
+  const optionsByName: Record<string, SelectOption[]> = {};
+  const selectRegex = /<select[^>]*name=["']([^"']+)["'][^>]*>([\s\S]*?)<\/select>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = selectRegex.exec(html)) !== null) {
+    const name = match[1];
+    const optionsHtml = match[2];
+    const optionMatches = optionsHtml.match(/<option[\s\S]*?<\/option>/gi) ?? [];
+    const options = optionMatches.map((optionHtml) => {
+      const valueMatch = optionHtml.match(/value=["']([^"']*)["']/i);
+      const value = valueMatch ? valueMatch[1] : stripHtml(optionHtml);
+      const labelMatch = optionHtml.match(/<option[^>]*>([\s\S]*?)<\/option>/i);
+      const label = labelMatch ? stripHtml(labelMatch[1]) : stripHtml(optionHtml);
+      const selected = /selected/i.test(optionHtml);
+      return { value, label, selected };
+    });
+    optionsByName[name] = options;
+  }
+
+  return optionsByName;
+}
+
+function extractFormDefaults(html: string): Record<string, string> {
+  return {
+    ...extractHiddenInputs(html),
+    ...extractSelectedOptions(html),
+  };
+}
+
+function parseHtmlTable(tableHtml: string): InboundAsnResult {
+  const rows: string[][] = [];
+  let headers: string[] = [];
+  const rowMatches = tableHtml.match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
+
+  for (const rowHtml of rowMatches) {
+    const cellMatches = rowHtml.match(/<t[dh][\s\S]*?<\/t[dh]>/gi) ?? [];
+    if (cellMatches.length === 0) continue;
+    const cells = cellMatches.map((cell) => stripHtml(cell));
+    const isHeaderRow = /<th/i.test(rowHtml);
+
+    if (isHeaderRow && headers.length === 0) {
+      headers = cells;
+      continue;
+    }
+
+    if (headers.length === 0) {
+      headers = cells;
+      continue;
+    }
+
+    const normalized = cells.join(' ').toLowerCase();
+    if (normalized.includes('no rows were found')) {
+      continue;
+    }
+
+    rows.push(cells);
+  }
+
+  return { headers, rows };
+}
+
+function parseInboundAsnTable(html: string): InboundAsnResult {
+  const tables = html.match(/<table[\s\S]*?<\/table>/gi) ?? [];
+  for (const tableHtml of tables) {
+    const parsed = parseHtmlTable(tableHtml);
+    const headerText = parsed.headers.join(' ').toLowerCase();
+    if (headerText.includes('erp shipment')) {
+      return parsed;
+    }
+  }
+
+  return { headers: [], rows: [] };
+}
+
+function parseInboundSummaryTable(html: string): Map<string, { units: number | null; points: number | null }> {
+  const tableMatch = html.match(/<table[^>]*id=["']tb_list_inboundSummary["'][\s\S]*?<\/table>/i);
+  if (!tableMatch) return new Map();
+
+  const parsed = parseHtmlTable(tableMatch[0]);
+  const headerIndex = (name: string) =>
+    parsed.headers.findIndex((header) => header.toLowerCase().includes(name));
+
+  const shipmentIndex = headerIndex('inbound shipment');
+  const unitsIndex = headerIndex('units');
+  const pointsIndex = headerIndex('points');
+
+  const summaryMap = new Map<string, { units: number | null; points: number | null }>();
+  if (shipmentIndex < 0) return summaryMap;
+
+  for (const row of parsed.rows) {
+    const shipmentCell = row[shipmentIndex] ?? '';
+    const shipmentNumber = normalizeInboundShipmentNo(shipmentCell);
+    if (!shipmentNumber) continue;
+    const unitsRaw = unitsIndex >= 0 ? row[unitsIndex] ?? '' : '';
+    const pointsRaw = pointsIndex >= 0 ? row[pointsIndex] ?? '' : '';
+    const units = /^\d+$/.test(unitsRaw) ? Number.parseInt(unitsRaw, 10) : null;
+    const points = /^\d+$/.test(pointsRaw) ? Number.parseInt(pointsRaw, 10) : null;
+    if (!summaryMap.has(shipmentNumber)) {
+      summaryMap.set(shipmentNumber, { units, points });
+    }
+  }
+
+  return summaryMap;
 }
 
 function extractHiddenInputs(html: string): Record<string, string> {
@@ -69,6 +201,7 @@ function extractHiddenInputs(html: string): Record<string, string> {
 
 function parseInboundHistory(html: string): { rows: InboundHistoryRow[]; totalRows: number; inputs: Record<string, string> } {
   const inputs = extractHiddenInputs(html);
+  const summaryMap = parseInboundSummaryTable(html);
   const lineIdSet = new Set<number>();
 
   for (const key of Object.keys(inputs)) {
@@ -96,9 +229,11 @@ function parseInboundHistory(html: string): { rows: InboundHistoryRow[]; totalRo
     }
     if (!inboundShipmentNo) continue;
 
+    const summary = summaryMap.get(normalizeInboundShipmentNo(inboundShipmentNo));
+
     rows.push({
       lineId,
-      shipmentNumber: inboundShipmentNo,
+      shipmentNumber: normalizeInboundShipmentNo(inboundShipmentNo),
       mpOrgCode: inputs[`mpOrgCode_${lineId}`] || inputs.selMpOrgCodeVal || '',
       vendorId: inputs[`vendorId_${lineId}`] || inputs.selVendorIdVal || '',
       wtsStopSeqno: inputs[`wtsStopSeqno_${lineId}`] || inputs.selWtsStopSeqnoVal || '',
@@ -106,250 +241,12 @@ function parseInboundHistory(html: string): { rows: InboundHistoryRow[]; totalRo
       schdArrivalTime: inputs[`schdArrivalTime_${lineId}`] || inputs.selSchdArrivalTimeVal || '',
       truckNumber: inputs[`truckNumber_${lineId}`] || inputs.selTruckNumberVal || '',
       scac: inputs[`scac_${lineId}`] || inputs.selScacVal || '',
+      summaryUnits: summary?.units ?? null,
+      summaryPoints: summary?.points ?? null,
     });
   }
 
   return { rows, totalRows: lineIds.length, inputs };
-}
-
-function parseReceivingReport(text: string): { header: ReceivingReportHeader; items: ReceivingReportItem[] } {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  const shipmentMatch = text.match(/\b([A-Z]\d{7}-\d)\b/);
-  const inboundShipmentNo = shipmentMatch ? shipmentMatch[1] : null;
-  let headerLine: string | null = null;
-
-  if (inboundShipmentNo) {
-    headerLine = lines.find((line) => line.includes(inboundShipmentNo)) ?? null;
-  }
-
-  let scac: string | null = null;
-  let truckNumber: string | null = null;
-  let scheduledArrivalDate: string | null = null;
-  let scheduledArrivalTime: string | null = null;
-  let actualArrivalTime: string | null = null;
-  let totalUnits: number | null = null;
-
-  if (headerLine) {
-    const tokens = headerLine.split(/\s+/);
-    const dateIndex = tokens.findIndex((token) => /\d{2}-\d{2}-\d{4}/.test(token));
-    if (dateIndex >= 0) {
-      scac = tokens[0] ?? null;
-      truckNumber = tokens[1] ?? null;
-      scheduledArrivalDate = tokens[dateIndex] ?? null;
-      scheduledArrivalTime = tokens[dateIndex + 1] ?? null;
-      const totalUnitsToken = tokens[dateIndex + 2];
-      if (totalUnitsToken && /^\d+$/.test(totalUnitsToken)) {
-        totalUnits = Number.parseInt(totalUnitsToken, 10);
-      }
-      if (tokens.includes(inboundShipmentNo ?? '')) {
-        actualArrivalTime = null;
-      }
-    }
-  }
-
-  const header: ReceivingReportHeader = {
-    inboundShipmentNo,
-    scac,
-    truckNumber,
-    scheduledArrivalDate,
-    scheduledArrivalTime,
-    actualArrivalTime,
-    totalUnits,
-    totalPcUnits: null,
-    sealNumber: null,
-  };
-
-  const shipmentPattern = /^[A-Z]\d{7}-\d/;
-  const rowLines: string[] = [];
-  let currentRow = '';
-
-  for (const line of lines) {
-    if (line.startsWith('Inbound Shipment')) continue;
-    if (shipmentPattern.test(line)) {
-      if (currentRow) {
-        rowLines.push(currentRow.trim());
-      }
-      currentRow = line;
-    } else if (currentRow) {
-      currentRow = `${currentRow} ${line}`;
-    }
-  }
-  if (currentRow) rowLines.push(currentRow.trim());
-
-  const items: ReceivingReportItem[] = [];
-  let lineIndex = 0;
-
-  for (const row of rowLines) {
-    const tokens = row.split(/\s+/).filter(Boolean);
-    if (tokens.length < 4) continue;
-    const shipmentNo = tokens[0];
-    const cso = tokens[1] ?? null;
-    const numericIndexes = tokens
-      .map((token, index) => (/^\d+$/.test(token) ? index : -1))
-      .filter((index) => index >= 0);
-    const qtyIndex = numericIndexes.length > 0 ? numericIndexes[numericIndexes.length - 1] : -1;
-    const qtyToken = qtyIndex >= 0 ? tokens[qtyIndex] : null;
-    const qty = qtyToken && /^\d+$/.test(qtyToken) ? Number.parseInt(qtyToken, 10) : null;
-
-    const serialIndex = qtyIndex > 2 ? qtyIndex - 1 : 3;
-    const modelIndex = serialIndex - 1;
-
-    const model = tokens[modelIndex] ?? null;
-    const serialToken = tokens[serialIndex] ?? null;
-    const serial = serialToken && !/^\d+$/.test(serialToken) ? serialToken : null;
-
-    const trackingTokens = tokens.slice(2, modelIndex);
-    const trackingNumber = trackingTokens.length > 0 ? trackingTokens.join(' ') : null;
-
-    items.push({
-      lineIndex,
-      inboundShipmentNo: shipmentNo,
-      cso,
-      trackingNumber,
-      model,
-      serial,
-      inboundReplacement: null,
-      qty,
-      rcvd: null,
-      short: null,
-      damage: null,
-      serialMix: null,
-      rawLine: row,
-    });
-    lineIndex += 1;
-  }
-
-  return { header, items };
-}
-
-function groupTextItemsByLine(items: PdfTextItem[]) {
-  const lines = new Map<number, PdfTextItem[]>();
-  for (const item of items) {
-    const text = item.str?.trim();
-    if (!text) continue;
-    const y = item.transform?.[5];
-    if (typeof y !== 'number') continue;
-    const key = Math.round(y * 10) / 10;
-    const current = lines.get(key) ?? [];
-    current.push(item);
-    lines.set(key, current);
-  }
-
-  const sorted = Array.from(lines.entries()).sort((a, b) => b[0] - a[0]);
-  return sorted.map((entry) =>
-    entry[1].sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0))
-  );
-}
-
-function parseReceivingReportFromLayout(pages: PdfTextItem[][]): { header: ReceivingReportHeader; items: ReceivingReportItem[] } {
-  const allItems = pages.flat();
-  const lines = groupTextItemsByLine(allItems);
-  const headerLineIndex = lines.findIndex((line) => {
-    const text = line.map((item) => item.str).join(' ').toLowerCase();
-    return text.includes('inbound') && text.includes('shipment') && text.includes('cso') && text.includes('model');
-  });
-
-  const header: ReceivingReportHeader = {
-    inboundShipmentNo: null,
-    scac: null,
-    truckNumber: null,
-    scheduledArrivalDate: null,
-    scheduledArrivalTime: null,
-    actualArrivalTime: null,
-    totalUnits: null,
-    totalPcUnits: null,
-    sealNumber: null,
-  };
-
-  if (headerLineIndex < 0) {
-    return { header, items: [] };
-  }
-
-  const headerLine = lines[headerLineIndex];
-  const headerColumns = headerLine.map((item) => ({
-    text: item.str?.trim() ?? '',
-    x: item.transform?.[4] ?? 0,
-  }));
-  const columnNames = [
-    'Inbound Shipment No',
-    'CSO',
-    'Tracking #',
-    'Model',
-    'Serial',
-    'Inbound Replacement',
-    'Qty',
-    'RCVD',
-    'Short',
-    'Damage',
-    'Serial Mix',
-  ];
-
-  const columnPositions = columnNames.map((name) => {
-    const tokens = name.split(' ');
-    const match = headerColumns.find((col) => tokens.every((token) => col.text.includes(token)));
-    return {
-      name,
-      x: match?.x ?? 0,
-    };
-  }).sort((a, b) => a.x - b.x);
-
-  const boundaries = columnPositions.map((col, index) => {
-    const next = columnPositions[index + 1];
-    return {
-      name: col.name,
-      start: col.x - 1,
-      end: next ? (col.x + next.x) / 2 : Number.POSITIVE_INFINITY,
-    };
-  });
-
-  const items: ReceivingReportItem[] = [];
-  let lineIndex = 0;
-
-  for (let i = headerLineIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i];
-    const firstText = line[0]?.str?.trim() ?? '';
-    if (!firstText) continue;
-    if (!/^[A-Z]\d{7}-\d/.test(firstText)) continue;
-
-    const columns: Record<string, string> = {};
-    for (const item of line) {
-      const text = item.str?.trim() ?? '';
-      if (!text) continue;
-      const x = item.transform?.[4] ?? 0;
-      const boundary = boundaries.find((b) => x >= b.start && x < b.end);
-      if (!boundary) continue;
-      const key = boundary.name;
-      columns[key] = columns[key] ? `${columns[key]} ${text}` : text;
-    }
-
-    const qty = columns['Qty'] && /^\d+$/.test(columns['Qty']) ? Number.parseInt(columns['Qty'], 10) : null;
-    const rcvd = columns['RCVD'] && /^\d+$/.test(columns['RCVD']) ? Number.parseInt(columns['RCVD'], 10) : null;
-    const short = columns['Short'] && /^\d+$/.test(columns['Short']) ? Number.parseInt(columns['Short'], 10) : null;
-    const damage = columns['Damage'] && /^\d+$/.test(columns['Damage']) ? Number.parseInt(columns['Damage'], 10) : null;
-
-    items.push({
-      lineIndex,
-      inboundShipmentNo: columns['Inbound Shipment No'] ?? null,
-      cso: columns['CSO'] ?? null,
-      trackingNumber: columns['Tracking #'] ?? null,
-      model: columns['Model'] ?? null,
-      serial: columns['Serial'] ?? null,
-      inboundReplacement: columns['Inbound Replacement'] ?? null,
-      qty,
-      rcvd,
-      short,
-      damage,
-      serialMix: columns['Serial Mix'] ?? null,
-      rawLine: line.map((item) => item.str).join(' '),
-    });
-    lineIndex += 1;
-  }
-
-  return { header, items };
 }
 
 async function fetchInboundHtml(
@@ -400,52 +297,54 @@ async function fetchInboundHtml(
   return response.text();
 }
 
-async function fetchInboundReportPdf(
-  row: InboundHistoryRow,
-  inputs: Record<string, string>,
-  cookieHeader: string
+
+
+async function fetchInboundAsnHtml(
+  shipmentNumber: string,
+  dmsLoc: string,
+  cookieHeader: string,
+  overrides: Record<string, string> = {}
 ) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(inputs)) {
-    params.append(key, value);
-  }
+  const asnPage = await fetch(ENDPOINTS.INBOUND_ASN, {
+    method: 'GET',
+    headers: {
+      ...HEADERS,
+      Referer: REFERERS.INBOUND,
+      Cookie: cookieHeader,
+    },
+  });
 
-  params.set('selectedSubTab', '3');
-  params.set('rowRecNo', String(row.lineId));
-  params.set('rowInsideRecNo', '');
-  params.set('selMpOrgCodeVal', row.mpOrgCode);
-  params.set('selVendorIdVal', row.vendorId);
-  params.set('selShipmentNumVal', row.shipmentNumber);
-  params.set('selWtsStopSeqnoVal', row.wtsStopSeqno);
-  params.set('selSchdArrivalDateVal', row.schdArrivalDate);
-  params.set('selSchdArrivalTimeVal', row.schdArrivalTime);
-  params.set('selTruckNumberVal', row.truckNumber);
-  params.set('selScacVal', row.scac);
+  const asnHtml = await asnPage.text();
+  const defaults = extractFormDefaults(asnHtml);
+  const selectOptions = extractSelectOptions(asnHtml);
 
-  const body = params.toString();
+  const body = new URLSearchParams({
+    ...defaults,
+    erpShipment: normalizeInboundShipmentNo(shipmentNumber),
+    cso: '',
+    trackingNum: '',
+    serial: '',
+    hExcelView: '',
+    dmsLoc: defaults.dmsLoc || dmsLoc,
+    ...overrides,
+  }).toString();
 
-  const response = await fetch(ENDPOINTS.INBOUND_EXPORT_PDF, {
+  const response = await fetch(ENDPOINTS.INBOUND_ASN_SEARCH, {
     method: 'POST',
     headers: {
       ...HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      Referer: REFERERS.INBOUND,
+      Referer: REFERERS.INBOUND_ASN,
       Cookie: cookieHeader,
     },
     body,
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch inbound report PDF: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed to fetch inbound ASN ${shipmentNumber}: ${response.status} ${response.statusText}`);
   }
 
-  const contentType = response.headers.get('content-type') || '';
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (!contentType.includes('pdf') || buffer.length === 0) {
-    const preview = buffer.toString('utf-8', 0, 200);
-    throw new Error(`Inbound report response not PDF. content-type=${contentType} preview=${preview}`);
-  }
-  return buffer;
+  return { html: await response.text(), defaults, selectOptions };
 }
 
 export async function syncInboundReceipts(locationId: string): Promise<SyncResult> {
@@ -456,12 +355,13 @@ export async function syncInboundReceipts(locationId: string): Promise<SyncResul
     const db = getSupabase();
     const config = await getLocationConfig(locationId);
     const dmsLoc = process.env.INBOUND_DMS_LOC ?? '19SU';
-    const source = (process.env.INBOUND_SOURCE ?? 'history') as 'summary' | 'history';
+    const source = (process.env.INBOUND_SOURCE ?? 'summary') as 'summary' | 'history';
     const daysBeforeDate = formatDateForInbound(new Date());
     log.push('Starting inbound receipts sync');
     log.push(`Company ${config.companyId} • Location ${locationId}`);
     log.push(`DMS location code: ${dmsLoc}`);
     log.push(`Inbound source: ${source}`);
+    log.push('Inbound target date: all');
 
     const cookieHeader = await getCookieHeader(locationId);
     const inboundHtml = await fetchInboundHtml(source, dmsLoc, daysBeforeDate, cookieHeader);
@@ -469,8 +369,7 @@ export async function syncInboundReceipts(locationId: string): Promise<SyncResul
     log.push(`Inbound HTML contains table: ${inboundHtml.includes('tbl_list_inboundHistory')}`);
     const parsed = parseInboundHistory(inboundHtml);
     const rows = parsed.rows;
-    const maxShipments = Number.parseInt(process.env.INBOUND_MAX_SHIPMENTS || String(rows.length), 10);
-    const rowsToProcess = rows.slice(0, Math.max(1, maxShipments));
+    const rowsToProcess = rows;
     log.push(`Inbound rows (totRowRec=${parsed.totalRows}): ${rows.length}`);
     log.push(`Processing ${rowsToProcess.length} shipment(s)`);
 
@@ -503,50 +402,107 @@ export async function syncInboundReceipts(locationId: string): Promise<SyncResul
         .map((row) => row.inbound_shipment_no)
         .filter(Boolean)
     );
+    const forceReimport = process.env.INBOUND_FORCE_REIMPORT === 'true';
+    if (forceReimport) {
+      log.push('Force reimport enabled: existing inbound receipts will be reprocessed');
+    }
 
     let receiptsProcessed = 0;
     let itemsInserted = 0;
     let receiptsSkipped = 0;
 
     for (const row of rowsToProcess) {
-      if (existingShipmentSet.has(row.shipmentNumber)) {
+      if (!forceReimport && existingShipmentSet.has(row.shipmentNumber)) {
         receiptsSkipped += 1;
         continue;
       }
-      const pdfBuffer = await fetchInboundReportPdf(row, parsed.inputs, cookieHeader);
-      let pdfResult;
-      const pages: PdfTextItem[][] = [];
-      try {
-        pdfResult = await pdfParse(pdfBuffer, {
-          pagerender: (pageData: { getTextContent: () => Promise<{ items: PdfTextItem[] }> }) =>
-            pageData.getTextContent().then((textContent: { items: PdfTextItem[] }) => {
-              pages.push(textContent.items);
-              return '';
-            }),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        log.push(`PDF parse failed for ${row.shipmentNumber}: ${message}`);
+      const asnResponse = await fetchInboundAsnHtml(row.shipmentNumber, dmsLoc, cookieHeader);
+      let asnTable = parseInboundAsnTable(asnResponse.html);
+      let asnTypeLabel = 'default';
+
+      if (row.summaryUnits !== null && asnTable.rows.length < row.summaryUnits) {
+        const optionsEntries = Object.entries(asnResponse.selectOptions);
+        const typeEntry = optionsEntries.find(([, options]) =>
+          options.some((option) => option.label.toLowerCase() === 'ge' || option.value.toLowerCase() === 'ge')
+        );
+
+        if (typeEntry) {
+          const [typeName, options] = typeEntry;
+          const current = options.find((option) => option.selected) ?? options[0];
+          const optionValues = options
+            .map((option) => option.value)
+            .filter((value) => value && value !== current?.value);
+
+          if (optionValues.length > 0) {
+            log.push(`ASN type options for ${row.shipmentNumber} (${typeName}): ${options.map((option) => option.value).join(', ')}`);
+          }
+
+          for (const optionValue of optionValues) {
+            const altResponse = await fetchInboundAsnHtml(row.shipmentNumber, dmsLoc, cookieHeader, {
+              [typeName]: optionValue,
+            });
+            const altTable = parseInboundAsnTable(altResponse.html);
+            log.push(`ASN rows for ${row.shipmentNumber} using ${typeName}=${optionValue}: ${altTable.rows.length}`);
+            if (altTable.rows.length > asnTable.rows.length) {
+              asnTable = altTable;
+              asnTypeLabel = `${typeName}=${optionValue}`;
+            }
+          }
+        }
+      }
+      if (asnTable.headers.length === 0) {
+        log.push(`Inbound ASN table missing for ${row.shipmentNumber}`);
         continue;
       }
-      const { header, items } = parseReceivingReportFromLayout(pages);
-      const fallback = items.length === 0 ? parseReceivingReport(pdfResult.text) : null;
-      const finalItems = items.length > 0 ? items : fallback?.items ?? [];
-      const finalHeader = items.length > 0 ? header : fallback?.header ?? header;
 
-      const inboundShipmentNo = finalHeader.inboundShipmentNo ?? row.shipmentNumber;
+      const headerIndex = (name: string) =>
+        asnTable.headers.findIndex((header) => header.toLowerCase().includes(name));
+
+      const csoIndex = headerIndex('cso');
+      const trackingIndex = headerIndex('tracking');
+      const trackingStatusIndex = headerIndex('tracking # status');
+      const modelIndex = headerIndex('model');
+      const serialIndex = headerIndex('serial');
+
+      const unitsLabel = row.summaryUnits !== null ? String(row.summaryUnits) : 'n/a';
+      const asnRowCount = asnTable.rows.length;
+      const unitsGap = row.summaryUnits !== null ? Math.max(0, row.summaryUnits - asnRowCount) : null;
+      const gapLabel = unitsGap !== null ? String(unitsGap) : 'n/a';
+      log.push(`ASN rows for ${row.shipmentNumber}: ${asnRowCount} (summary units: ${unitsLabel}, gap: ${gapLabel}, type: ${asnTypeLabel})`);
+      log.push(`ASN headers for ${row.shipmentNumber}: ${asnTable.headers.join(' | ')}`);
+      if (asnTable.rows.length > 0) {
+        log.push(`ASN raw row ${row.shipmentNumber}: ${asnTable.rows[0].join(' | ')}`);
+      }
+      if (asnTable.rows.length > 0) {
+        const sample = asnTable.rows[0];
+        const sampleCso = csoIndex >= 0 ? sample[csoIndex] ?? '' : '';
+        const sampleTracking = trackingIndex >= 0 ? sample[trackingIndex] ?? '' : '';
+        const sampleModel = modelIndex >= 0 ? sample[modelIndex] ?? '' : '';
+        const sampleSerial = serialIndex >= 0 ? sample[serialIndex] ?? '' : '';
+        log.push(
+          `ASN sample ${row.shipmentNumber}: CSO=${sampleCso || 'n/a'} • Tracking=${sampleTracking || 'n/a'} • Model=${sampleModel || 'n/a'} • Serial=${sampleSerial || 'n/a'}`
+        );
+      }
+
+      const inboundShipmentNo = row.shipmentNumber;
+      const summaryUnits = row.summaryUnits;
+      const summaryPoints = row.summaryPoints;
       const receiptPayload = {
         company_id: config.companyId,
         location_id: locationId,
         inbound_shipment_no: inboundShipmentNo,
-        scac: finalHeader.scac ?? row.scac,
-        truck_number: finalHeader.truckNumber ?? row.truckNumber,
-        scheduled_arrival_date: finalHeader.scheduledArrivalDate ?? row.schdArrivalDate,
-        scheduled_arrival_time: finalHeader.scheduledArrivalTime ?? row.schdArrivalTime,
-        actual_arrival_time: finalHeader.actualArrivalTime,
-        total_units: finalHeader.totalUnits,
-        total_pc_units: finalHeader.totalPcUnits,
-        seal_number: finalHeader.sealNumber,
+        scac: row.scac,
+        truck_number: row.truckNumber,
+        scheduled_arrival_date: row.schdArrivalDate,
+        scheduled_arrival_time: row.schdArrivalTime,
+        actual_arrival_time: null,
+        total_units: null,
+        total_pc_units: null,
+        seal_number: null,
+        summary_units: summaryUnits,
+        summary_points: summaryPoints,
+        asn_row_count: asnRowCount,
+        units_gap: unitsGap,
         updated_at: new Date().toISOString(),
       };
 
@@ -558,22 +514,36 @@ export async function syncInboundReceipts(locationId: string): Promise<SyncResul
         throw new Error(`Failed to upsert inbound receipt: ${receiptError.message}`);
       }
 
-      const itemPayload = finalItems.map((item) => ({
+      if (forceReimport) {
+        const { error: deleteError } = await db
+          .from('inbound_receipt_items')
+          .delete()
+          .eq('company_id', config.companyId)
+          .eq('location_id', locationId)
+          .eq('inbound_shipment_no', inboundShipmentNo);
+        if (deleteError) {
+          throw new Error(`Failed to clear inbound receipt items: ${deleteError.message}`);
+        }
+      }
+
+      const itemPayload = asnTable.rows.map((cells, index) => ({
         company_id: config.companyId,
         location_id: locationId,
         inbound_shipment_no: inboundShipmentNo,
-        line_index: item.lineIndex,
-        cso: item.cso,
-        tracking_number: item.trackingNumber,
-        model: item.model,
-        serial: item.serial,
-        inbound_replacement: item.inboundReplacement,
-        qty: item.qty,
-        rcvd: item.rcvd,
-        short: item.short,
-        damage: item.damage,
-        serial_mix: item.serialMix,
-        raw_line: item.rawLine,
+        line_index: index,
+        cso: csoIndex >= 0 ? cells[csoIndex] ?? null : null,
+        tracking_number: trackingIndex >= 0 ? cells[trackingIndex] ?? null : null,
+        model: modelIndex >= 0 ? cells[modelIndex] ?? null : null,
+        serial: serialIndex >= 0 ? cells[serialIndex] ?? null : null,
+        inbound_replacement: null,
+        qty: trackingStatusIndex >= 0 && /^\d+$/.test(cells[trackingStatusIndex] ?? '')
+          ? Number.parseInt(cells[trackingStatusIndex] ?? '0', 10)
+          : null,
+        rcvd: null,
+        short: null,
+        damage: null,
+        serial_mix: null,
+        raw_line: cells.join(' | '),
       }));
 
       if (itemPayload.length > 0) {

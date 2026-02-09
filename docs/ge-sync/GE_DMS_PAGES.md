@@ -65,8 +65,10 @@ Complete reference of all documented pages in the GE Dealer Management System.
 **URL**: `/dms/inbound`
 **Purpose**: Workflow for processing inbound shipments from ADC
 **Type**: Workflow interface
-**Export**: None (data available via Downloads page)
-**Notes**: Workflow for receiving trucks from GE
+**Export**: None (summary + ASN tables are HTML)
+**Notes**:
+- Inbound Summary provides shipment list + unit counts
+- Inbound ASN tab exposes item-level rows via HTML table (Excel export may be incomplete)
 
 ### 7. Manifesting
 **URL**: `/dms/manifest`
@@ -99,7 +101,7 @@ Complete reference of all documented pages in the GE Dealer Management System.
 **URL**: `/dms/orderdata`
 **Purpose**: Comprehensive order data export with extensive filtering
 **Type**: Data export interface
-**Export**: CSV Spreadsheet, Excel Spreadsheet, Enhanced formats
+**Export**: CSV Spreadsheet, Excel Spreadsheet, Enhanced JSON (V1/V2)
 **Filters**:
 - Show: ALL, NEXT DAY/HOT SHOT, REVERSE, RETURN, MEET TRUCK, WORK ORDERS, WILL CALL
 - Status: ALL, SHIPPED, SHIPPED/PENDING, PICKED, PICKED/SHIPPED, CANCELLED, PENDING

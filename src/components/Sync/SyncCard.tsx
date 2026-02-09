@@ -44,6 +44,15 @@ export function SyncCard({
   const lastSyncText = formatRelativeTime(lastSyncAt);
   const displayStats = status.stats || storedLog?.details?.stats;
   const displayLog = status.log || storedLog?.details?.log;
+  const inboundGap = type === 'inbound' && displayLog
+    ? displayLog.reduce((maxGap, line) => {
+      const match = line.match(/gap:\s*(\d+)/i);
+      if (!match) return maxGap;
+      const value = Number.parseInt(match[1] ?? '', 10);
+      if (!Number.isFinite(value)) return maxGap;
+      return Math.max(maxGap, value);
+    }, 0)
+    : 0;
 
   return (
     <Card className="p-6 space-y-4">
@@ -68,6 +77,13 @@ export function SyncCard({
           <div className="rounded-lg border border-border/40 bg-muted/20 p-3 text-xs text-muted-foreground">
             {footer}
           </div>
+        )}
+
+        {inboundGap > 0 && (
+          <SyncStatusMessage
+            type="info"
+            message={`Inbound ASN rows do not match summary units. Gap: ${inboundGap}. See sync log for details.`}
+          />
         )}
 
         {displayLog && displayLog.length > 0 && (

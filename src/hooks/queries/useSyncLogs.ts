@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import supabase from '@/lib/supabase';
 import { getActiveLocationContext } from '@/lib/tenant';
 
-type SyncType = 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul' | 'inventory';
+type SyncType = 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul' | 'inventory' | 'orders';
 
 type SyncLogEntry = {
   id: string;
@@ -34,7 +34,7 @@ export function useRecentSyncLogs() {
         .from('activity_log')
         .select('id, action, created_at, details')
         .eq('location_id', locationId)
-        .in('action', ['asis_sync', 'fg_sync', 'sta_sync', 'inbound_sync', 'backhaul_sync', 'inventory_sync'])
+        .in('action', ['asis_sync', 'fg_sync', 'sta_sync', 'inbound_sync', 'backhaul_sync', 'inventory_sync', 'orders_sync'])
         .order('created_at', { ascending: false })
         .limit(20);
 

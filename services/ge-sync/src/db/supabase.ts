@@ -98,7 +98,7 @@ export async function getProductLookup(_companyId: string) {
  */
 export async function updateSyncTimestamp(
   locationId: string,
-  syncType: 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul' | 'inventory'
+  syncType: 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul' | 'inventory' | 'orders'
 ) {
   const db = getSupabase();
   const columnName = `last_sync_${syncType}_at`;

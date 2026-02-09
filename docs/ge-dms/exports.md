@@ -8,6 +8,7 @@ These are the GE DMS pages that the sync relies on or that provide core operatio
    - Doc: [/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-newasis.md](/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-newasis.md)
 2. **Order Download** (`/dms/orderdata`)
    - Export formats: CSV, Excel, Enhanced (V1/V2)
+   - Enhanced export provides JSON with deliveries + line items
    - Doc: [/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-orderdata.md](/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-orderdata.md)
 3. **Downloads** (`/dms/checkin/downloadsindex`)
    - Reports: CHECK‑IN, CHECK‑IN WITH LINES, PARKING LOT, INBOUND, CANCELLATIONS
@@ -22,6 +23,7 @@ These are the GE DMS pages that the sync relies on or that provide core operatio
 ## Usage Notes
 - Exports are the only reliable source for bulk data.
 - If an export is missing or fails, the Warehouse app will be stale.
+- Inbound ASN is not reliable via Excel export; use the HTML table from `/dms/inbound/inboundasn`.
 
 ## Source of Truth
 - `docs/ge-sync/GE_DMS_PAGES.md`

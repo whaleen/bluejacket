@@ -1,4 +1,4 @@
-export type GeSyncType = 'asis' | 'fg' | 'sta' | 'inbound' | 'inventory';
+export type GeSyncType = 'asis' | 'fg' | 'sta' | 'inbound' | 'inventory' | 'orders';
 
 const GE_SYNC_URL =
   (import.meta.env.VITE_GE_SYNC_URL as string | undefined) ?? 'http://localhost:3001';
@@ -14,14 +14,14 @@ export type GeSyncStats = {
 
 export type GeSyncLog = string[];
 
-export async function syncGeInventory(type: GeSyncType, locationId: string) {
+export async function syncGeInventory(type: GeSyncType, locationId: string, options?: Record<string, unknown>) {
   const response = await fetch(`${GE_SYNC_URL}/sync/${type}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(GE_SYNC_API_KEY ? { 'X-API-Key': GE_SYNC_API_KEY } : {}),
     },
-    body: JSON.stringify({ locationId }),
+    body: JSON.stringify({ locationId, ...(options ? { options } : {}) }),
   });
 
   const payload = await response.json().catch(() => null);

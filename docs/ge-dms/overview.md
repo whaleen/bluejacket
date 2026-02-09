@@ -8,6 +8,7 @@ GE DMS (Dealer Management System) is the external GE system used to manage order
 - **FG/STA**: ERP inventory export
 - **Orders**: order download export
 - **Inbound/Check‑In**: downloads page reports
+- **Inbound ASN**: item rows are only available via HTML table (ERP Shipment lookup)
 
 ## Where to Start
 - Use **Downloads** for operational reports (check‑in, inbound, parking lot, cancellations).

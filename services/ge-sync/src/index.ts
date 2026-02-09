@@ -4,6 +4,7 @@ import { getAuthStatus, refreshAuth } from './auth/playwright.js';
 import { syncASIS } from './sync/asis.js';
 import { syncSimpleInventory } from './sync/inventory.js';
 import { syncInboundReceipts } from './sync/inbound.js';
+import { syncOrders } from './sync/orders.js';
 import { syncBackhaul } from './sync/backhaul.js';
 import { logSyncActivity } from './db/activityLog.js';
 import { getLocationConfig, updateSyncTimestamp } from './db/supabase.js';
@@ -707,6 +708,52 @@ app.post('/sync/inbound', async (req, res) => {
     }
 
     res.status(500).json(result);
+  }
+});
+
+app.post('/sync/orders', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { locationId, options } = req.body;
+    if (!locationId) {
+      return res.status(400).json({ error: 'Missing locationId' });
+    }
+
+    const syncResult = await syncOrders(locationId, options);
+    const config = await getLocationConfig(locationId);
+    await logSyncActivity({
+      locationId: config.locationId,
+      companyId: config.companyId,
+      action: 'orders_sync',
+      success: syncResult.success,
+      details: {
+        duration_ms: Date.now() - startTime,
+        ...syncResult.stats,
+        log: syncResult.log,
+      },
+      ...(syncResult.success ? {} : { error: syncResult.error }),
+    });
+    res.json(syncResult);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Orders sync failed';
+    console.error('Orders sync failed:', error);
+    try {
+      const { locationId } = req.body;
+      if (locationId) {
+        const config = await getLocationConfig(locationId);
+        await logSyncActivity({
+          locationId: config.locationId,
+          companyId: config.companyId,
+          action: 'orders_sync',
+          success: false,
+          details: { duration_ms: Date.now() - startTime },
+          error: message,
+        });
+      }
+    } catch (logError) {
+      console.error('Failed to log orders sync error:', logError);
+    }
+    res.status(500).json({ error: message });
   }
 });
 

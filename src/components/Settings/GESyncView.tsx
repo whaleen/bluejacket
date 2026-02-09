@@ -11,7 +11,7 @@ function getSyncTypeFromUrl(): SyncType | null {
   const segments = path.split('/').filter(Boolean);
   // segments: ['settings', 'gesync', 'asis']
   const type = segments[2];
-  const validTypes: SyncType[] = ['asis', 'fg', 'sta', 'inbound', 'backhaul', 'inventory'];
+  const validTypes: SyncType[] = ['asis', 'fg', 'sta', 'inbound', 'backhaul', 'inventory', 'orders'];
   return validTypes.includes(type as SyncType) ? (type as SyncType) : null;
 }
 

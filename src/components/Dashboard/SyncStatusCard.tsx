@@ -11,7 +11,7 @@ interface SyncStatusCardProps {
   onViewChange?: (view: AppView) => void;
 }
 
-type SyncType = 'inventory' | 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul';
+type SyncType = 'inventory' | 'asis' | 'fg' | 'sta' | 'inbound' | 'backhaul' | 'orders';
 
 const SYNC_LABELS: Record<SyncType, string> = {
   inventory: 'All Inventory',
@@ -19,10 +19,11 @@ const SYNC_LABELS: Record<SyncType, string> = {
   fg: 'FG',
   sta: 'STA',
   inbound: 'Inbound',
+  orders: 'Orders',
   backhaul: 'Backhaul',
 };
 
-const SYNC_DISPLAY_ORDER: SyncType[] = ['inventory', 'asis', 'fg', 'sta', 'inbound', 'backhaul'];
+const SYNC_DISPLAY_ORDER: SyncType[] = ['inventory', 'asis', 'fg', 'sta', 'inbound', 'orders', 'backhaul'];
 
 export function SyncStatusCard({ onViewChange }: SyncStatusCardProps) {
   const { locationId } = getActiveLocationContext();

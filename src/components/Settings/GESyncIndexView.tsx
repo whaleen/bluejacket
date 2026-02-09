@@ -1,6 +1,6 @@
 import { AppHeader } from "@/components/Navigation/AppHeader";
 import { Card } from "@/components/ui/card";
-import { Database, Package, Truck, ClipboardList, Archive, RefreshCw } from "lucide-react";
+import { Database, Package, Truck, ClipboardList, Archive, RefreshCw, ClipboardCheck } from "lucide-react";
 import { PageContainer } from "@/components/Layout/PageContainer";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSyncHandler } from "@/hooks/useSyncHandler";
@@ -72,6 +72,9 @@ export function GESyncIndexView({ onMenuClick }: GESyncIndexViewProps) {
                 <p className="text-xs">
                   <strong>Inbound:</strong> Receiving reports (arrival shipments)
                 </p>
+                <p className="text-xs">
+                  <strong>Orders:</strong> Order history and delivery windows
+                </p>
               </div>
               <div className="pt-2 text-xs text-muted-foreground">
                 Endpoint: {geSyncUrl}
@@ -137,6 +140,15 @@ export function GESyncIndexView({ onMenuClick }: GESyncIndexViewProps) {
               icon={ClipboardList}
               lastSyncAt={getLastSyncAt("inbound")}
               status={syncStatuses.inbound}
+              onClick={navigateToDetail}
+            />
+            <SyncCardPreview
+              type="orders"
+              title="Orders"
+              description="Sync orders from Order Data"
+              icon={ClipboardCheck}
+              lastSyncAt={getLastSyncAt("orders")}
+              status={syncStatuses.orders}
               onClick={navigateToDetail}
             />
             <SyncCardPreview

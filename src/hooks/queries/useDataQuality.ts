@@ -3,42 +3,43 @@ import supabase from '@/lib/supabase';
 import { getActiveLocationContext } from '@/lib/tenant';
 
 export interface DataQualityMetrics {
-  catalogCoverage: {
-    overall: number;
-    byType: Array<{
-      inventoryType: string;
-      total: number;
-      withProduct: number;
-      withoutProduct: number;
-    }>;
+  inventoryIntegrity: {
+    totalItems: number; // Deduplicated count
+    asisStaDuplicates: number; // Expected duplicates
+    duplicateSerials: number; // BAD - data corruption
+    orphanedItems: number; // Disappeared from GE
   };
-  geFieldCompleteness: {
-    overall: number;
-    byType: Array<{
-      inventoryType: string;
-      totalItems: number;
-      fields: Array<{
-        field: string;
-        populated: number;
-      }>;
-    }>;
+  productCatalog: {
+    totalModels: number;
+    modelsWithProduct: number;
+    modelsMissingProduct: number;
+    coveragePercent: number;
   };
-  conflicts: {
-    open: number;
-    resolved: number;
+  orderLinkage: {
+    itemsWithCso: number;
+    csosMatchedToOrders: number;
+    orphanedCsos: number; // Items have CSO but no order record
+    coveragePercent: number;
   };
-  changes: {
-    unprocessed: number;
-    processed: number;
-    byType: Array<{
-      changeType: string;
-      count: number;
-    }>;
-  };
-  loadIntegrity: {
+  loadAssignments: {
     totalLoads: number;
     itemsWithLoads: number;
-    orphanedItems: number;
+    loadsWithMetadata: number;
+    orphanedLoadAssignments: number; // Items in non-existent loads
+  };
+  scanCoverage: {
+    totalItems: number;
+    itemsWithScans: number;
+    scannedLast30Days: number;
+    neverScanned: number;
+    coveragePercent: number;
+  };
+  syncHealth: {
+    lastSyncAsisAt: string | null;
+    lastSyncStaAt: string | null;
+    lastSyncFgAt: string | null;
+    lastSyncInboundAt: string | null;
+    lastSyncOrdersAt: string | null;
   };
 }
 
@@ -50,206 +51,182 @@ async function fetchDataQuality(
     throw new Error('Company ID and Location ID are required');
   }
 
-  // 1. Catalog Coverage - Direct query
-  const { data: inventoryItems, error: catalogError } = await supabase
+  // Fetch ALL inventory items
+  const { data: allItems, error: fetchError } = await supabase
     .from('inventory_items')
-    .select('inventory_type, model, product_fk')
+    .select('*')
     .eq('company_id', companyId)
     .eq('location_id', locationId);
 
-  if (catalogError) {
-    console.error('Catalog coverage error:', catalogError);
-    throw catalogError;
+  if (fetchError) throw fetchError;
+
+  // Count ASIS/STA duplicates and deduplicate
+  const bySerial = new Map<string, typeof allItems[0][]>();
+  for (const item of allItems || []) {
+    if (!item.serial) continue;
+    const existing = bySerial.get(item.serial) || [];
+    existing.push(item);
+    bySerial.set(item.serial, existing);
   }
 
-  type CatalogAcc = Record<string, { inventoryType: string; models: Set<string>; withProduct: Set<string> }>;
+  let asisStaDuplicates = 0;
+  let duplicateSerials = 0;
+  const deduplicated: typeof allItems = [];
 
-  const byType = inventoryItems
-    ? Object.entries(
-        inventoryItems.reduce((acc: CatalogAcc, item) => {
-          if (!acc[item.inventory_type]) {
-            acc[item.inventory_type] = {
-              inventoryType: item.inventory_type,
-              models: new Set(),
-              withProduct: new Set(),
-            };
-          }
-          acc[item.inventory_type].models.add(item.model);
-          if (item.product_fk) {
-            acc[item.inventory_type].withProduct.add(item.model);
-          }
-          return acc;
-        }, {})
-      ).map(([, value]) => ({
-        inventoryType: value.inventoryType,
-        total: value.models.size,
-        withProduct: value.withProduct.size,
-        withoutProduct: value.models.size - value.withProduct.size,
-      }))
-    : [];
+  for (const itemsWithSerial of bySerial.values()) {
+    if (itemsWithSerial.length === 1) {
+      deduplicated.push(itemsWithSerial[0]);
+      continue;
+    }
 
-  const catalogData = byType;
+    const staItem = itemsWithSerial.find(i => i.inventory_type === 'STA');
+    const asisItem = itemsWithSerial.find(i => i.inventory_type === 'ASIS');
 
-  const totalModels = catalogData.reduce((sum, t) => sum + t.total, 0);
-  const totalWithProduct = catalogData.reduce((sum, t) => sum + t.withProduct, 0);
-  const catalogCoverage = {
-    overall: totalModels > 0 ? Math.round((totalWithProduct / totalModels) * 100) : 0,
-    byType: catalogData || [],
-  };
-
-  // 2. GE Field Completeness - Direct query
-  const { data: items, error: geFieldError } = await supabase
-    .from('inventory_items')
-    .select(
-      'inventory_type, ge_availability_status, ge_ordc, ge_model, ge_serial, ge_inv_qty'
-    )
-    .eq('company_id', companyId)
-    .eq('location_id', locationId);
-
-  if (geFieldError) {
-    console.error('GE field error:', geFieldError);
-    throw geFieldError;
+    if (staItem && asisItem) {
+      // Expected ASIS/STA duplicate
+      asisStaDuplicates++;
+      deduplicated.push(staItem);
+    } else {
+      // Unexpected duplicate (data corruption)
+      duplicateSerials++;
+      deduplicated.push(itemsWithSerial[0]);
+    }
   }
 
-  type GEFieldAcc = Record<string, {
-    inventoryType: string;
-    totalItems: number;
-    availability: number;
-    ordc: number;
-    model: number;
-    serial: number;
-    invQty: number;
-  }>;
+  const withoutSerial = (allItems || []).filter(i => !i.serial);
+  deduplicated.push(...withoutSerial);
 
-  const geFieldData = items
-    ? Object.entries(
-        items.reduce((acc: GEFieldAcc, item) => {
-          if (!acc[item.inventory_type]) {
-            acc[item.inventory_type] = {
-              inventoryType: item.inventory_type,
-              totalItems: 0,
-              availability: 0,
-              ordc: 0,
-              model: 0,
-              serial: 0,
-              invQty: 0,
-            };
-          }
-          acc[item.inventory_type].totalItems++;
-          if (item.ge_availability_status) acc[item.inventory_type].availability++;
-          if (item.ge_ordc) acc[item.inventory_type].ordc++;
-          if (item.ge_model) acc[item.inventory_type].model++;
-          if (item.ge_serial) acc[item.inventory_type].serial++;
-          if (item.ge_inv_qty) acc[item.inventory_type].invQty++;
-          return acc;
-        }, {})
-      ).map(([, value]) => ({
-        inventoryType: value.inventoryType,
-        totalItems: value.totalItems,
-        fields: [
-          { field: 'availability', populated: value.availability },
-          { field: 'ordc', populated: value.ordc },
-          { field: 'model', populated: value.model },
-          { field: 'serial', populated: value.serial },
-          { field: 'invQty', populated: value.invQty },
-        ],
-      }))
-    : [];
+  const inventoryItems = deduplicated;
 
-  const totalItems = geFieldData.reduce((sum, t) => sum + t.totalItems, 0);
-  const totalFieldsPopulated = geFieldData.reduce(
-    (sum, t) =>
-      sum + t.fields.reduce((s, f) => s + f.populated, 0),
-    0
-  );
-  const totalFieldSlots = totalItems * 5; // 5 fields tracked
-  const geFieldCompleteness = {
-    overall:
-      totalFieldSlots > 0 ? Math.round((totalFieldsPopulated / totalFieldSlots) * 100) : 0,
-    byType: geFieldData || [],
-  };
-
-  // 3. Conflicts
-  const { data: conflictsData } = await supabase
-    .from('inventory_conflicts')
-    .select('status')
-    .eq('company_id', companyId)
-    .eq('location_id', locationId);
-
-  const conflicts = {
-    open: conflictsData?.filter((c) => c.status === 'open').length || 0,
-    resolved: conflictsData?.filter((c) => c.status === 'resolved').length || 0,
-  };
-
-  // 4. Changes
-  const { data: changesData } = await supabase
-    .from('ge_changes')
-    .select('change_type, processed')
-    .eq('company_id', companyId)
-    .eq('location_id', locationId);
-
-  const changesByType = changesData
-    ? Object.entries(
-        changesData.reduce((acc: Record<string, number>, change) => {
-          acc[change.change_type] = (acc[change.change_type] || 0) + 1;
-          return acc;
-        }, {})
-      )
-        .map(([changeType, count]) => ({
-          changeType,
-          count: count as number,
-        }))
-        .sort((a, b) => b.count - a.count)
-    : [];
-
-  const changes = {
-    unprocessed: changesData?.filter((c) => !c.processed).length || 0,
-    processed: changesData?.filter((c) => c.processed).length || 0,
-    byType: changesByType,
-  };
-
-  // 5. Load Integrity
-  const { data: loadsData } = await supabase
-    .from('load_metadata')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('location_id', locationId);
-
-  const { data: itemsWithLoadsData } = await supabase
-    .from('inventory_items')
-    .select('id, sub_inventory, inventory_type')
-    .eq('company_id', companyId)
-    .eq('location_id', locationId)
-    .not('sub_inventory', 'is', null);
-
-  const { data: loadMetadataList } = await supabase
-    .from('load_metadata')
-    .select('sub_inventory_name, inventory_type')
-    .eq('company_id', companyId)
-    .eq('location_id', locationId);
-
-  const loadMetadataKeys = new Set(
-    loadMetadataList?.map((l) => `${l.inventory_type}:${l.sub_inventory_name}`) || []
-  );
-
-  const itemsWithLoads = itemsWithLoadsData?.filter((item) =>
-    loadMetadataKeys.has(`${item.inventory_type}:${item.sub_inventory}`)
-  ).length || 0;
-
-  const orphanedItems = (itemsWithLoadsData?.length || 0) - itemsWithLoads;
-
-  const loadIntegrity = {
-    totalLoads: loadsData?.length || 0,
-    itemsWithLoads,
+  // 1. Inventory Integrity
+  const orphanedItems = inventoryItems.filter(i => i.ge_orphaned === true).length;
+  const inventoryIntegrity = {
+    totalItems: inventoryItems.length,
+    asisStaDuplicates,
+    duplicateSerials,
     orphanedItems,
   };
 
+  // 2. Product Catalog
+  const uniqueModels = new Set(inventoryItems.map(i => i.model));
+  const modelsWithProduct = new Set(
+    inventoryItems.filter(i => i.product_fk).map(i => i.model)
+  );
+  const productCatalog = {
+    totalModels: uniqueModels.size,
+    modelsWithProduct: modelsWithProduct.size,
+    modelsMissingProduct: uniqueModels.size - modelsWithProduct.size,
+    coveragePercent: uniqueModels.size > 0
+      ? Math.round((modelsWithProduct.size / uniqueModels.size) * 100)
+      : 0,
+  };
+
+  // 3. Order Linkage
+  const itemsWithCso = inventoryItems.filter(i => i.cso && i.cso !== '').length;
+  const uniqueCsos = new Set(
+    inventoryItems.filter(i => i.cso && i.cso !== '').map(i => i.cso)
+  );
+
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('cso')
+    .eq('company_id', companyId)
+    .eq('location_id', locationId);
+
+  const orderCsos = new Set((orders || []).map(o => o.cso));
+  const csosMatchedToOrders = Array.from(uniqueCsos).filter(cso => orderCsos.has(cso)).length;
+  const orphanedCsos = uniqueCsos.size - csosMatchedToOrders;
+
+  const orderLinkage = {
+    itemsWithCso,
+    csosMatchedToOrders,
+    orphanedCsos,
+    coveragePercent: uniqueCsos.size > 0
+      ? Math.round((csosMatchedToOrders / uniqueCsos.size) * 100)
+      : 0,
+  };
+
+  // 4. Load Assignments
+  const { data: loads } = await supabase
+    .from('load_metadata')
+    .select('sub_inventory_name')
+    .eq('company_id', companyId)
+    .eq('location_id', locationId);
+
+  const loadNames = new Set(
+    (loads || []).map(l => l.sub_inventory_name)
+  );
+  const itemsWithLoads = inventoryItems.filter(i => i.sub_inventory).length;
+  const orphanedLoadAssignments = inventoryItems.filter(
+    i => i.sub_inventory && !loadNames.has(i.sub_inventory)
+  ).length;
+
+  const loadAssignments = {
+    totalLoads: loads?.length || 0,
+    itemsWithLoads,
+    loadsWithMetadata: loads?.length || 0,
+    orphanedLoadAssignments,
+  };
+
+  // 5. Scan Coverage - query product_location_history table
+  const { data: scans } = await supabase
+    .from('product_location_history')
+    .select('inventory_item_id, created_at')
+    .eq('company_id', companyId)
+    .eq('location_id', locationId)
+    .not('inventory_item_id', 'is', null);
+
+  const scannedItemIds = new Set(
+    (scans || []).map(s => s.inventory_item_id).filter(Boolean)
+  );
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const scannedItemIdsLast30Days = new Set(
+    (scans || [])
+      .filter(s => new Date(s.created_at) > thirtyDaysAgo)
+      .map(s => s.inventory_item_id)
+      .filter(Boolean)
+  );
+
+  const itemsWithScans = inventoryItems.filter(i => scannedItemIds.has(i.id)).length;
+  const scannedLast30Days = inventoryItems.filter(i => scannedItemIdsLast30Days.has(i.id)).length;
+  const neverScanned = inventoryItems.length - itemsWithScans;
+
+  const scanCoverage = {
+    totalItems: inventoryItems.length,
+    itemsWithScans,
+    scannedLast30Days,
+    neverScanned,
+    coveragePercent: inventoryItems.length > 0
+      ? Math.round((itemsWithScans / inventoryItems.length) * 100)
+      : 0,
+  };
+
+  // 6. Sync Health
+  const { data: settings } = await supabase
+    .from('settings')
+    .select('last_sync_asis_at, last_sync_sta_at, last_sync_fg_at, last_sync_inbound_at, last_sync_orders_at')
+    .eq('company_id', companyId)
+    .eq('location_id', locationId)
+    .single();
+
+  const syncHealth = {
+    lastSyncAsisAt: settings?.last_sync_asis_at || null,
+    lastSyncStaAt: settings?.last_sync_sta_at || null,
+    lastSyncFgAt: settings?.last_sync_fg_at || null,
+    lastSyncInboundAt: settings?.last_sync_inbound_at || null,
+    lastSyncOrdersAt: settings?.last_sync_orders_at || null,
+  };
+
   return {
-    catalogCoverage,
-    geFieldCompleteness,
-    conflicts,
-    changes,
-    loadIntegrity,
+    inventoryIntegrity,
+    productCatalog,
+    orderLinkage,
+    loadAssignments,
+    scanCoverage,
+    syncHealth,
   };
 }
 

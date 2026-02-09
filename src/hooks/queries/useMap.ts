@@ -66,37 +66,12 @@ export function useInventoryItemCount() {
     queryFn: async () => {
       if (!locationId) return 0;
 
-      // Get delivered load names to exclude their items from count
-      const { data: deliveredLoads } = await supabase
-        .from('load_metadata')
-        .select('sub_inventory_name')
-        .eq('location_id', locationId)
-        .eq('ge_cso_status', 'Delivered');
-
-      const deliveredLoadNames = deliveredLoads?.map(l => l.sub_inventory_name) ?? [];
-
-      // If no delivered loads, use simple count
-      if (deliveredLoadNames.length === 0) {
-        const { count, error } = await supabase
-          .from('inventory_items')
-          .select('id', { count: 'exact', head: true })
-          .eq('location_id', locationId);
-
-        if (error) throw error;
-        return count ?? 0;
-      }
-
-      // Otherwise, fetch all items and filter
+      // Use database function to get deduplicated count (excludes ASIS/STA duplicates and delivered loads)
       const { data, error } = await supabase
-        .from('inventory_items')
-        .select('id, sub_inventory')
-        .eq('location_id', locationId);
+        .rpc('get_total_inventory_count', { p_location_id: locationId });
 
       if (error) throw error;
-
-      return (data ?? []).filter(
-        item => !item.sub_inventory || !deliveredLoadNames.includes(item.sub_inventory)
-      ).length;
+      return Number(data) || 0;
     },
   });
 }
@@ -105,7 +80,7 @@ export function useInventoryScanCounts() {
   const { locationId } = getActiveLocationContext();
 
   return useQuery({
-    queryKey: ['inventory-scan-counts-v4', locationId ?? 'none'], // v4: pagination to fetch all rows
+    queryKey: ['inventory-scan-counts-v5', locationId ?? 'none'], // v5: use load_metadata fields
     enabled: !!locationId,
     staleTime: 0, // Force refetch
     gcTime: 0, // Don't cache
@@ -114,26 +89,22 @@ export function useInventoryScanCounts() {
         return { totalByKey: new Map<string, number>(), scannedByKey: new Map<string, number>() };
       }
 
-      // Use database functions to get counts efficiently
-      const { data: totalCounts, error: totalError } = await supabase
-        .rpc('get_inventory_counts', { p_location_id: locationId });
+      // Query load_metadata directly (same as ASIS page)
+      const { data: loads, error } = await supabase
+        .from('load_metadata')
+        .select('sub_inventory_name, items_total_count, items_scanned_count')
+        .eq('location_id', locationId);
 
-      if (totalError) throw totalError;
+      if (error) throw error;
 
-      const { data: scannedCounts, error: scannedError } = await supabase
-        .rpc('get_scanned_counts', { p_location_id: locationId });
-
-      if (scannedError) throw scannedError;
-
-      // Convert to Maps
+      // Convert to Maps with 'load:' prefix
       const totalByKey = new Map<string, number>();
-      for (const row of totalCounts ?? []) {
-        totalByKey.set(row.key, Number(row.total_count));
-      }
-
       const scannedByKey = new Map<string, number>();
-      for (const row of scannedCounts ?? []) {
-        scannedByKey.set(row.key, Number(row.scanned_count));
+
+      for (const load of loads ?? []) {
+        const key = `load:${load.sub_inventory_name}`;
+        totalByKey.set(key, load.items_total_count || 0);
+        scannedByKey.set(key, load.items_scanned_count || 0);
       }
 
       return { totalByKey, scannedByKey };

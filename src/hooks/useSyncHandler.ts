@@ -6,7 +6,7 @@ import { useRecentSyncLogs } from '@/hooks/queries/useSyncLogs';
 import { getActiveLocationContext } from '@/lib/tenant';
 import { syncBackhaul } from '@/lib/geSync';
 
-export type SyncType = "asis" | "fg" | "sta" | "inbound" | "inventory" | "backhaul";
+export type SyncType = "asis" | "fg" | "sta" | "inbound" | "inventory" | "backhaul" | "orders";
 
 export interface SyncStatus {
   type: SyncType;
@@ -35,6 +35,7 @@ export function useSyncHandler() {
     sta: { type: "sta", loading: false, success: null, error: null },
     inbound: { type: "inbound", loading: false, success: null, error: null },
     backhaul: { type: "backhaul", loading: false, success: null, error: null },
+    orders: { type: "orders", loading: false, success: null, error: null },
   });
 
   const navigateToSyncDetail = (type: SyncType) => {
@@ -43,7 +44,7 @@ export function useSyncHandler() {
     window.dispatchEvent(new Event('app:locationchange'));
   };
 
-  const handleSync = async (type: SyncType) => {
+  const handleSync = async (type: SyncType, options?: Record<string, unknown>) => {
     const { locationId } = getActiveLocationContext();
 
     if (!locationId) {
@@ -66,7 +67,7 @@ export function useSyncHandler() {
     try {
       const result = type === "backhaul"
         ? await syncBackhaul(locationId, { includeClosed: true })
-        : await geSyncMutation.mutateAsync({ type, locationId });
+        : await geSyncMutation.mutateAsync({ type, locationId, options });
 
       setSyncStatuses((prev) => ({
         ...prev,

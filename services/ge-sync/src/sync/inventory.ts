@@ -237,7 +237,7 @@ export async function syncSimpleInventory(
 
     const { data: existingItems, error: fetchError } = await db
       .from('inventory_items')
-      .select('id, serial, model, ge_availability_status, ge_availability_message, ge_inv_qty, inventory_type')
+      .select('id, serial, model, ge_availability_status, ge_availability_message, ge_inv_qty, inventory_type, sub_inventory, cso')
       .eq('company_id', config.companyId)
       .eq('location_id', locationId)
       .in('inventory_type', inventoryTypesToFetch);
@@ -248,6 +248,59 @@ export async function syncSimpleInventory(
 
     console.log(`[${inventoryType}] Existing items in DB: ${existingItems?.length || 0}`);
     log.push(`Existing items in DB: ${existingItems?.length || 0}`);
+
+    // Fetch load CSO mappings for STA items
+    const loadCsoMap = new Map<string, string>();
+    const serialCsoMap = new Map<string, string>();
+    if (inventoryType === 'STA') {
+      const { data: loads, error: loadError } = await db
+        .from('load_metadata')
+        .select('sub_inventory_name, ge_cso')
+        .eq('company_id', config.companyId)
+        .eq('location_id', locationId)
+        .not('ge_cso', 'is', null)
+        .neq('ge_cso', '');
+
+      if (loadError) {
+        console.warn(`[${inventoryType}] Failed to fetch load CSO mappings: ${loadError.message}`);
+      } else if (loads) {
+        for (const load of loads) {
+          if (load.sub_inventory_name && load.ge_cso) {
+            loadCsoMap.set(load.sub_inventory_name, load.ge_cso);
+          }
+        }
+        console.log(`[${inventoryType}] Loaded ${loadCsoMap.size} load CSO mappings`);
+        log.push(`Loaded ${loadCsoMap.size} load CSO mappings`);
+      }
+
+      // Fetch serial→CSO mappings from order_lines for STA items without loads
+      const { data: orderLines, error: orderError } = await db
+        .from('order_lines')
+        .select('cso, serials')
+        .eq('location_id', locationId)
+        .not('cso', 'is', null)
+        .neq('cso', '');
+
+      if (orderError) {
+        console.warn(`[${inventoryType}] Failed to fetch order line CSO mappings: ${orderError.message}`);
+      } else if (orderLines) {
+        for (const line of orderLines) {
+          if (!line.cso || !line.serials) continue;
+          // serials is JSONB array like [{"serial": "ABC123"}]
+          const serialsArray = Array.isArray(line.serials) ? line.serials : [];
+          for (const serialObj of serialsArray) {
+            const serial = typeof serialObj === 'object' && serialObj !== null && 'serial' in serialObj
+              ? String(serialObj.serial).trim()
+              : '';
+            if (serial && serial !== '') {
+              serialCsoMap.set(serial, line.cso);
+            }
+          }
+        }
+        console.log(`[${inventoryType}] Loaded ${serialCsoMap.size} serial→CSO mappings from order_lines`);
+        log.push(`Loaded ${serialCsoMap.size} serial→CSO mappings from order_lines`);
+      }
+    }
 
     // Build maps for comparison
     // For STA sync: prefer existing STA items over ASIS items (in case both exist)
@@ -271,6 +324,7 @@ export async function syncSimpleInventory(
       serial: string;
       model: string;
       cso: string;
+      sub_inventory?: string;
       product_type: string;
       product_fk: string | null;
       ge_model: string;
@@ -290,6 +344,7 @@ export async function syncSimpleInventory(
       const qty = item['Inv Qty'];
       const status = item['Availability Status'];
       const message = item['Availability Message'];
+      const loadNumber = item['LOAD NUMBER'] || item['Load Number'] || '';
 
       geSerials.add(serial);
 
@@ -409,6 +464,24 @@ export async function syncSimpleInventory(
         }
       }
 
+      // Determine CSO value for STA items
+      let csoValue = '';
+      if (inventoryType === 'STA') {
+        if (existingItem?.sub_inventory) {
+          // STA items with load assignment: look up load's CSO
+          csoValue = loadCsoMap.get(existingItem.sub_inventory) || existingItem.cso || '';
+        } else if (existingItem?.cso) {
+          // Preserve existing CSO
+          csoValue = existingItem.cso;
+        } else {
+          // No load, no existing CSO: check order_lines by serial
+          csoValue = serialCsoMap.get(serial) || '';
+        }
+      } else if (existingItem?.cso) {
+        // Non-STA items: preserve existing CSO
+        csoValue = existingItem.cso;
+      }
+
       // Prepare upsert
       itemsToUpsert.push({
         ...(existingItem?.id ? { id: existingItem.id } : {}),
@@ -417,7 +490,8 @@ export async function syncSimpleInventory(
         inventory_type: inventoryType,
         serial,
         model,
-        cso: '', // No CSO for simple inventory
+        cso: csoValue,
+        ...(loadNumber ? { sub_inventory: loadNumber.trim() } : existingItem?.sub_inventory ? { sub_inventory: existingItem.sub_inventory } : {}),
         product_type: productInfo?.product_type || 'Unknown',
         product_fk: productInfo?.id || null,
         ge_model: model,

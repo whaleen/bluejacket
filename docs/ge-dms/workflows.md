@@ -5,6 +5,7 @@
   - Doc: [/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-checkin.md](/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-checkin.md)
 - **Inbound** (`/dms/inbound`): process inbound shipments
   - Doc: [/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-inbound.md](/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-inbound.md)
+  - Notes: Use Inbound ASN tab for item rows; summary units can exceed ASN rows.
 - **Parking Lot** (`/dms/parkinglot`): picked orders awaiting delivery
   - Doc: [/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-parkinglot.md](/docs?doc=docs%2Fge-dms%2Fpages%2Fdms-erp-aws-prd-geappliances-com-dms-parkinglot.md)
 - **Cancellations** (`/dms/cancel`): order cancellation workflow
