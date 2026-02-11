@@ -1,5 +1,6 @@
 // components/Auth/AvatarUploader.tsx
 import { useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import supabase from "@/lib/supabase"
 import { useAuth } from "@/context/AuthContext"
 import { User as UserIcon } from "lucide-react"
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/button"
 
 export function AvatarUploader() {
   const { user, updateUser } = useAuth()
+  const queryClient = useQueryClient()
   const [uploading, setUploading] = useState(false)
 
   if (!user) return null
@@ -19,8 +21,8 @@ export function AvatarUploader() {
     setUploading(true)
 
     try {
-      const ext = file.name.split(".").pop() ?? "png"
-      const fileName = `${user.id}.${ext}`
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "png"
+      const fileName = `avatar.${ext}`
       const filePath = `${user.id}/${fileName}`
 
       // Upload file to Supabase Storage
@@ -37,9 +39,25 @@ export function AvatarUploader() {
 
       if (!publicUrl) throw new Error("No public URL")
 
+      const cacheBustedUrl = `${publicUrl}?v=${Date.now()}`
+
+      // Remove any other files in this user's folder
+      const { data: existingFiles } = await supabase.storage
+        .from("avatars")
+        .list(user.id)
+
+      const staleFiles = (existingFiles ?? [])
+        .filter((storedFile) => storedFile.name !== fileName)
+        .map((storedFile) => `${user.id}/${storedFile.name}`)
+
+      if (staleFiles.length > 0) {
+        await supabase.storage.from("avatars").remove(staleFiles)
+      }
 
       // Update user.image in DB
-      await updateUser({ image: publicUrl })
+      await updateUser({ image: cacheBustedUrl })
+
+      queryClient.invalidateQueries({ queryKey: ['activity'] })
     } catch (err) {
       console.error("Avatar upload failed:", err)
     } finally {

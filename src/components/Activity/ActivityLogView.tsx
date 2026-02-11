@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { useActivityLog } from '@/hooks/queries/useActivity';
 import { useActivityRealtime } from '@/hooks/queries/useRealtimeSync';
+import { useAuth } from '@/context/AuthContext';
 
 type ActivityLogEntry = {
   id: string;
@@ -15,6 +16,7 @@ type ActivityLogEntry = {
   details?: ActivityDetails | null;
   actor_name?: string | null;
   actor_image?: string | null;
+  user_id?: string | null;
   created_at: string;
 };
 
@@ -30,6 +32,7 @@ type ActivityDetails = {
 
 export function ActivityLogView() {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const {
     data,
     fetchNextPage,
@@ -107,26 +110,40 @@ export function ActivityLogView() {
             ) : logs.length === 0 ? (
               <div className="text-sm text-muted-foreground">No activity yet.</div>
             ) : (
-              logs.map((entry) => (
-                <div key={entry.id} className="flex items-start gap-3">
-                  <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
-                    {entry.actor_image ? (
-                      <img
-                        src={entry.actor_image}
-                        alt={entry.actor_name ?? 'User'}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <span>{(entry.actor_name ?? 'U').slice(0, 2).toUpperCase()}</span>
-                    )}
+              logs.map((entry) => {
+                const actorName = entry.actor_name ?? 'Unknown';
+                const matchesCurrentUser = Boolean(
+                  user &&
+                  (
+                    (entry.user_id && entry.user_id === user.id) ||
+                    (user.username && actorName.toLowerCase() === user.username.toLowerCase()) ||
+                    (user.email && actorName.toLowerCase() === user.email.toLowerCase())
+                  )
+                );
+                const resolvedImage =
+                  matchesCurrentUser ? user?.image ?? null : entry.actor_image ?? null;
+
+                return (
+                  <div key={entry.id} className="flex items-start gap-3">
+                    <div className="h-9 w-9 rounded-full overflow-hidden bg-muted flex items-center justify-center text-xs font-semibold">
+                      {resolvedImage ? (
+                        <img
+                          src={resolvedImage}
+                          alt={actorName}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span>{actorName.slice(0, 2).toUpperCase()}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{actorName}</div>
+                      <div className="text-sm text-foreground">{formatActivityMessage(entry)}</div>
+                      <div className="text-xs text-muted-foreground">{formatActivityDate(entry.created_at)}</div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{entry.actor_name ?? 'Unknown'}</div>
-                    <div className="text-sm text-foreground">{formatActivityMessage(entry)}</div>
-                    <div className="text-xs text-muted-foreground">{formatActivityDate(entry.created_at)}</div>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
           {hasNextPage && (

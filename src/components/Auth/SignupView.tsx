@@ -16,19 +16,11 @@ export function SignupView() {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const fullName = String(form.get("name") ?? "").trim();
+    const name = String(form.get("name") ?? "").trim();
     const email = String(form.get("email") ?? "").trim();
     const password = String(form.get("password") ?? "");
-    const confirmPassword = String(form.get("confirmPassword") ?? "");
-    const company = String(form.get("company") ?? "").trim();
-    const locations = String(form.get("locations") ?? "").trim();
-    const notes = String(form.get("notes") ?? "").trim();
 
     if (!email || !password) return;
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -39,11 +31,7 @@ export function SignupView() {
         password,
         options: {
           data: {
-            full_name: fullName || null,
-            company_name: company || null,
-            location_count: locations || null,
-            notes: notes || null,
-            requested_at: new Date().toISOString(),
+            username: name || null,
           },
         },
       })
@@ -82,8 +70,8 @@ export function SignupView() {
                   <h1 className="text-2xl font-bold">Request received</h1>
                   <p className="text-balance text-sm text-muted-foreground">
                     {needsEmailConfirm
-                      ? "Check your email to confirm your request. We will follow up with access details and timing."
-                      : "Thanks for reaching out. We will follow up with access details and timing."}
+                      ? "Check your email to confirm your account, then you can sign in."
+                      : "Your account is ready. You can sign in now."}
                   </p>
                   {submittedEmail && (
                     <p className="text-xs text-muted-foreground">Submitted for {submittedEmail}</p>
@@ -96,25 +84,24 @@ export function SignupView() {
             ) : (
               <form onSubmit={handleSubmit} className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2 text-center">
-                  <h1 className="text-2xl font-bold">Request access</h1>
+                  <h1 className="text-2xl font-bold">Create your account</h1>
                   <p className="text-balance text-sm text-muted-foreground">
-                    Join the Warehouse waitlist
+                    Sign up to access Warehouse
                   </p>
                 </div>
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="name">Full name</FieldLabel>
+                    <FieldLabel htmlFor="name">Name</FieldLabel>
                     <Input
                       id="name"
                       name="name"
                       placeholder="Alex Johnson"
                       autoComplete="name"
-                      required
                     />
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="email">Work email</FieldLabel>
+                    <FieldLabel htmlFor="email">Email</FieldLabel>
                     <Input
                       id="email"
                       name="email"
@@ -138,46 +125,6 @@ export function SignupView() {
                     />
                   </Field>
 
-                  <Field>
-                    <FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
-                    <Input
-                      id="confirmPassword"
-                      name="confirmPassword"
-                      type="password"
-                      placeholder="Re-enter your password"
-                      autoComplete="new-password"
-                      minLength={8}
-                      required
-                    />
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="company">Company name</FieldLabel>
-                    <Input
-                      id="company"
-                      name="company"
-                      placeholder="Acme Appliances"
-                    />
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="locations">Number of locations</FieldLabel>
-                    <Input
-                      id="locations"
-                      name="locations"
-                      placeholder="3"
-                    />
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="notes">Additional notes (optional)</FieldLabel>
-                    <Input
-                      id="notes"
-                      name="notes"
-                      placeholder="Tell us about your needs"
-                    />
-                  </Field>
-
                   {error && (
                     <div className="rounded-lg bg-destructive/15 px-4 py-3 text-sm text-destructive">
                       {error}
@@ -186,7 +133,7 @@ export function SignupView() {
 
                   <Field>
                     <Button type="submit" disabled={loading} className="w-full">
-                      {loading ? "Requesting..." : "Request access"}
+                      {loading ? "Creating account..." : "Create account"}
                     </Button>
                     <FieldDescription className="text-center">
                       Already have an account?{" "}

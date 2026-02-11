@@ -203,14 +203,12 @@ export async function updateUserProfile(input: {
   role?: string | null;
   companyId?: string | null;
 }): Promise<void> {
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      username: input.username,
-      role: input.role ?? 'member',
-      company_id: input.companyId ?? null,
-    })
-    .eq('id', input.id);
+  const { error } = await supabase.rpc('admin_update_user', {
+    target_user_id: input.id,
+    new_username: input.username,
+    new_role: (input.role ?? 'member') as 'pending' | 'member' | 'admin',
+    new_company_id: input.companyId ?? null,
+  });
 
   if (error) throw error;
 }
